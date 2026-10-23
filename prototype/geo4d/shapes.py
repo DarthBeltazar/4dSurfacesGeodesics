@@ -25,8 +25,8 @@ class Shape:
 
     @property
     def alpha(self):
-        # ADR-0001: α = 1/ℓ_s
-        return 1.0 / self.scale
+        # ADR-0001: α = 0.1/ℓ_s (большие α ухудшают точность при проекции после шага)
+        return 0.1 / self.scale
 
     def f_vec(self, P):
         """f на массиве (..., 4)."""

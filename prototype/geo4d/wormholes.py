@@ -88,3 +88,17 @@ def compact_rays(rho_c, Ls, b=1.0, rho0=3.0, W=1.5):
     sb = np.asarray(Ls) / rho_c
     V = np.c_[-np.sqrt(1 - sb ** 2), sb, np.zeros_like(sb), np.zeros_like(sb)]
     return np.broadcast_to(x, V.shape).copy(), V
+
+
+def flat_flight_to_sphere(x_cam, V, center, radius):
+    """Аналитический пролёт по прямой в плоской зоне до сферы |q − c| = radius (M11).
+    Возвращает стартовые точки (N, 4) и маску лучей, попадающих в шар (остальные не интегрируются)."""
+    q0 = np.asarray(x_cam[:3]) - np.asarray(center)
+    d = V[:, :3]
+    bq = d @ q0
+    disc = bq ** 2 - (q0 @ q0 - radius ** 2)
+    hit = (disc > 0) & (-bq - np.sqrt(np.maximum(disc, 0)) > 0)
+    t = np.where(hit, -bq - np.sqrt(np.maximum(disc, 0)), 0.0)
+    X = np.broadcast_to(np.asarray(x_cam, float), V.shape).copy()
+    X[:, :3] += t[:, None] * d
+    return X, hit

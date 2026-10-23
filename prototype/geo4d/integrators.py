@@ -62,6 +62,7 @@ class Config:
     xscale: Optional[float] = None  # ℓ_s в M8; None — масштаб фигуры
     alpha: Optional[float] = None   # α в M2; None — по фигуре (ADR-0001)
     record: int = 0             # >0: сохранять первые `record` принятых состояний
+    fixed: bool = False         # вложенная схема с фиксированным шагом h (для графика сходимости)
 
     def with_(self, **kw):
         return replace(self, **kw)
@@ -88,7 +89,7 @@ def make_integrator(shape, cfg: Config, escape: Callable = None, aux: Callable =
     R = geodesic_rhs(f, alpha)
     naive = cfg.method == "naive"
     T = None if naive else TABLEAUS[cfg.method]
-    adaptive = (not naive) and T.bhat is not None
+    adaptive = (not naive) and T.bhat is not None and not cfg.fixed
     S = 0 if naive else len(T.A)
     extra_eval = 0 if naive or T.fsal else 1
     reeval = cfg.fsal == "reeval" and not naive
