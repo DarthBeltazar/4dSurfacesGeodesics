@@ -59,6 +59,8 @@ public:
     // texels: cubes × 6 × N × N × 4 float (RGBA, уровень 0); формат RGBA16F или RGBA32F; мипы — blit (бокс 2×2)
     CubeImage create_cube(const float* texels, uint32_t cubes, uint32_t N, VkFormat format, float max_aniso);
     void destroy_cube(CubeImage& c);
+    // BC6H (UFLOAT) из float-кубмапы с мипами: каждый уровень кодируется на GPU (bc6h_encode.slang); src уничтожается
+    CubeImage compress_bc6h(CubeImage& src, const std::vector<uint32_t>& encoder_spirv, float max_aniso);
 
     // types[i] — тип дескриптора привязки i
     Pipeline create_pipeline(const std::vector<uint32_t>& spirv, const std::string& entry,

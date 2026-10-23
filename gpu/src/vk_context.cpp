@@ -465,3 +465,97 @@ void VkContext::destroy_cube(CubeImage& c) {
     if (c.image) vmaDestroyImage(vma_, c.image, c.alloc);
     c = CubeImage{};
 }
+
+CubeImage VkContext::compress_bc6h(CubeImage& src, const std::vector<uint32_t>& encoder_spirv, float max_aniso) {
+    if (src.format != VK_FORMAT_R32G32B32A32_SFLOAT) throw std::runtime_error("BC6H: исходная кубмапа должна быть RGBA32F");
+    const uint32_t layers = 6 * src.cubes, N = src.size;
+    CubeImage c;
+    c.size = N;
+    c.cubes = src.cubes;
+    c.levels = src.levels;
+    c.format = VK_FORMAT_BC6H_UFLOAT_BLOCK;
+    VkImageCreateInfo ici{VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
+    ici.flags = VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT;
+    ici.imageType = VK_IMAGE_TYPE_2D;
+    ici.format = c.format;
+    ici.extent = {N, N, 1};
+    ici.mipLevels = c.levels;
+    ici.arrayLayers = layers;
+    ici.samples = VK_SAMPLE_COUNT_1_BIT;
+    ici.tiling = VK_IMAGE_TILING_OPTIMAL;
+    ici.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+    VmaAllocationCreateInfo ai{};
+    ai.usage = VMA_MEMORY_USAGE_AUTO;
+    ai.requiredFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+    check(vmaCreateImage(vma_, &ici, &ai, &c.image, &c.alloc, nullptr), "vmaCreateImage(BC6H)");
+
+    Pipeline enc = create_pipeline(encoder_spirv, "bc6h_encode",
+                                   {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER}, 8);
+    auto image_barrier = [&](VkCommandBuffer cb, VkImage img, VkImageLayout from, VkImageLayout to, VkAccessFlags sa,
+                             VkAccessFlags da, VkPipelineStageFlags ss, VkPipelineStageFlags ds) {
+        VkImageMemoryBarrier b{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
+        b.oldLayout = from;
+        b.newLayout = to;
+        b.srcAccessMask = sa;
+        b.dstAccessMask = da;
+        b.srcQueueFamilyIndex = b.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        b.image = img;
+        b.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, c.levels, 0, layers};
+        vkCmdPipelineBarrier(cb, ss, ds, 0, 0, nullptr, 0, nullptr, 1, &b);
+    };
+    {
+        VkCommandBuffer cb = begin_cmd();
+        image_barrier(cb, src.image, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                      VK_ACCESS_SHADER_READ_BIT, VK_ACCESS_TRANSFER_READ_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                      VK_PIPELINE_STAGE_TRANSFER_BIT);
+        image_barrier(cb, c.image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 0,
+                      VK_ACCESS_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
+        submit_wait(cb);
+    }
+    for (uint32_t l = 0; l < c.levels; ++l) {
+        const uint32_t s = std::max(N >> l, 1u), nb = (s + 3) / 4;
+        Buffer tex = create_buffer(size_t(layers) * s * s * 16, false);
+        Buffer blocks = create_buffer(size_t(layers) * nb * nb * 16, false);
+        VkCommandBuffer cb = begin_cmd();
+        VkBufferImageCopy cp{};
+        cp.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, l, 0, layers};
+        cp.imageExtent = {s, s, 1};
+        vkCmdCopyImageToBuffer(cb, src.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, tex.buf, 1, &cp);
+        submit_wait(cb);
+        uint32_t push[2] = {s, layers};
+        dispatch(enc, {Binding{&tex, nullptr}, Binding{&blocks, nullptr}}, push, 8, (nb + 7) / 8, (nb + 7) / 8, layers, 1);
+        cb = begin_cmd();
+        VkBufferImageCopy cb2{};
+        cb2.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, l, 0, layers};
+        cb2.imageExtent = {s, s, 1};
+        vkCmdCopyBufferToImage(cb, blocks.buf, c.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &cb2);
+        submit_wait(cb);
+        destroy_buffer(tex);
+        destroy_buffer(blocks);
+    }
+    {
+        VkCommandBuffer cb = begin_cmd();
+        image_barrier(cb, c.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                      VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                      VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
+        submit_wait(cb);
+    }
+    destroy_pipeline(enc);
+    destroy_cube(src);
+
+    VkImageViewCreateInfo vi{VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
+    vi.image = c.image;
+    vi.viewType = VK_IMAGE_VIEW_TYPE_CUBE_ARRAY;
+    vi.format = c.format;
+    vi.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, c.levels, 0, layers};
+    check(vkCreateImageView(device_, &vi, nullptr, &c.view), "vkCreateImageView(BC6H)");
+    VkSamplerCreateInfo si{VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO};
+    si.magFilter = si.minFilter = VK_FILTER_LINEAR;
+    si.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+    si.addressModeU = si.addressModeV = si.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    si.anisotropyEnable = max_aniso > 1.0f ? VK_TRUE : VK_FALSE;
+    si.maxAnisotropy = max_aniso;
+    si.maxLod = float(c.levels);
+    check(vkCreateSampler(device_, &si, nullptr, &c.sampler), "vkCreateSampler(BC6H)");
+    return c;
+}

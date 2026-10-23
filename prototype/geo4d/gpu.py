@@ -62,7 +62,8 @@ def run(spv, entry, buffers, push=(), groups=(1, 1, 1), repeat=1):
             if mode == "cube":                   # ("cube", (массив (листы, 6, N, N, C), формат, анизотропия))
                 arr, fmt, aniso = val
                 np.save(td / f"cube{b}.npy", f32(arr))
-                lines.append(f"cube {b} {td / f'cube{b}.npy'} {fmt} {aniso}")
+                enc = f" {compile_shader('bc6h_encode.slang', 'bc6h_encode')}" if fmt == "bc6h" else ""
+                lines.append(f"cube {b} {td / f'cube{b}.npy'} {fmt} {aniso}{enc}")
             elif mode == "in":
                 np.save(td / f"in{b}.npy", np.ascontiguousarray(val))
                 lines.append(f"buf {b} in {td / f'in{b}.npy'}")

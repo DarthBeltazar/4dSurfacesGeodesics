@@ -7,7 +7,7 @@
 //   buf <binding> in <npy>         входной буфер
 //   buf <binding> out <npy> <dtype> <dims...>   выходной (dtype: f4 | u4 | i4)
 //   buf <binding> inout <in.npy> <out.npy>
-//   cube <binding> <npy> rgba16f|rgba32f <aniso>   кубмапа-массив: npy (листы, 6, N, N, 3|4) float32
+//   cube <binding> <npy> rgba16f|rgba32f|bc6h <aniso> [encoder.spv]   кубмапа-массив: npy (листы, 6, N, N, 3|4) float32
 //   groups <gx> <gy> <gz>
 //   repeat <n>                     повторить диспетчеризацию n раз (для замеров; буферы не сбрасываются)
 //   report <json>                  время, статистика конвейера, устройство
@@ -96,6 +96,7 @@ int run_job(VkContext& ctx, const std::string& job_path) {
             BufSpec b;
             b.mode = "cube";
             ss >> b.binding >> b.in >> b.dtype >> b.aniso;
+            if (b.dtype == "bc6h") ss >> b.out;            // путь к SPIR-V кодировщика
             bufs.push_back(b);
         } else throw std::runtime_error("неизвестная директива: " + cmd);
     }
@@ -117,8 +118,12 @@ int run_job(VkContext& ctx, const std::string& job_path) {
             const float* src = reinterpret_cast<const float*>(a.data.data());
             for (size_t t = 0; t < n; ++t)
                 for (size_t k = 0; k < C && k < 4; ++k) rgba[4 * t + k] = src[C * t + k];
-            VkFormat fmt = b.dtype == "rgba32f" ? VK_FORMAT_R32G32B32A32_SFLOAT : VK_FORMAT_R16G16B16A16_SFLOAT;
+            VkFormat fmt = b.dtype == "rgba16f" ? VK_FORMAT_R16G16B16A16_SFLOAT : VK_FORMAT_R32G32B32A32_SFLOAT;
             cubes[i] = ctx.create_cube(rgba.data(), uint32_t(a.shape[0]), uint32_t(a.shape[2]), fmt, b.aniso);
+            if (b.dtype == "bc6h") {
+                cubes[i] = ctx.compress_bc6h(cubes[i], read_spirv(b.out), b.aniso);
+                b.out.clear();
+            }
             types[i] = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
             continue;
         }
