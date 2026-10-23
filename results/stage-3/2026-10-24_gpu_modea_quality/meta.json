@@ -1,0 +1,18 @@
+{
+  "git_commit": "08af09333fc7e9fd4bb80d2a423bc11383c4057d",
+  "git_dirty": false,
+  "date": "2026-10-24T01:39:30",
+  "os": "Windows-11-10.0.26200-SP0",
+  "cpu": "AMD64 Family 25 Model 97 Stepping 2, AuthenticAMD",
+  "python": "3.12.9",
+  "gpu": "NVIDIA GeForce RTX 4080 SUPER, 610.88",
+  "jax_backend": "cpu",
+  "jax_x64": true,
+  "libs": {
+    "jax": "0.12.0.1",
+    "jaxlib": "0.12.0.1",
+    "numpy": "2.5.4",
+    "scipy": "1.18.1",
+    "matplotlib": "3.11.2"
+  }
+}
