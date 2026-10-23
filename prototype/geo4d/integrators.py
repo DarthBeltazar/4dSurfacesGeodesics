@@ -13,7 +13,7 @@ import jax.numpy as jnp
 from jax import lax
 
 from .rhs import geodesic_rhs, project
-from .jacobi import jacobi_rhs, project_fields
+from .jacobi import jacobi_rhs, jacobi_rhs_hvp, project_fields
 
 # Статусы завершения луча
 RUNNING, DONE_SMAX, DONE_ESCAPE, DONE_NMAX = 0, 1, 2, 3
@@ -66,6 +66,7 @@ class Config:
     fixed: bool = False         # вложенная схема с фиксированным шагом h (для графика сходимости)
     jacobi: int = 0             # число полей Якоби (M15); >0 — каждая стадия делает проход Jet15 (DD-003)
     jacobi_err: bool = False    # включать J′ в норму ошибки M8
+    jacobi_jet: str = "jet15"   # jet15 (1 проход Jet15) | hvp (1 + k проходов HVP-jet, M23) — DD-004 п. 4
 
     def with_(self, **kw):
         return replace(self, **kw)
@@ -91,7 +92,7 @@ def make_integrator(shape, cfg: Config, escape: Callable = None, aux: Callable =
         hcap = lambda x: shape.scale
     nj = cfg.jacobi
     if nj:
-        R = jacobi_rhs(f, alpha)
+        R = jacobi_rhs_hvp(f, alpha) if cfg.jacobi_jet == "hvp" else jacobi_rhs(f, alpha)
     else:
         R7 = geodesic_rhs(f, alpha)
         R = lambda x, v, E: (lambda a, fv, g: (a, E * 0.0, fv, g))(*R7(x, v))
@@ -204,7 +205,10 @@ def make_integrator(shape, cfg: Config, escape: Callable = None, aux: Callable =
         out.pop("dE")
         if not cfg.record:
             out.pop("rec")
-        if nj:
+        if nj and cfg.jacobi_jet == "hvp":
+            out["nsdf_hvp"] = out.pop("nsdf") * (1 + nj)               # проходы HVP-jet
+            out["nsdf"] = jnp.asarray(0)
+        elif nj:
             out["nsdf15"] = out.pop("nsdf")                            # проходы Jet15
             out["nsdf"] = jnp.asarray(0)
         else:

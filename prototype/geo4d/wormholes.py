@@ -2,7 +2,10 @@
 from __future__ import annotations
 
 import numpy as np
+import jax
 import jax.numpy as jnp
+
+from .jet import ops, dual
 
 # 8-узловая квадратура Гаусса–Лежандра на [0, 1] (M10)
 _GL_X, _GL_W = np.polynomial.legendre.leggauss(8)
@@ -118,3 +121,40 @@ def flat_flight_to_sphere(x_cam, V, center, radius):
     X = np.broadcast_to(np.asarray(x_cam, float), V.shape).copy()
     X[:, :3] += t[:, None] * d
     return X, hit
+
+
+# ---- M24: функции выхода на ops (скаляры и дуальные числа) — производная направления без jax.jvp ----
+
+def ellis_dir_generic(x, v, b=1.0, sheet=1.0):
+    """d∞ (3 компоненты) по M10/M17 через y = Δφ² = L²G²: cos√y·r̂ + |q|·G·sinc√y·e⊥ — гладко при L → 0.
+    x, v — кортежи из 4 компонент (скаляры или Dual); sheet — знак w (константа)."""
+    q, vq = x[:3], v[:3]
+    rq = ops.length(*q)
+    inv = 1.0 / rq
+    rh = [c * inv for c in q]
+    dot = vq[0] * rh[0] + vq[1] * rh[1] + vq[2] * rh[2]
+    ep = [vq[i] - dot * rh[i] for i in range(3)]
+    L2 = rq * rq * (ep[0] * ep[0] + ep[1] * ep[1] + ep[2] * ep[2])
+    U = 1.0 / ops.sqrt(rq * rq - b * b)                     # 1/|ℓ|
+    G = 0.0
+    for xg, wg in zip(_GL_X, _GL_W):
+        u = U * float(xg)
+        G = G + float(wg) / (ops.sqrt(1.0 + (b * b) * u * u) * ops.sqrt(1.0 + (b * b - L2) * u * u))
+    G = G * U
+    y = L2 * G * G
+    cy, sy = ops.cos_sqrt(y), ops.sinc_sqrt(y)
+    return [cy * rh[i] + rq * G * sy * ep[i] for i in range(3)]
+
+
+def compact_dir_generic(x, v):
+    """d∞ = v_q/|v_q| (плоская зона)."""
+    n = ops.length(v[0], v[1], v[2])
+    return [v[i] / n for i in range(3)]
+
+
+def exit_derivatives_dual(dir_generic, x, v, dx, dv):
+    """M24: d∞ (3,) и ∂d∞ (k, 3) по направлениям (dx, dv) (k, 4) одним проходом дуальных чисел."""
+    X = tuple(dual(x[i], dx[:, i]) for i in range(4))
+    Vv = tuple(dual(v[i], dv[:, i]) for i in range(4))
+    out = dir_generic(X, Vv)
+    return jnp.stack([o.a for o in out]), jnp.stack([o.b for o in out], -1)

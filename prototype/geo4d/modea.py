@@ -13,6 +13,7 @@ from .camera import Camera, pixel_uv, jacobi_init, lens_rays_batch
 from .transfer import exit_dir_derivatives
 from .cubemap import sample_ellipse, sample_bilinear0, sample_gauss_exact
 from .render import MISS
+from .wormholes import flat_flight_to_sphere
 
 SIGMA_PIX = 0.5   # M18: гауссов фильтр пикселя, пиксели
 
@@ -31,26 +32,44 @@ def _sheet_index(sheet):
     return jnp.where(sheet > 0, 0, 1)
 
 
-def trace_central(shape, cam: Camera, cfg: Config, escape, exit_fn, chunk=8192):
-    """Центральные лучи пикселей с 4 полями Якоби → d∞, ∂d∞ (4, 3), лист, статус, проходы Jet15."""
+def trace_central(shape, cam: Camera, cfg: Config, escape, exit_fn, chunk=8192, flight=None):
+    """Центральные лучи пикселей с 4 полями Якоби → d∞, ∂d∞ (4, 3), лист, статус, проходы Jet15.
+
+    flight = (центр (3,), радиус): камера в плоской зоне. Луч аналитически летит до сферы (M25):
+    x ← x + t v, J ← J + t J′, J′ без изменений (кривизна ноль); лучи мимо сферы не интегрируются,
+    их d∞ и ∂d∞ берутся в точке камеры (∂v = J′, так как S = 0)."""
     U, V = pixel_uv(cam)
     E0, d0 = jacobi_init(cam, U, V)
     E0, d0 = E0.reshape(-1, 2, 4, 4), d0.reshape(-1, 4)
+    X0 = np.broadcast_to(cam.x, d0.shape).copy()
+    Es = E0.copy()
+    active = np.ones(len(d0), bool)
+    if flight is not None:
+        X0, active = flat_flight_to_sphere(cam.x, d0, *flight)
+        t = np.linalg.norm(X0 - cam.x, axis=1)
+        Es[:, 0] = E0[:, 0] + t[:, None, None] * E0[:, 1]                     # M25
     run = make_integrator(shape, cfg.with_(jacobi=4), escape=escape)
     derivs = jax.jit(jax.vmap(lambda x, v, E: exit_dir_derivatives(exit_fn, shape.f, x, v, E)))
     sheet_fn = jax.jit(lambda x, v: exit_fn(x, v)[1])
-    out = {k: [] for k in ("d", "dd", "sheet", "status", "nsdf15")}
-    X0 = np.broadcast_to(cam.x, d0.shape)
-    for i in range(0, len(d0), chunk):
-        o = run(X0[i:i + chunk], d0[i:i + chunk], E0[i:i + chunk])
+    N = len(d0)
+    res = dict(d=np.zeros((N, 3)), dd=np.zeros((N, 4, 3)), sheet=np.zeros(N), status=np.full(N, DONE_ESCAPE),
+               nsdf15=np.zeros(N, int))
+    idx = np.nonzero(active)[0]
+    for i in range(0, len(idx), chunk):
+        k = idx[i:i + chunk]
+        o = run(X0[k], d0[k], Es[k])
         d, dd = derivs(o["x"], o["v"], o["E"])
-        out["d"].append(np.asarray(d))
-        out["dd"].append(np.asarray(dd))
-        out["sheet"].append(np.asarray(sheet_fn(o["x"], o["v"])))
-        out["status"].append(np.asarray(o["status"]))
-        out["nsdf15"].append(np.asarray(o["nsdf15"]))
-    res = {k: np.concatenate(v) for k, v in out.items()}
+        res["d"][k], res["dd"][k] = np.asarray(d), np.asarray(dd)
+        res["sheet"][k] = np.asarray(sheet_fn(o["x"], o["v"]))
+        res["status"][k] = np.asarray(o["status"])
+        res["nsdf15"][k] = np.asarray(o["nsdf15"])
+    k = np.nonzero(~active)[0]
+    if len(k):
+        d, dd = derivs(jnp.asarray(X0[k]), jnp.asarray(d0[k]), jnp.asarray(Es[k]))
+        res["d"][k], res["dd"][k] = np.asarray(d), np.asarray(dd)
+        res["sheet"][k] = np.asarray(sheet_fn(jnp.asarray(X0[k]), jnp.asarray(d0[k])))
     res["E0"] = E0
+    res["active"] = active
     return res
 
 
