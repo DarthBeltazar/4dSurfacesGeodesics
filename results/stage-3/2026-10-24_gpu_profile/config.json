@@ -1,0 +1,9 @@
+{
+  "kappa": 0.003,
+  "repeat": 5,
+  "nfb": 64,
+  "slangc": "2025.17.2",
+  "cube": 512,
+  "fmt": "bc6h",
+  "occupancy_model": "Ada: 64K регистров/SM, 48 варпов/SM, гранулярность 8"
+}

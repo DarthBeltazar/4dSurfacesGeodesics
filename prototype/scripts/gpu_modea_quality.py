@@ -40,20 +40,31 @@ def main():
         cam = make_camera(sh, x_cam, -e_ell, [0, 0, 1, 0], [0, 1, 0, 0], fov=90, width=128, height=128, **cc)
         tol = 1e-3 * cam.theta_pix
         for fmt in FORMATS:
-            for k in KS:
+            for k in KS + ["M19"]:
                 for dname, det in DETECTORS.items():
-                    r = GM.render("ellis", cam, cube, tol, 20.0, k_grad=k, det=det, nfb=256, fmt=fmt)
+                    fm = 1 if k == "M19" else 0                     # M19 — программный фильтр (k не используется)
+                    r = GM.render("ellis", cam, cube, tol, 20.0, k_grad=2.0 if fm else k, det=det, nfb=256, fmt=fmt,
+                                  filter_mode=fm)
                     row = dict(config=name, format=fmt, k=k, detector=dname,
                                psnr_ref_nofb=MA.psnr(r["color_nofb"], ref), psnr_ref=MA.psnr(r["color"], ref),
                                psnr_vs_exact_filter=MA.psnr(r["color_nofb"], exact), fallback_frac=float(r["flags"].mean()),
                                ref_floor=floor, proto_mips_nofb=MA.psnr(imgs[0], ref), proto_exact_nofb=MA.psnr(exact, ref))
                     rows.append(row)
                     print(json.dumps(row, ensure_ascii=False), flush=True)
+    # стоимость оттенения в 1080p: аппаратный SampleGrad против программного M19
+    cam = make_camera(sh, x_cam, -e_ell, [0, 0, 1, 0], [0, 1, 0, 0], fov=90, width=1920, height=1080, focus=6.0,
+                      aperture=0.3)
+    shade_ms = {}
+    for fm in [0, 1]:
+        r = GM.render("ellis", cam, cube, 3e-3 * cam.theta_pix, 20.0, filter_mode=fm, fallback=False, fmt="bc6h")
+        shade_ms["M19" if fm else "SampleGrad"] = float(np.median(r["reports"]["shade"]["times_ns"]) / 1e6)
+    (out / "shade_1080p_ms.json").write_text(json.dumps(shade_ms, indent=1), encoding="utf-8")
+    print("оттенение 1080p, мс:", shade_ms)
     (out / "rows.json").write_text(json.dumps(rows, indent=1, ensure_ascii=False), encoding="utf-8")
     md = ["| конфигурация | формат | k | детектор | PSNR без фолбэка | PSNR с фолбэком | против точного фильтра | фолбэк |",
           "|---|---|---|---|---|---|---|---|"]
     for r in rows:
-        md.append(f"| {r['config']} | {r['format']} | {r['k']:g} | {r['detector']} | {r['psnr_ref_nofb']:.2f} | "
+        md.append(f"| {r['config']} | {r['format']} | {r['k']} | {r['detector']} | {r['psnr_ref_nofb']:.2f} | "
                   f"{r['psnr_ref']:.2f} | {r['psnr_vs_exact_filter']:.2f} | {r['fallback_frac'] * 100:.2f} % |")
     md.append("")
     for name in cfgs:
