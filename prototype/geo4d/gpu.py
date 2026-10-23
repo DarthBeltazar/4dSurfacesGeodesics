@@ -56,10 +56,14 @@ def run(spv, entry, buffers, push=(), groups=(1, 1, 1), repeat=1):
         lines = [f"spv {spv}", f"entry {entry}", f"groups {groups[0]} {groups[1]} {groups[2]}", f"repeat {repeat}",
                  f"report {td / 'report.json'}"]
         for t, v in push:
-            lines.append(f"push {t} {v!r}" if t == "f32" else f"push {t} {int(v)}")
+            lines.append(f"push {t} {float(v):.9g}" if t == "f32" else f"push {t} {int(v)}")   # не repr: np.float64(...)
         outs = {}
         for b, (mode, val) in enumerate(buffers):
-            if mode == "in":
+            if mode == "cube":                   # ("cube", (массив (листы, 6, N, N, C), формат, анизотропия))
+                arr, fmt, aniso = val
+                np.save(td / f"cube{b}.npy", f32(arr))
+                lines.append(f"cube {b} {td / f'cube{b}.npy'} {fmt} {aniso}")
+            elif mode == "in":
                 np.save(td / f"in{b}.npy", np.ascontiguousarray(val))
                 lines.append(f"buf {b} in {td / f'in{b}.npy'}")
             elif mode == "inout":

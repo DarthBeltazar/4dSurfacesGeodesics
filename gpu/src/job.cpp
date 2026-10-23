@@ -79,6 +79,7 @@ int run_job(VkContext& ctx, const std::string& job_path) {
             else if (t == "u32") { uint32_t v; ss >> v; std::memcpy(b, &v, 4); }
             else if (t == "i32") { int32_t v; ss >> v; std::memcpy(b, &v, 4); }
             else throw std::runtime_error("push: тип " + t);
+            if (ss.fail()) throw std::runtime_error("push: не разобрано значение в строке: " + line);
             push.insert(push.end(), b, b + 4);
         } else if (cmd == "buf") {
             BufSpec b;
