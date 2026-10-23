@@ -1,0 +1,1 @@
+.venv/Scripts/python.exe prototype/scripts/compact_outliers.py
