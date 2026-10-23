@@ -121,3 +121,22 @@ def transverse_basis(v, n):
         if len(out) == 2:
             break
     return np.stack(out)
+
+
+def lens_rays_batch(shape, cam: Camera, U, V, alpha, beta, iters=3):
+    """M16, батч: точки линзы a = α r + β u; x = proj_M(x_cam + a), v = normalize(P_x(F d₀/(d₀·f) − a))."""
+    U, V, alpha, beta = (jnp.asarray(t, float) for t in (U, V, alpha, beta))
+    D = jnp.asarray(cam.f) + U[:, None] * jnp.asarray(cam.r) + V[:, None] * jnp.asarray(cam.u)
+    d0 = D / jnp.linalg.norm(D, axis=-1, keepdims=True)
+    a = alpha[:, None] * jnp.asarray(cam.r) + beta[:, None] * jnp.asarray(cam.u)
+    target = (cam.focus / (d0 @ jnp.asarray(cam.f)))[:, None] * d0 - a
+    grad = jax.vmap(jax.grad(shape.f_vec))
+    fv = jax.vmap(shape.f_vec)
+    x = jnp.asarray(cam.x) + a
+    for _ in range(iters):
+        G = grad(x)
+        x = x - (fv(x) / jnp.sum(G * G, -1))[:, None] * G
+    G = grad(x)
+    n = G / jnp.linalg.norm(G, axis=-1, keepdims=True)
+    v = target - jnp.sum(target * n, -1, keepdims=True) * n
+    return x, v / jnp.linalg.norm(v, axis=-1, keepdims=True)
