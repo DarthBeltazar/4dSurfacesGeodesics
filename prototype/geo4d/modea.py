@@ -173,4 +173,4 @@ def tonemap01(rgb):
 def psnr(a, b):
     """PSNR на тонмапленных значениях [0, 1] (DD-003)."""
     mse = np.mean((tonemap01(a) - tonemap01(b)) ** 2)
-    return 10 * np.log10(1.0 / mse)
+    return float(10 * np.log10(1.0 / mse))
