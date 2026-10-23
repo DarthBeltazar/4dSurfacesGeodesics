@@ -81,6 +81,9 @@ VkContext::VkContext() {
     VkPhysicalDeviceFeatures2 f2{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2};
     f2.pNext = &f13;
     f2.features.shaderInt64 = VK_TRUE;
+    f2.features.samplerAnisotropy = VK_TRUE;
+    f2.features.imageCubeArray = VK_TRUE;
+    f2.features.textureCompressionBC = VK_TRUE;
 
     std::vector<const char*> dexts;
     if (exec_props_) dexts.push_back(VK_KHR_PIPELINE_EXECUTABLE_PROPERTIES_EXTENSION_NAME);
@@ -110,12 +113,12 @@ VkContext::VkContext() {
     cpi.queueFamilyIndex = qfam_;
     check(vkCreateCommandPool(device_, &cpi, nullptr, &pool_), "vkCreateCommandPool");
 
-    VkDescriptorPoolSize ps{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 256};
+    VkDescriptorPoolSize ps[2] = {{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 256}, {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 32}};
     VkDescriptorPoolCreateInfo dpi{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
     dpi.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
     dpi.maxSets = 32;
-    dpi.poolSizeCount = 1;
-    dpi.pPoolSizes = &ps;
+    dpi.poolSizeCount = 2;
+    dpi.pPoolSizes = ps;
     check(vkCreateDescriptorPool(device_, &dpi, nullptr, &dpool_), "vkCreateDescriptorPool");
 
     VkQueryPoolCreateInfo qpi{VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO};
@@ -207,9 +210,10 @@ void VkContext::copy_buffer(const Buffer& src, const Buffer& dst, size_t bytes) 
     submit_wait(cb);
 }
 
-Pipeline VkContext::create_pipeline(const std::vector<uint32_t>& spirv, const std::string& entry, uint32_t nbindings,
-                                    uint32_t push_bytes) {
+Pipeline VkContext::create_pipeline(const std::vector<uint32_t>& spirv, const std::string& entry,
+                                    const std::vector<VkDescriptorType>& types, uint32_t push_bytes) {
     Pipeline p;
+    uint32_t nbindings = static_cast<uint32_t>(types.size());
     p.nbindings = nbindings;
     VkShaderModuleCreateInfo smi{VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO};
     smi.codeSize = spirv.size() * 4;
@@ -219,7 +223,7 @@ Pipeline VkContext::create_pipeline(const std::vector<uint32_t>& spirv, const st
     std::vector<VkDescriptorSetLayoutBinding> b(nbindings);
     for (uint32_t i = 0; i < nbindings; ++i) {
         b[i].binding = i;
-        b[i].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        b[i].descriptorType = types[i];
         b[i].descriptorCount = 1;
         b[i].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
     }
@@ -284,7 +288,7 @@ void VkContext::destroy_pipeline(Pipeline& p) {
     p = Pipeline{};
 }
 
-std::vector<double> VkContext::dispatch(const Pipeline& p, const std::vector<Buffer*>& bindings, const void* push,
+std::vector<double> VkContext::dispatch(const Pipeline& p, const std::vector<Binding>& bindings, const void* push,
                                         uint32_t push_bytes, uint32_t gx, uint32_t gy, uint32_t gz, uint32_t repeat) {
     if (2 * repeat > kMaxTimestamps) throw std::runtime_error("слишком много повторов");
     VkDescriptorSetAllocateInfo ai{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
@@ -294,15 +298,22 @@ std::vector<double> VkContext::dispatch(const Pipeline& p, const std::vector<Buf
     VkDescriptorSet ds;
     check(vkAllocateDescriptorSets(device_, &ai, &ds), "vkAllocateDescriptorSets");
     std::vector<VkDescriptorBufferInfo> bi(bindings.size());
+    std::vector<VkDescriptorImageInfo> ii(bindings.size());
     std::vector<VkWriteDescriptorSet> w(bindings.size());
     for (size_t i = 0; i < bindings.size(); ++i) {
-        bi[i] = {bindings[i]->buf, 0, VK_WHOLE_SIZE};
         w[i] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
         w[i].dstSet = ds;
         w[i].dstBinding = static_cast<uint32_t>(i);
         w[i].descriptorCount = 1;
-        w[i].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-        w[i].pBufferInfo = &bi[i];
+        if (bindings[i].cube) {
+            ii[i] = {bindings[i].cube->sampler, bindings[i].cube->view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
+            w[i].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+            w[i].pImageInfo = &ii[i];
+        } else {
+            bi[i] = {bindings[i].buffer->buf, 0, VK_WHOLE_SIZE};
+            w[i].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+            w[i].pBufferInfo = &bi[i];
+        }
     }
     vkUpdateDescriptorSets(device_, static_cast<uint32_t>(w.size()), w.data(), 0, nullptr);
 
@@ -330,4 +341,127 @@ std::vector<double> VkContext::dispatch(const Pipeline& p, const std::vector<Buf
     std::vector<double> out(repeat);
     for (uint32_t r = 0; r < repeat; ++r) out[r] = double(ts[2 * r + 1] - ts[2 * r]) * ts_period_;
     return out;
+}
+
+namespace {
+
+uint16_t to_half(float f) {
+    uint32_t x;
+    std::memcpy(&x, &f, 4);
+    uint32_t sign = (x >> 16) & 0x8000, mant = x & 0x7fffff;
+    int32_t exp = int32_t((x >> 23) & 0xff) - 127 + 15;
+    if (exp <= 0) {                                   // субнормали / ноль
+        if (exp < -10) return static_cast<uint16_t>(sign);
+        mant |= 0x800000;
+        uint32_t shift = static_cast<uint32_t>(14 - exp);
+        uint32_t h = mant >> shift;
+        if ((mant >> (shift - 1)) & 1) h += 1;        // округление
+        return static_cast<uint16_t>(sign | h);
+    }
+    if (exp >= 31) return static_cast<uint16_t>(sign | 0x7c00);
+    uint32_t h = sign | (uint32_t(exp) << 10) | (mant >> 13);
+    if (mant & 0x1000) h += 1;                        // округление к ближайшему
+    return static_cast<uint16_t>(h);
+}
+
+}  // namespace
+
+CubeImage VkContext::create_cube(const float* texels, uint32_t cubes, uint32_t N, VkFormat format, float max_aniso) {
+    CubeImage c;
+    c.size = N;
+    c.cubes = cubes;
+    c.format = format;
+    c.levels = 1;
+    while ((N >> c.levels) > 0) ++c.levels;
+    const uint32_t layers = 6 * cubes;
+    VkImageCreateInfo ici{VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
+    ici.flags = VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT;
+    ici.imageType = VK_IMAGE_TYPE_2D;
+    ici.format = format;
+    ici.extent = {N, N, 1};
+    ici.mipLevels = c.levels;
+    ici.arrayLayers = layers;
+    ici.samples = VK_SAMPLE_COUNT_1_BIT;
+    ici.tiling = VK_IMAGE_TILING_OPTIMAL;
+    ici.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+    VmaAllocationCreateInfo ai{};
+    ai.usage = VMA_MEMORY_USAGE_AUTO;
+    ai.requiredFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+    check(vmaCreateImage(vma_, &ici, &ai, &c.image, &c.alloc, nullptr), "vmaCreateImage");
+
+    // загрузка уровня 0
+    const size_t texel_count = size_t(layers) * N * N;
+    const size_t bpp = format == VK_FORMAT_R16G16B16A16_SFLOAT ? 8 : 16;
+    Buffer staging = create_buffer(texel_count * bpp, true);
+    if (bpp == 8) {
+        auto* dst = static_cast<uint16_t*>(staging.mapped);
+        for (size_t i = 0; i < texel_count * 4; ++i) dst[i] = to_half(texels[i]);
+    } else {
+        std::memcpy(staging.mapped, texels, texel_count * 16);
+    }
+    VkCommandBuffer cb = begin_cmd();
+    auto barrier = [&](uint32_t level, uint32_t nlev, VkImageLayout from, VkImageLayout to, VkAccessFlags sa,
+                       VkAccessFlags da, VkPipelineStageFlags ss, VkPipelineStageFlags dst_stage) {
+        VkImageMemoryBarrier b{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
+        b.oldLayout = from;
+        b.newLayout = to;
+        b.srcAccessMask = sa;
+        b.dstAccessMask = da;
+        b.srcQueueFamilyIndex = b.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        b.image = c.image;
+        b.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, level, nlev, 0, layers};
+        vkCmdPipelineBarrier(cb, ss, dst_stage, 0, 0, nullptr, 0, nullptr, 1, &b);
+    };
+    barrier(0, c.levels, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 0, VK_ACCESS_TRANSFER_WRITE_BIT,
+            VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
+    VkBufferImageCopy copy{};
+    copy.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, layers};
+    copy.imageExtent = {N, N, 1};
+    vkCmdCopyBufferToImage(cb, staging.buf, c.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copy);
+    // мипы: blit с линейным фильтром ровно ×2 = бокс 2×2 внутри грани (как в прототипе)
+    for (uint32_t l = 1; l < c.levels; ++l) {
+        barrier(l - 1, 1, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_TRANSFER_READ_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                VK_PIPELINE_STAGE_TRANSFER_BIT);
+        VkImageBlit blit{};
+        int32_t s0 = int32_t(N >> (l - 1)), s1 = int32_t(N >> l);
+        blit.srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, l - 1, 0, layers};
+        blit.srcOffsets[1] = {s0, s0, 1};
+        blit.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, l, 0, layers};
+        blit.dstOffsets[1] = {s1, s1, 1};
+        vkCmdBlitImage(cb, c.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, c.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                       1, &blit, VK_FILTER_LINEAR);
+    }
+    barrier(c.levels - 1, 1, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+            VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_TRANSFER_READ_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
+            VK_PIPELINE_STAGE_TRANSFER_BIT);
+    barrier(0, c.levels, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+            VK_ACCESS_TRANSFER_READ_BIT, VK_ACCESS_SHADER_READ_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
+            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
+    submit_wait(cb);
+    destroy_buffer(staging);
+
+    VkImageViewCreateInfo vi{VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
+    vi.image = c.image;
+    vi.viewType = VK_IMAGE_VIEW_TYPE_CUBE_ARRAY;
+    vi.format = format;
+    vi.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, c.levels, 0, layers};
+    check(vkCreateImageView(device_, &vi, nullptr, &c.view), "vkCreateImageView");
+
+    VkSamplerCreateInfo si{VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO};
+    si.magFilter = si.minFilter = VK_FILTER_LINEAR;
+    si.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+    si.addressModeU = si.addressModeV = si.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    si.anisotropyEnable = max_aniso > 1.0f ? VK_TRUE : VK_FALSE;
+    si.maxAnisotropy = max_aniso;
+    si.maxLod = float(c.levels);
+    check(vkCreateSampler(device_, &si, nullptr, &c.sampler), "vkCreateSampler");
+    return c;
+}
+
+void VkContext::destroy_cube(CubeImage& c) {
+    if (c.sampler) vkDestroySampler(device_, c.sampler, nullptr);
+    if (c.view) vkDestroyImageView(device_, c.view, nullptr);
+    if (c.image) vmaDestroyImage(vma_, c.image, c.alloc);
+    c = CubeImage{};
 }

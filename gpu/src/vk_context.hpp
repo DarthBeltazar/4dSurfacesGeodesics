@@ -16,6 +16,22 @@ struct Buffer {
     void* mapped = nullptr;      // буферы хоста отображены постоянно
 };
 
+// Кубмапа-массив (листы × 6 граней) с мипами и сэмплером (DD-004 п. 8)
+struct CubeImage {
+    VkImage image = VK_NULL_HANDLE;
+    VmaAllocation alloc = VK_NULL_HANDLE;
+    VkImageView view = VK_NULL_HANDLE;
+    VkSampler sampler = VK_NULL_HANDLE;
+    uint32_t size = 0, levels = 0, cubes = 0;
+    VkFormat format = VK_FORMAT_UNDEFINED;
+};
+
+// Привязка: буфер хранения или комбинированный сэмплер кубмапы
+struct Binding {
+    Buffer* buffer = nullptr;
+    CubeImage* cube = nullptr;
+};
+
 struct Pipeline {
     VkPipeline pipe = VK_NULL_HANDLE;
     VkPipelineLayout layout = VK_NULL_HANDLE;
@@ -40,12 +56,17 @@ public:
     void destroy_buffer(Buffer& b);
     void copy_buffer(const Buffer& src, const Buffer& dst, size_t bytes);
 
-    Pipeline create_pipeline(const std::vector<uint32_t>& spirv, const std::string& entry, uint32_t nbindings,
-                             uint32_t push_bytes);
+    // texels: cubes × 6 × N × N × 4 float (RGBA, уровень 0); формат RGBA16F или RGBA32F; мипы — blit (бокс 2×2)
+    CubeImage create_cube(const float* texels, uint32_t cubes, uint32_t N, VkFormat format, float max_aniso);
+    void destroy_cube(CubeImage& c);
+
+    // types[i] — тип дескриптора привязки i
+    Pipeline create_pipeline(const std::vector<uint32_t>& spirv, const std::string& entry,
+                             const std::vector<VkDescriptorType>& types, uint32_t push_bytes);
     void destroy_pipeline(Pipeline& p);
 
     // Одна диспетчеризация repeat раз; возвращает время каждой (нс) по timestamp queries.
-    std::vector<double> dispatch(const Pipeline& p, const std::vector<Buffer*>& bindings, const void* push,
+    std::vector<double> dispatch(const Pipeline& p, const std::vector<Binding>& bindings, const void* push,
                                  uint32_t push_bytes, uint32_t gx, uint32_t gy, uint32_t gz, uint32_t repeat);
 
 private:

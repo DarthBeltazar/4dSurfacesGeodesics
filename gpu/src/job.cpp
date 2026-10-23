@@ -7,6 +7,7 @@
 //   buf <binding> in <npy>         входной буфер
 //   buf <binding> out <npy> <dtype> <dims...>   выходной (dtype: f4 | u4 | i4)
 //   buf <binding> inout <in.npy> <out.npy>
+//   cube <binding> <npy> rgba16f|rgba32f <aniso>   кубмапа-массив: npy (листы, 6, N, N, 3|4) float32
 //   groups <gx> <gy> <gz>
 //   repeat <n>                     повторить диспетчеризацию n раз (для замеров; буферы не сбрасываются)
 //   report <json>                  время, статистика конвейера, устройство
@@ -27,6 +28,7 @@ struct BufSpec {
     uint32_t binding = 0;
     std::string mode, in, out, dtype;
     std::vector<size_t> shape;
+    float aniso = 16.0f;
 };
 
 std::vector<uint32_t> read_spirv(const std::string& path) {
@@ -89,15 +91,36 @@ int run_job(VkContext& ctx, const std::string& job_path) {
                 while (ss >> d) b.shape.push_back(d);
             } else throw std::runtime_error("buf: режим " + b.mode);
             bufs.push_back(b);
+        } else if (cmd == "cube") {
+            BufSpec b;
+            b.mode = "cube";
+            ss >> b.binding >> b.in >> b.dtype >> b.aniso;
+            bufs.push_back(b);
         } else throw std::runtime_error("неизвестная директива: " + cmd);
     }
     std::sort(bufs.begin(), bufs.end(), [](auto& a, auto& b) { return a.binding < b.binding; });
 
     std::vector<Buffer> dev(bufs.size()), host(bufs.size());
+    std::vector<CubeImage> cubes(bufs.size());
     std::vector<NpyArray> inputs(bufs.size());
+    std::vector<VkDescriptorType> types(bufs.size(), VK_DESCRIPTOR_TYPE_STORAGE_BUFFER);
     for (size_t i = 0; i < bufs.size(); ++i) {
         auto& b = bufs[i];
         if (b.binding != i) throw std::runtime_error("binding должны идти подряд с 0");
+        if (b.mode == "cube") {
+            NpyArray a = npy_read(b.in);
+            if (a.dtype != "<f4" || a.shape.size() != 5 || a.shape[1] != 6 || a.shape[2] != a.shape[3])
+                throw std::runtime_error("cube: ожидается float32 (листы, 6, N, N, C)");
+            size_t C = a.shape[4], n = a.count() / C;
+            std::vector<float> rgba(n * 4, 1.0f);
+            const float* src = reinterpret_cast<const float*>(a.data.data());
+            for (size_t t = 0; t < n; ++t)
+                for (size_t k = 0; k < C && k < 4; ++k) rgba[4 * t + k] = src[C * t + k];
+            VkFormat fmt = b.dtype == "rgba32f" ? VK_FORMAT_R32G32B32A32_SFLOAT : VK_FORMAT_R16G16B16A16_SFLOAT;
+            cubes[i] = ctx.create_cube(rgba.data(), uint32_t(a.shape[0]), uint32_t(a.shape[2]), fmt, b.aniso);
+            types[i] = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+            continue;
+        }
         size_t bytes;
         if (!b.in.empty()) {
             inputs[i] = npy_read(b.in);
@@ -121,14 +144,17 @@ int run_job(VkContext& ctx, const std::string& job_path) {
     }
 
     auto code = read_spirv(spv);
-    Pipeline p = ctx.create_pipeline(code, entry, static_cast<uint32_t>(bufs.size()), static_cast<uint32_t>(push.size()));
-    std::vector<Buffer*> binds;
-    for (auto& d : dev) binds.push_back(&d);
+    Pipeline p = ctx.create_pipeline(code, entry, types, static_cast<uint32_t>(push.size()));
+    std::vector<Binding> binds(bufs.size());
+    for (size_t i = 0; i < bufs.size(); ++i) {
+        if (bufs[i].mode == "cube") binds[i].cube = &cubes[i];
+        else binds[i].buffer = &dev[i];
+    }
     auto times = ctx.dispatch(p, binds, push.data(), static_cast<uint32_t>(push.size()), g[0], g[1], g[2], repeat);
 
     for (size_t i = 0; i < bufs.size(); ++i) {
         auto& b = bufs[i];
-        if (b.out.empty()) continue;
+        if (b.out.empty() || b.mode == "cube") continue;
         ctx.copy_buffer(dev[i], host[i], dev[i].size);
         npy_write(b.out, "<" + (b.dtype.empty() ? std::string("f4") : b.dtype), b.shape, host[i].mapped, dev[i].size);
     }
@@ -145,6 +171,7 @@ int run_job(VkContext& ctx, const std::string& job_path) {
     }
     ctx.destroy_pipeline(p);
     for (auto& b : dev) ctx.destroy_buffer(b);
+    for (auto& c : cubes) ctx.destroy_cube(c);
     for (auto& b : host) ctx.destroy_buffer(b);
     return 0;
 }

@@ -105,3 +105,9 @@ def trace(scene, X, V, E=None, tol=1e-6, h0=0.05, s_max=10.0, h_max=0.0, h_min=1
     if nj:
         res["E"] = out[2].reshape(N, 2, 4, 4)
     return res, rep
+
+
+def cube_for_gpu(cube_bordered):
+    """Кубмапа прототипа (листы, 6, N+2, N+2, 3) с рамкой → без рамки (листы, 6, N, N, 3) float32 для GPU
+    (выборка куба в Vulkan бесшовная — рамка не нужна, DD-004 п. 8)."""
+    return f32(np.asarray(cube_bordered)[:, :, 1:-1, 1:-1])
