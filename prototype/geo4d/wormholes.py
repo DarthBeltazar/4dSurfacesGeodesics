@@ -59,11 +59,27 @@ def plane_frame(x, v):
     return rh, ep / jnp.maximum(jnp.linalg.norm(ep, axis=-1, keepdims=True), 1e-300), L
 
 
+def ellis_tail_G(ell, L2, b=1.0):
+    """M17: G = Δφ/L — гладкая функция L² (M10 без множителя L)."""
+    U = (1.0 / jnp.abs(ell))[..., None]
+    u = U * _GL_X
+    L2 = jnp.asarray(L2)[..., None]
+    return U[..., 0] * jnp.sum(_GL_W / (jnp.sqrt(1 + b * b * u * u) * jnp.sqrt(1 + (b * b - L2) * u * u)), -1)
+
+
 def ellis_exit(x, v, b=1.0):
-    """Асимптотическое направление (R³ листа), лист (знак w) и Δφ для луча, покинувшего |ℓ| ≥ ℓ_max (M10)."""
-    rh, ep, L = plane_frame(x, v)
-    d = ellis_tail_dphi(ellis_ell(x, b), L, b)
-    return jnp.cos(d)[..., None] * rh + jnp.sin(d)[..., None] * ep, jnp.sign(x[..., 3]), d
+    """Асимптотическое направление (R³ листа), лист и Δφ для луча, покинувшего |ℓ| ≥ ℓ_max (M10, M17).
+
+    d∞ = cos Δφ · r̂ + |q|·G·sinc(Δφ)·e⊥ с ненормированным e⊥ — гладко при L → 0 (для jvp)."""
+    q, vq = x[..., :3], v[..., :3]
+    rq = jnp.linalg.norm(q, axis=-1)
+    rh = q / rq[..., None]
+    ep = vq - jnp.sum(vq * rh, -1, keepdims=True) * rh
+    L2 = rq ** 2 * jnp.sum(ep * ep, -1)
+    G = ellis_tail_G(ellis_ell(x, b), L2, b)
+    d = jnp.sqrt(jnp.maximum(L2, 1e-300)) * G
+    out = jnp.cos(d)[..., None] * rh + (rq * G * jnp.sinc(d / jnp.pi))[..., None] * ep
+    return out, jnp.sign(x[..., 3]), d
 
 
 # ---- M11 ------------------------------------------------------------------------------------
