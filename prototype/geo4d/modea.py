@@ -96,7 +96,7 @@ def shade_mode_a(tr, mips, sigma_ap, exact_filter=False):
     args = (mips, _sheet_index(jnp.asarray(tr["sheet"])), jnp.asarray(tr["d"]),
             jnp.asarray(a1), jnp.asarray(s1), jnp.asarray(a2), jnp.asarray(s2))
     if exact_filter:
-        col, L, n = jax.jit(sample_gauss_exact)(*args), np.zeros(len(a1)), np.full(len(a1), 64)
+        col, L, n = sample_gauss_exact(*args), np.zeros(len(a1)), np.zeros(len(a1))
     else:
         col, L, n = jax.jit(sample_ellipse)(*args)
     col = np.where((tr["status"] == DONE_ESCAPE)[:, None], np.asarray(col), MISS)
@@ -104,9 +104,10 @@ def shade_mode_a(tr, mips, sigma_ap, exact_filter=False):
 
 
 def stochastic_pixels(shape, cam: Camera, pix, nspp, cfg: Config, escape, exit_fn, mips, seed=0,
-                      aperture="gauss", chunk=65536, return_samples=False):
+                      aperture="gauss", chunk=65536, return_samples=False, return_dirs=False):
     """Эталон/фолбэк: nspp лучей на пиксель (гаусс пикселя σ_pix; апертура — гаусс σ_ap на ось или равномерный
-    диск радиуса 2σ_ap), мип 0 билинейно. pix — индексы пикселей (k,). Возвращает (k, 3) или (k, nspp, 3)."""
+    диск радиуса 2σ_ap), мип 0 билинейно. pix — индексы пикселей (k,). Возвращает (k, 3) или (k, nspp, 3);
+    при return_dirs — направления выхода (k, nspp, 3), листы и статусы (k, nspp) вместо цветов."""
     rng = np.random.default_rng(seed)
     U, V = (a.ravel() for a in pixel_uv(cam))
     dpix = 2 * cam.tf / cam.width
@@ -116,7 +117,7 @@ def stochastic_pixels(shape, cam: Camera, pix, nspp, cfg: Config, escape, exit_f
     def shade(x, v, status):
         d, sheet, _ = exit_fn(x, v)
         c = sample_bilinear0(mips, _sheet_index(sheet), d)
-        return jnp.where((status == DONE_ESCAPE)[:, None], c, jnp.asarray(MISS))
+        return jnp.where((status == DONE_ESCAPE)[:, None], c, jnp.asarray(MISS)), d, sheet
 
     P = np.repeat(np.asarray(pix), nspp)
     du, dv = rng.normal(0, SIGMA_PIX, (2, len(P)))
@@ -128,13 +129,18 @@ def stochastic_pixels(shape, cam: Camera, pix, nspp, cfg: Config, escape, exit_f
         al, be = r * np.cos(ph), r * np.sin(ph)
     else:
         al = be = np.zeros(len(P))
-    cols = np.zeros((len(P), 3))
+    cols, dirs = np.zeros((len(P), 3)), np.zeros((len(P), 3))
+    sheets, stats = np.zeros(len(P)), np.zeros(len(P), int)
     for i in range(0, len(P), chunk):
         sl = slice(i, i + chunk)
         x, v = lens_rays_batch(shape, cam, U[P[sl]] + du[sl] * dpix, V[P[sl]] + dv[sl] * dpix, al[sl], be[sl])
         o = run(x, v)
-        cols[sl] = np.asarray(shade(o["x"], o["v"], o["status"]))
-    cols = cols.reshape(len(pix), nspp, 3)
+        c, d, sh = shade(o["x"], o["v"], o["status"])
+        cols[sl], dirs[sl], sheets[sl], stats[sl] = np.asarray(c), np.asarray(d), np.asarray(sh), np.asarray(o["status"])
+    k = len(pix)
+    if return_dirs:
+        return dirs.reshape(k, nspp, 3), sheets.reshape(k, nspp), stats.reshape(k, nspp)
+    cols = cols.reshape(k, nspp, 3)
     return cols if return_samples else cols.mean(1)
 
 

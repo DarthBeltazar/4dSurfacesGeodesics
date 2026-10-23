@@ -227,15 +227,32 @@ def equirect_to_fn(img):
     return fn
 
 
-def sample_gauss_exact(mips, sheet_idx, d, a1, s1, a2, s2, n=8):
-    """Эталонный гауссов фильтр по эллипсу: квадратура Гаусса–Эрмита n×n по уровню 0 (билинейно).
-    Для разложения ошибки режима A на «след Якоби» и «аппроксимацию фильтра мипами»."""
-    x, w = np.polynomial.hermite_e.hermegauss(n)
-    w = w / w.sum()
-    acc = 0.0
-    for xi, wi in zip(x, w):
-        for yj, wj in zip(x, w):
-            dd = d + (xi * s1)[..., None] * a1 + (yj * s2)[..., None] * a2
-            dd = dd / jnp.linalg.norm(dd, axis=-1, keepdims=True)
-            acc = acc + wi * wj * sample_bilinear0(mips, sheet_idx, dd)
-    return acc
+def sample_gauss_exact(mips, sheet_idx, d, a1, s1, a2, s2, spacing=0.7, nmax=128, chunk=2048):
+    """Эталонный гауссов фильтр по эллипсу: плотная сетка по ±3σ с шагом ≤ spacing текселя уровня 0
+    (билинейно), гауссовы веса. Для разложения ошибки режима A на «след Якоби» и «фильтр мипами».
+    Квадратура Гаусса–Эрмита 8×8 для этого непригодна: на следах ≳ 5 текселей пропускает тонкие детали."""
+    N = mips[0].shape[2] - 2
+    d, a1, s1, a2, s2 = (np.asarray(t) for t in (d, a1, s1, a2, s2))
+    t1 = s1 * np.asarray(texels_per_radian(jnp.asarray(d), jnp.asarray(a1), N))
+    t2 = s2 * np.asarray(texels_per_radian(jnp.asarray(d), jnp.asarray(a2), N))
+    out = np.zeros(d.shape)
+
+    @jax.jit
+    def run(d, a1, s1, a2, s2, sheet, u1, u2):
+        w = jnp.exp(-0.5 * (u1[:, None] ** 2 + u2[None, :] ** 2))
+        w = w / jnp.sum(w)
+        dd = (d[:, None, None, :] + (u1[None, :, None, None] * s1[:, None, None, None]) * a1[:, None, None, :]
+              + (u2[None, None, :, None] * s2[:, None, None, None]) * a2[:, None, None, :])
+        dd = dd / jnp.linalg.norm(dd, axis=-1, keepdims=True)
+        c = sample_bilinear0(mips, jnp.broadcast_to(sheet[:, None, None], dd.shape[:-1]), dd)
+        return jnp.einsum("ij,nijc->nc", w, c)
+
+    for i in range(0, len(d), chunk):
+        sl = slice(i, i + chunk)
+        n1 = int(np.clip(np.ceil(6 * np.max(t1[sl]) / spacing), 1, nmax)) | 1
+        n2 = int(np.clip(np.ceil(6 * np.max(t2[sl]) / spacing), 1, nmax)) | 1
+        u1 = np.linspace(-3, 3, n1) if n1 > 1 else np.zeros(1)
+        u2 = np.linspace(-3, 3, n2) if n2 > 1 else np.zeros(1)
+        out[sl] = np.asarray(run(*(jnp.asarray(t[sl]) for t in (d, a1, s1, a2, s2, np.asarray(sheet_idx))),
+                                 jnp.asarray(u1), jnp.asarray(u2)))
+    return out
