@@ -52,14 +52,18 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--res", type=int, default=96)
     ap.add_argument("--fov", type=float, default=90.0)
+    ap.add_argument("--scenes", default="ellis,compact_wh")
+    ap.add_argument("--no-hcap", action="store_true", help="h_max = ∞ для адаптивных методов (проверка влияния hcap)")
+    ap.add_argument("--name", default="render_benchmark")
     a = ap.parse_args()
+    scenes = a.scenes.split(",")
     sweeps = dict(h=np.geomspace(0.5, 0.01, 9), tol=np.geomspace(1e-2, 1e-9, 12))
-    out = new_run(1, "render_benchmark", dict(vars(a), targets_p99_theta_pix=TARGETS,
+    out = new_run(1, a.name, dict(vars(a), targets_p99_theta_pix=TARGETS,
                                               sweeps={k: v.tolist() for k, v in sweeps.items()},
                                               methods={m: kw for m, kw, _ in METHODS}, reference="dopri5 tol=1e-12"))
     rows, table = [], {}
-    fig, axs = plt.subplots(1, 2, figsize=(10, 4))
-    for ax, name in zip(axs, ["ellis", "compact_wh"]):
+    fig, axs = plt.subplots(1, len(scenes), figsize=(5 * len(scenes), 4), squeeze=False)
+    for ax, name in zip(axs[0], scenes):
         sh, X, dirs, th, act, esc, ex = scene(name, a.res, a.fov)
         ref = render_wormhole(sh, X, dirs, Config(method="dopri5", tol=1e-12, s_max=1e4, n_max=20000), esc, ex, active=act)
         ok = ref[3] == DONE_ESCAPE
@@ -68,7 +72,8 @@ def main():
             errs, costs = [], []
             for val in sweeps[par]:
                 cfg = Config(s_max=1e4, n_max=20000, **({"h": val * sh.scale, "h_max": np.inf} if par == "h"
-                                                         else {"tol": val, "h": 0.1 * sh.scale}), **kw)
+                                                         else {"tol": val, "h": 0.1 * sh.scale,
+                                                               **({"h_max": np.inf} if a.no_hcap else {})}), **kw)
                 col, steps, nsdf, status, d, sheet = render_wormhole(sh, X, dirs, cfg, esc, ex, active=act)
                 m = ok & (status == DONE_ESCAPE)
                 e = ang(d[m], ref[4][m]) / th
@@ -100,12 +105,12 @@ def main():
     md = []
     for t in TARGETS:
         md.append(f"\n### p99 ошибки ≤ {t:g} θ_pix: проходов SDF на интегрируемый пиксель\n")
-        md.append("| метод | Эллис | компактная |")
-        md.append("|---|---|---|")
+        md.append("| метод | " + " | ".join(scenes) + " |")
+        md.append("|---" * (len(scenes) + 1) + "|")
         for label, _, _ in METHODS:
             md.append(f"| {label} | " + " | ".join(
                 "вне развёртки" if np.isnan(table[(s, label, t)]) else f"{table[(s, label, t)]:.0f}"
-                for s in ["ellis", "compact_wh"]) + " |")
+                for s in scenes) + " |")
     (out / "table.md").write_text("\n".join(md) + "\n", encoding="utf-8")
     print("\n".join(md))
     print(out)
