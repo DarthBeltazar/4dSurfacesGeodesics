@@ -1,0 +1,1 @@
+.venv/Scripts/python.exe prototype/scripts/render_benchmark.py --res 96

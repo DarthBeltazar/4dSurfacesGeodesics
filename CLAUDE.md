@@ -7,8 +7,36 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 Greenfield. The only real content is `TASK.md` (in Russian) — the full task spec for a renderer of curved 3D
 spaces (wormholes etc.) defined as hypersurfaces `M = {x ∈ R⁴ : f(x) = 0}`, with light rays as geodesics of the
 induced metric. **Do not edit `TASK.md` without the user's consent.** There is no source code and no
-`CMakeLists.txt` yet (`cmake-build-debug/` and `.idea/` are CLion artifacts, git-ignored). No build/test commands
-exist yet — once they do, record them here and in `README.md`.
+`CMakeLists.txt` (`cmake-build-debug/` and `.idea/` are CLion artifacts, git-ignored). Stage 1 (Python + JAX
+prototype) is done; read `docs/PROGRESS.md` for the current state.
+
+## Commands (stage 1 prototype, Windows venv at `.venv/`)
+
+```sh
+.venv/Scripts/python -m pip install -r requirements.txt
+.venv/Scripts/python -m pytest tests -q                                   # full suite, ~2 min
+.venv/Scripts/python -m pytest tests/test_u1_jet.py -q                    # one file
+.venv/Scripts/python -m pytest "tests/test_u2_reference.py::test_vs_dop853[ellis]"   # one case
+PYTHONIOENCODING=utf-8 .venv/Scripts/python prototype/scripts/<name>.py   # experiments → results/stage-1/
+```
+
+`pyproject.toml` puts `prototype/` on the pytest path. Experiments write `results/stage-N/<date>_<name>/`
+via `geo4d.results.new_run`; commit code before runs whose numbers go into docs (meta.json records the git
+hash and a dirty flag).
+
+## Code architecture (`prototype/geo4d/`)
+
+- SDFs are written once against `jet.ops` + arithmetic and run on jnp arrays (reference autodiff), `Jet7`
+  (f, ∇f, ∇f·v, vᵀHv in one pass) and `Jet15` (full Hessian). Never use hard min/max/abs in geometry; branch
+  selection via `ops.where` is allowed only when both branches are the same smooth function.
+- `shapes.Shape` bundles f, scale ℓ_s, α (= 0.1/ℓ_s, ADR-0001), sampler, conserved planes, exact solution and
+  `hcap` (step cap). Any scene with flat zones **must** set `hcap` (sphere tracing to the curvature support),
+  otherwise adaptive steps tunnel through curvature.
+- `integrators.make_integrator(shape, Config, escape=, aux=)` returns a jitted vmap over a per-ray
+  `lax.while_loop`; it counts SDF passes per ray (`nsdf`), the benchmark metric. Projection (M3) reuses the
+  FSAL stage's jet; FSAL "stale" is the default.
+- `reference.py` is independent of jet code (DOP853 on `jax.grad`/`jax.hessian`, quadratures) — keep it so.
+- `x64` must be enabled before any array is created (`geo4d/__init__.py`, `tests/conftest.py`).
 
 ## Planned stages (gate: don't start stage N+1 until stage N acceptance criteria pass)
 

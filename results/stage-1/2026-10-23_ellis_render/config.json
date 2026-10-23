@@ -1,0 +1,26 @@
+{
+  "res": 512,
+  "fov": 90.0,
+  "ell_cam": 6.0,
+  "ell_max": 20.0,
+  "kappa": 0.001,
+  "n_max": 4000,
+  "name": "ellis_render",
+  "tol": 3.906249999999999e-06,
+  "theta_pix": 0.0039062499999999996,
+  "b": 1.0,
+  "cfg": {
+    "method": "bs32",
+    "tol": 3.906249999999999e-06,
+    "h": 0.1,
+    "h_max": null,
+    "h_min": 1e-12,
+    "s_max": 10000.0,
+    "n_max": 4000,
+    "fsal": "stale",
+    "xscale": null,
+    "alpha": null,
+    "record": 0,
+    "fixed": false
+  }
+}
