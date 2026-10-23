@@ -1,0 +1,32 @@
+{
+  "ks": [
+    1.0,
+    1.5,
+    2.0,
+    2.5,
+    3.0,
+    4.0
+  ],
+  "formats": [
+    "rgba16f",
+    "bc6h"
+  ],
+  "detectors": [
+    "по умолчанию (τ=2, |det|∈[0.1,10])",
+    "только смена листа"
+  ],
+  "stage2_configs": {
+    "pinhole": {
+      "aperture": 0.0,
+      "focus": 6.0
+    },
+    "dof": {
+      "aperture": 0.3,
+      "focus": 6.0
+    }
+  },
+  "reference": "results\\stage-2\\2026-10-24_modea_vs_reference",
+  "nfb": 256,
+  "kappa": 0.001,
+  "slangc": "2025.17.2"
+}

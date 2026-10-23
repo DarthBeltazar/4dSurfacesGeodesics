@@ -8,6 +8,7 @@
 #include "vk_context.hpp"
 
 #include <cstring>
+#include <map>
 #include <stdexcept>
 #include <string>
 
@@ -113,10 +114,10 @@ VkContext::VkContext() {
     cpi.queueFamilyIndex = qfam_;
     check(vkCreateCommandPool(device_, &cpi, nullptr, &pool_), "vkCreateCommandPool");
 
-    VkDescriptorPoolSize ps[2] = {{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 256}, {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 32}};
+    VkDescriptorPoolSize ps[2] = {{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 2048}, {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 128}};
     VkDescriptorPoolCreateInfo dpi{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
     dpi.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
-    dpi.maxSets = 32;
+    dpi.maxSets = 128;
     dpi.poolSizeCount = 2;
     dpi.pPoolSizes = ps;
     check(vkCreateDescriptorPool(device_, &dpi, nullptr, &dpool_), "vkCreateDescriptorPool");
@@ -464,6 +465,84 @@ void VkContext::destroy_cube(CubeImage& c) {
     if (c.view) vkDestroyImageView(device_, c.view, nullptr);
     if (c.image) vmaDestroyImage(vma_, c.image, c.alloc);
     c = CubeImage{};
+}
+
+std::vector<std::pair<std::string, double>> VkContext::run_graph(const std::vector<GraphStep>& steps) {
+    // по одному набору дескрипторов на конвейер (привязки одинаковы во всех его шагах)
+    std::map<const Pipeline*, VkDescriptorSet> sets;
+    std::vector<VkDescriptorBufferInfo> bi;
+    std::vector<VkDescriptorImageInfo> ii;
+    bi.reserve(4096);
+    ii.reserve(512);
+    for (auto& s : steps) {
+        if (!s.pipe || sets.count(s.pipe)) continue;
+        VkDescriptorSetAllocateInfo ai{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
+        ai.descriptorPool = dpool_;
+        ai.descriptorSetCount = 1;
+        ai.pSetLayouts = &s.pipe->dsl;
+        VkDescriptorSet ds;
+        check(vkAllocateDescriptorSets(device_, &ai, &ds), "vkAllocateDescriptorSets");
+        std::vector<VkWriteDescriptorSet> w(s.bindings.size());
+        for (size_t i = 0; i < s.bindings.size(); ++i) {
+            w[i] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
+            w[i].dstSet = ds;
+            w[i].dstBinding = static_cast<uint32_t>(i);
+            w[i].descriptorCount = 1;
+            if (s.bindings[i].cube) {
+                ii.push_back({s.bindings[i].cube->sampler, s.bindings[i].cube->view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL});
+                w[i].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+                w[i].pImageInfo = &ii.back();
+            } else {
+                bi.push_back({s.bindings[i].buffer->buf, 0, VK_WHOLE_SIZE});
+                w[i].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+                w[i].pBufferInfo = &bi.back();
+            }
+        }
+        vkUpdateDescriptorSets(device_, static_cast<uint32_t>(w.size()), w.data(), 0, nullptr);
+        sets[s.pipe] = ds;
+    }
+    std::vector<std::string> labels;
+    for (auto& s : steps)
+        if (!s.mark.empty()) labels.push_back(s.mark);
+    if (labels.size() > kMaxTimestamps) throw std::runtime_error("слишком много меток");
+    if (!labels.empty()) vkResetQueryPool(device_, qpool_, 0, static_cast<uint32_t>(labels.size()));
+
+    VkCommandBuffer cb = begin_cmd();
+    VkMemoryBarrier mb{VK_STRUCTURE_TYPE_MEMORY_BARRIER};
+    mb.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+    mb.dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT | VK_ACCESS_INDIRECT_COMMAND_READ_BIT;
+    uint32_t q = 0;
+    const Pipeline* bound = nullptr;
+    for (auto& s : steps) {
+        if (!s.mark.empty()) {
+            vkCmdWriteTimestamp(cb, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, qpool_, q++);
+            continue;
+        }
+        if (bound != s.pipe) {
+            vkCmdBindPipeline(cb, VK_PIPELINE_BIND_POINT_COMPUTE, s.pipe->pipe);
+            vkCmdBindDescriptorSets(cb, VK_PIPELINE_BIND_POINT_COMPUTE, s.pipe->layout, 0, 1, &sets[s.pipe], 0, nullptr);
+            bound = s.pipe;
+        }
+        if (!s.push.empty())
+            vkCmdPushConstants(cb, s.pipe->layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, static_cast<uint32_t>(s.push.size()), s.push.data());
+        if (s.indirect) vkCmdDispatchIndirect(cb, s.indirect->buf, s.offset);
+        else vkCmdDispatch(cb, s.g[0], s.g[1], s.g[2]);
+        vkCmdPipelineBarrier(cb, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                             VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT | VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT, 0, 1, &mb, 0,
+                             nullptr, 0, nullptr);
+    }
+    submit_wait(cb);
+    std::vector<std::pair<std::string, double>> out;
+    if (!labels.empty()) {
+        std::vector<uint64_t> ts(labels.size());
+        check(vkGetQueryPoolResults(device_, qpool_, 0, static_cast<uint32_t>(ts.size()), ts.size() * 8, ts.data(), 8,
+                                    VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WAIT_BIT),
+              "vkGetQueryPoolResults");
+        for (size_t i = 0; i < labels.size(); ++i)
+            out.emplace_back(labels[i], i ? double(ts[i] - ts[i - 1]) * ts_period_ : 0.0);
+    }
+    for (auto& [p, ds] : sets) vkFreeDescriptorSets(device_, dpool_, 1, &ds);
+    return out;
 }
 
 CubeImage VkContext::compress_bc6h(CubeImage& src, const std::vector<uint32_t>& encoder_spirv, float max_aniso) {

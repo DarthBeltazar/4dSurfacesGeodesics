@@ -1,11 +1,13 @@
 // geo4d_gpu: хост GPU-порта (DD-004).
 //   geo4d_gpu info            — устройство и драйвер (JSON)
 //   geo4d_gpu run <job.txt>   — одна compute-диспетчеризация по job-файлу (см. job.cpp)
+//   geo4d_gpu graph <файл>    — граф диспетчеризаций одним командным буфером (см. graph.cpp)
 #include <cstdio>
 #include <exception>
 #include <iostream>
 #include <string>
 
+#include "graph.hpp"
 #include "job.hpp"
 #include "vk_context.hpp"
 
@@ -23,6 +25,7 @@ int main(int argc, char** argv) {
             return 0;
         }
         if (cmd == "run" && argc >= 3) return run_job(ctx, argv[2]);
+        if (cmd == "graph" && argc >= 3) return run_graph(ctx, argv[2]);
         std::fprintf(stderr, "неизвестная команда: %s\n", cmd.c_str());
         return 2;
     } catch (const std::exception& e) {

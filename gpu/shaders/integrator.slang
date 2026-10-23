@@ -151,15 +151,28 @@ struct RayState
     uint nacc, nrej, npass, status;
 };
 
+// Начальный шаг луча
+void init_step(inout RayState st, Params p)
+{
+    float hc = p.h_max > 0 ? p.h_max : hcap(st.x);
+    st.h = min(min(p.h0, hc), p.s_max - st.s);
+}
+
 void trace_ray(inout RayState st, Params p)
+{
+    init_step(st, p);
+    trace_k(st, p, 0xffffffffu);
+}
+
+// До K попыток шага; k1 вычисляется заново в начале (FSAL между диспетчеризациями не хранится, DD-004 п. 5)
+void trace_k(inout RayState st, Params p, uint K)
 {
     float alpha = p.alpha < 0 ? ALPHA : p.alpha;
     float xs = p.xscale <= 0 ? SCALE : p.xscale;
     Eval k1 = rhs(st.x, st.v, st.E, alpha);
     st.npass += PASSES_PER_EVAL;
-    float hc = p.h_max > 0 ? p.h_max : hcap(st.x);
-    st.h = min(min(p.h0, hc), p.s_max - st.s);
-    while (st.status == RUNNING)
+    uint budget = K;
+    while (st.status == RUNNING && budget-- > 0)
     {
         float h = st.h;
         float4 x = st.x, v = st.v;

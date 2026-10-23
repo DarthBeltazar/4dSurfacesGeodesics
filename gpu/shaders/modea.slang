@@ -18,17 +18,62 @@ struct Cam
     float tf, width, height, focus;
     float sigma_ap, flight_r, k_grad, sigma_pix;
     float theta_pix, det_lo, det_hi, tau;
+    float filter_mode, cube_n, pad0, pad1;    // 0 — аппаратный SampleGrad, 1 — программный фильтр M19
 };
 
 Cam load_cam(RWStructuredBuffer<float4> b)
 {
     Cam c;
     c.x = b[0]; c.f = b[1]; c.r = b[2]; c.u = b[3];
-    float4 a = b[4], q = b[5], w = b[6];
+    float4 a = b[4], q = b[5], w = b[6], m = b[7];
     c.tf = a.x; c.width = a.y; c.height = a.z; c.focus = a.w;
     c.sigma_ap = q.x; c.flight_r = q.y; c.k_grad = q.z; c.sigma_pix = q.w;
     c.theta_pix = w.x; c.det_lo = w.y; c.det_hi = w.z; c.tau = w.w;
+    c.filter_mode = m.x; c.cube_n = m.y; c.pad0 = m.z; c.pad1 = m.w;
     return c;
+}
+
+// ---- M19: координаты грани и программный анизотропный гауссов фильтр -----------------------------
+
+float2 face_st(float3 d, out uint face)
+{
+    float3 a = abs(d);
+    float sc, tc, ma;
+    if (a.x >= a.y && a.x >= a.z) { face = d.x > 0 ? 0 : 1; ma = a.x; sc = d.x > 0 ? -d.z : d.z; tc = -d.y; }
+    else if (a.y >= a.z) { face = d.y > 0 ? 2 : 3; ma = a.y; sc = d.x; tc = d.y > 0 ? d.z : -d.z; }
+    else { face = d.z > 0 ? 4 : 5; ma = a.z; sc = d.z > 0 ? d.x : -d.x; tc = -d.y; }
+    return 0.5 * (float2(sc, tc) / ma + 1);
+}
+
+// масштаб «направление → тексели уровня 0» вдоль касательной оси (численно, на той же грани)
+float texels_per_radian(float3 d, float3 axis, float N)
+{
+    const float delta = 1e-3;
+    uint f0, f1;
+    float2 st0 = face_st(d, f0);
+    float2 st1 = face_st(normalize(d + delta * axis), f1);
+    if (f1 != f0) st1 = 2 * st0 - face_st(normalize(d - delta * axis), f1);
+    return length(st1 - st0) * N / delta;
+}
+
+float4 sample_ellipse_sw(SamplerCubeArray<float4> cube, float3 d, float layer, float3 a1, float s1, float3 a2, float s2, float N)
+{
+    float tpr = texels_per_radian(d, a1, N);
+    float smin = s2 * texels_per_radian(d, a2, N), smaj = s1 * tpr;
+    float L = log2(max(max(2 * smin, 4 * smaj / 15), 1.0));
+    float blur = 0.5 * exp2(L);
+    float seff = sqrt(max(smaj * smaj - blur * blur, 0.0));
+    int n = int(clamp(ceil(2 * seff / blur) + 1, 1.0, 16.0));
+    float4 acc = float4(0);
+    float wsum = 0;
+    for (int k = 0; k < n; k++)
+    {
+        float u = n > 1 ? (float(k) - 0.5 * (n - 1)) / float(n - 1) * 4.0 : 0.0;
+        float w = exp(-0.5 * u * u);
+        acc += w * cube.SampleLevel(float4(normalize(d + u * (seff / tpr) * a1), layer), L);
+        wsum += w;
+    }
+    return acc / wsum;
 }
 
 float2 pixel_uv(Cam c, uint px, uint py)
@@ -202,9 +247,14 @@ void modea_shade(uint3 id : SV_DispatchThreadID)
     float l1 = tr + df, l2 = max(tr - df, 0.0);
     float2 e1 = abs(sxy) > 1e-30 ? normalize(float2(l1 - syy, sxy)) : (sxx >= syy ? float2(1, 0) : float2(0, 1));
     float3 a1 = e1.x * t1 + e1.y * t2, a2 = -e1.y * t1 + e1.x * t2;
-    float3 gx3 = c.k_grad * sqrt(l1) * a1, gy3 = c.k_grad * sqrt(l2) * a2;
     float layer = dd.w > 0 ? 0 : 1;
-    gColor[i] = gCube.SampleGrad(float4(d, layer), gx3, gy3);
+    if (c.filter_mode > 0.5)
+        gColor[i] = sample_ellipse_sw(gCube, d, layer, a1, sqrt(l1), a2, sqrt(l2), c.cube_n);
+    else
+    {
+        float3 gx3 = c.k_grad * sqrt(l1) * a1, gy3 = c.k_grad * sqrt(l2) * a2;
+        gColor[i] = gCube.SampleGrad(float4(d, layer), gx3, gy3);
+    }
 }
 #endif
 
@@ -273,20 +323,33 @@ float2 gauss2(inout uint s)
     return r * float2(cos(6.2831853 * u2), sin(6.2831853 * u2));
 }
 
+#ifdef FB_CHUNK
+// Порции по FB_CHUNK сэмплов: поток на (пиксель, порция), частичные суммы — в gPartial, затем modea_fbreduce
+[[vk::binding(5, 0)]] RWStructuredBuffer<float4> gPartial;
+#endif
+
 [shader("compute")] [numthreads(64, 1, 1)]
 void modea_fallback(uint3 id : SV_DispatchThreadID)
 {
     Cam c = load_cam(gCam);
     uint4 fb = gFb[0];
+#ifdef FB_CHUNK
+    uint nchunk = (fb.y + FB_CHUNK - 1) / FB_CHUNK;
+    uint e = id.x / nchunk, chunk = id.x % nchunk;
+    if (e >= fb.x) return;
+    uint s0 = chunk * FB_CHUNK, s1 = min(s0 + FB_CHUNK, fb.y);
+#else
     uint e = id.x;
     if (e >= fb.x) return;
+    uint s0 = 0, s1 = fb.y;
+#endif
     uint i = gPix[e], W = uint(c.width);
     float2 uv0 = pixel_uv(c, i % W, i / W);
     float dpix = 2 * c.tf / c.width;
     float alpha = pc.alpha < 0 ? ALPHA : pc.alpha;
-    uint seed = (i * 9781u + fb.z * 6271u) ^ 0x9e3779b9u;
+    uint seed = (i * 9781u + fb.z * 6271u + s0 * 7919u) ^ 0x9e3779b9u;
     float4 acc = float4(0);
-    for (uint smp = 0; smp < fb.y; smp++)
+    for (uint smp = s0; smp < s1; smp++)
     {
         float2 jit = gauss2(seed) * c.sigma_pix * dpix;
         float2 ab = c.sigma_ap > 0 ? gauss2(seed) * c.sigma_ap : float2(0);
@@ -309,6 +372,27 @@ void modea_fallback(uint3 id : SV_DispatchThreadID)
         float3 d = exit_value(st.x, st.v);
         acc += gCube.SampleLevel(float4(d, st.x.w >= 0 ? 0 : 1), 0);
     }
+#ifdef FB_CHUNK
+    gPartial[id.x] = acc;
+#elif defined(FB_SCATTER)
+    gColor[i] = acc / float(fb.y);           // сразу в пиксель кадра (wavefront)
+#else
     gColor[e] = acc / float(fb.y);
+#endif
 }
+
+#ifdef FB_CHUNK
+// Сумма порций пикселя → цвет кадра
+[shader("compute")] [numthreads(64, 1, 1)]
+void modea_fbreduce(uint3 id : SV_DispatchThreadID)
+{
+    uint4 fb = gFb[0];
+    uint e = id.x;
+    if (e >= fb.x) return;
+    uint nchunk = (fb.y + FB_CHUNK - 1) / FB_CHUNK;
+    float4 acc = float4(0);
+    for (uint k = 0; k < nchunk; k++) acc += gPartial[e * nchunk + k];
+    gColor[gPix[e]] = acc / float(fb.y);
+}
+#endif
 #endif

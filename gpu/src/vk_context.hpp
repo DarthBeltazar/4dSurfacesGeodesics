@@ -32,6 +32,19 @@ struct Binding {
     CubeImage* cube = nullptr;
 };
 
+struct Pipeline;
+
+// Шаг графа: диспетчеризация (прямая или косвенная) или метка времени
+struct GraphStep {
+    std::string mark;                 // непусто — метка
+    const Pipeline* pipe = nullptr;
+    std::vector<Binding> bindings;
+    std::vector<uint8_t> push;
+    uint32_t g[3] = {1, 1, 1};
+    Buffer* indirect = nullptr;
+    uint32_t offset = 0;
+};
+
 struct Pipeline {
     VkPipeline pipe = VK_NULL_HANDLE;
     VkPipelineLayout layout = VK_NULL_HANDLE;
@@ -70,6 +83,9 @@ public:
     // Одна диспетчеризация repeat раз; возвращает время каждой (нс) по timestamp queries.
     std::vector<double> dispatch(const Pipeline& p, const std::vector<Binding>& bindings, const void* push,
                                  uint32_t push_bytes, uint32_t gx, uint32_t gy, uint32_t gz, uint32_t repeat);
+
+    // Граф шагов одним командным буфером; возвращает (метка, нс от предыдущей метки)
+    std::vector<std::pair<std::string, double>> run_graph(const std::vector<GraphStep>& steps);
 
 private:
     VkInstance instance_ = VK_NULL_HANDLE;

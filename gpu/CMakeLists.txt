@@ -14,6 +14,7 @@ add_executable(geo4d_gpu
   src/main.cpp
   src/vk_context.cpp
   src/job.cpp
+  src/graph.cpp
 )
 target_include_directories(geo4d_gpu PRIVATE
   "${VK_SDK}/Include"
