@@ -1,0 +1,21 @@
+{
+  "res": 128,
+  "npix": 200,
+  "spp": 4096,
+  "configs": {
+    "pinhole": {
+      "aperture": 0.0,
+      "focus": 6.0
+    },
+    "dof": {
+      "aperture": 0.3,
+      "focus": 6.0
+    },
+    "dof_small": {
+      "aperture": 0.05,
+      "focus": 6.0
+    }
+  },
+  "scene": "ellis, камера ℓ = 6, fov 90°",
+  "metric": "‖C_emp − Σ‖_F / ‖Σ‖_F; смещение среднего в σ₊"
+}

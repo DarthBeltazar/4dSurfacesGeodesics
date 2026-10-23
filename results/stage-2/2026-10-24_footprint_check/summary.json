@@ -1,0 +1,29 @@
+{
+ "pinhole": {
+  "rel_cov_median": 0.024481746595812724,
+  "rel_cov_p95": 0.04819572198346988,
+  "rel_cov_max": 0.07395497392452269,
+  "stat_noise_expected": 0.02209708691207961,
+  "mean_bias_median_sigma": 0.018100211404529883,
+  "mean_bias_p95_sigma": 0.034571757140351204,
+  "sigma_major_px_median": 0.3600982937688773
+ },
+ "dof": {
+  "rel_cov_median": 0.02148675757953763,
+  "rel_cov_p95": 0.04836192277790372,
+  "rel_cov_max": 0.05780856120725153,
+  "stat_noise_expected": 0.02209708691207961,
+  "mean_bias_median_sigma": 0.02650234547058175,
+  "mean_bias_p95_sigma": 0.04356088540149168,
+  "sigma_major_px_median": 2.607538552664851
+ },
+ "dof_small": {
+  "rel_cov_median": 0.024330444727258357,
+  "rel_cov_p95": 0.045406117692695834,
+  "rel_cov_max": 0.06929660141358424,
+  "stat_noise_expected": 0.02209708691207961,
+  "mean_bias_median_sigma": 0.017382747569164407,
+  "mean_bias_p95_sigma": 0.035982879052138046,
+  "sigma_major_px_median": 0.561192545803812
+ }
+}

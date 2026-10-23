@@ -24,6 +24,15 @@ python -m venv .venv
 .venv/Scripts/python prototype/scripts/render_ellis.py       # 512² Эллис + тепловая карта шагов
 ```
 
+Этап 2 (`results/stage-2/`):
+
+```sh
+.venv/Scripts/python prototype/scripts/transfer_accuracy.py  # матрица переноса против разностей, стоимость Jet15
+.venv/Scripts/python prototype/scripts/picture_tests.py      # картинки тестов S³ и S¹×R²
+.venv/Scripts/python prototype/scripts/modea_vs_reference.py # режим A против 1024 spp (~10 мин CPU)
+.venv/Scripts/python prototype/scripts/footprint_check.py    # след Якоби против ковариации стохастики
+```
+
 На Windows для кириллицы в консоли: `PYTHONIOENCODING=utf-8`.
 
 ## Обзор архитектуры
@@ -36,7 +45,11 @@ python -m venv .venv
 - `integrators.py` — BS32/DOPRI5 с FSAL и адаптивным шагом, RK4 и наивная схема; `lax.while_loop` + `vmap`.
 - `reference.py` — эталоны: DOP853 на автодифференцировании, квадратуры углов отклонения.
 - `wormholes.py` — начальные состояния, условия выхода и асимптотические направления червоточин.
-- `render.py` — pinhole-камера, процедурные фоны по листам.
+- `render.py` — процедурные фоны по листам, рендер этапа 1.
+- `jacobi.py`, `camera.py`, `transfer.py` — поля Якоби, камера/тонкая линза, матрица переноса.
+- `markers.py` — светящиеся маркеры для компактных фигур.
+- `cubemap.py` — кубмапы, мипы, фильтр по эллипсу, .hdr.
+- `modea.py` — режим A, детектор, фолбэк, эталонный стохастический рендерер.
 - `results.py` — каталоги воспроизводимых результатов.
 
 ## Документы
@@ -44,6 +57,7 @@ python -m venv .venv
 - Формулы и конвенции: [docs/math.md](docs/math.md)
 - Дизайн: [DD-001 интегратор](docs/design/DD-001-integrator.md),
   [DD-002 компактная червоточина и фигуры](docs/design/DD-002-wormhole-f-and-shapes.md),
+  [DD-003 Якоби и режим A](docs/design/DD-003-jacobi-mode-a.md),
   [DD-006 тесты и эталоны](docs/design/DD-006-test-infrastructure.md)
 - Решения: [docs/adr/](docs/adr/)
 - Отчёты по этапам: [docs/reports/](docs/reports/)

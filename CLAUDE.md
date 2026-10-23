@@ -6,15 +6,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Greenfield. The only real content is `TASK.md` (in Russian) — the full task spec for a renderer of curved 3D
 spaces (wormholes etc.) defined as hypersurfaces `M = {x ∈ R⁴ : f(x) = 0}`, with light rays as geodesics of the
-induced metric. **Do not edit `TASK.md` without the user's consent.** There is no source code and no
-`CMakeLists.txt` (`cmake-build-debug/` and `.idea/` are CLion artifacts, git-ignored). Stage 1 (Python + JAX
-prototype) is done; read `docs/PROGRESS.md` for the current state.
+induced metric. **Do not edit `TASK.md` without the user's consent.** There is no GPU/C++ code yet and no
+`CMakeLists.txt` (`cmake-build-debug/` and `.idea/` are CLion artifacts, git-ignored). Stages 1–2 (Python + JAX
+prototype, mode A) are done; read `docs/PROGRESS.md` for the current state.
 
-## Commands (stage 1 prototype, Windows venv at `.venv/`)
+## Commands (Python prototype, Windows venv at `.venv/`)
 
 ```sh
 .venv/Scripts/python -m pip install -r requirements.txt
-.venv/Scripts/python -m pytest tests -q                                   # full suite, ~2 min
+.venv/Scripts/python -m pytest tests -q                                   # full suite, ~8 min
 .venv/Scripts/python -m pytest tests/test_u1_jet.py -q                    # one file
 .venv/Scripts/python -m pytest "tests/test_u2_reference.py::test_vs_dop853[ellis]"   # one case
 PYTHONIOENCODING=utf-8 .venv/Scripts/python prototype/scripts/<name>.py   # experiments → results/stage-1/
@@ -36,6 +36,14 @@ hash and a dirty flag).
   `lax.while_loop`; it counts SDF passes per ray (`nsdf`), the benchmark metric. Projection (M3) reuses the
   FSAL stage's jet; FSAL "stale" is the default.
 - `reference.py` is independent of jet code (DOP853 on `jax.grad`/`jax.hessian`, quadratures) — keep it so.
+- Jacobi fields: `Config(jacobi=k)` adds a channel E = (J, J′) of shape (2, k, 4); every RK stage then does one
+  Jet15 pass (counted as `nsdf15`). J′ is the covariant derivative; ambient ∂v = J′ − ⟨SJ,v⟩n (M17) — use
+  `transfer.state_derivatives`, never raw J′, when differentiating anything of (x, v).
+- Mode A (`modea.py`) and its reference/fallback must share the cubemap, the mip-0 bilinear sampler and the filter
+  model (Gaussian pixel σ = 0.5 px, Gaussian aperture); PSNR is on tonemapped values. Use
+  `cubemap.sample_gauss_exact` (dense grid), not low-order Gauss–Hermite, as the "ideal filter".
+- In tests, never draw direction hints from the same RNG stream/seed as `shapes.sample` (on S³ they coincide with
+  the normal); `make_camera` falls back robustly, but test axes must be decorrelated.
 - `x64` must be enabled before any array is created (`geo4d/__init__.py`, `tests/conftest.py`).
 
 ## Planned stages (gate: don't start stage N+1 until stage N acceptance criteria pass)

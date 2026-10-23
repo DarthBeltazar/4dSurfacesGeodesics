@@ -1,0 +1,23 @@
+{
+  "cases": [
+    "S1xR2",
+    "S2xR",
+    "S3",
+    "compact_wh",
+    "ellipsoid",
+    "ellis",
+    "hyperplane",
+    "spheritorus",
+    "tiger",
+    "torisphere",
+    "S3/mult",
+    "ellipsoid/mult",
+    "tiger/fexp",
+    "ellis/mult"
+  ],
+  "ncam": 6,
+  "kappa": 0.001,
+  "camera": "fov 60°, 64 px, F = 3ℓ_s",
+  "L": "min(10, 10ℓ_s)",
+  "reference": "DOPRI5 tol 1e-13, eps_pix 1e-3, eps_ap 1e-4·ℓ_s"
+}
