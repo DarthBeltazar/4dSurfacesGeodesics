@@ -13,6 +13,7 @@ import jax.numpy as jnp
 from jax import lax
 
 from .rhs import geodesic_rhs, project
+from .jacobi import jacobi_rhs, project_fields
 
 # Статусы завершения луча
 RUNNING, DONE_SMAX, DONE_ESCAPE, DONE_NMAX = 0, 1, 2, 3
@@ -63,6 +64,8 @@ class Config:
     alpha: Optional[float] = None   # α в M2; None — по фигуре (ADR-0001)
     record: int = 0             # >0: сохранять первые `record` принятых состояний
     fixed: bool = False         # вложенная схема с фиксированным шагом h (для графика сходимости)
+    jacobi: int = 0             # число полей Якоби (M15); >0 — каждая стадия делает проход Jet15 (DD-003)
+    jacobi_err: bool = False    # включать J′ в норму ошибки M8
 
     def with_(self, **kw):
         return replace(self, **kw)
@@ -70,7 +73,7 @@ class Config:
 
 def make_integrator(shape, cfg: Config, escape: Callable = None, aux: Callable = None, naux: int = 0,
                     gcap: Callable = None, f: Callable = None):
-    """Возвращает jit-функцию run(x0, v0) для батча (N, 4) лучей.
+    """Возвращает jit-функцию run(x0, v0[, E0]) для батча (N, 4) лучей; E0: (N, 2, k, 4) при cfg.jacobi = k.
 
     escape(x, v) -> bool    — луч покинул область интегрирования (проверяется после принятого шага);
     aux(x_old, x_new) -> (naux,) — накапливаемая величина вдоль пути (например, развёрнутый угол);
@@ -86,7 +89,12 @@ def make_integrator(shape, cfg: Config, escape: Callable = None, aux: Callable =
         hcap = shape.hcap
     else:
         hcap = lambda x: shape.scale
-    R = geodesic_rhs(f, alpha)
+    nj = cfg.jacobi
+    if nj:
+        R = jacobi_rhs(f, alpha)
+    else:
+        R7 = geodesic_rhs(f, alpha)
+        R = lambda x, v, E: (lambda a, fv, g: (a, E * 0.0, fv, g))(*R7(x, v))
     naive = cfg.method == "naive"
     T = None if naive else TABLEAUS[cfg.method]
     adaptive = (not naive) and T.bhat is not None and not cfg.fixed
@@ -97,50 +105,60 @@ def make_integrator(shape, cfg: Config, escape: Callable = None, aux: Callable =
     def tangential(e, n):
         return e - jnp.sum(e * n) * n
 
-    def step(x, v, acc, h):
-        """Одна попытка шага. Возвращает (x⁺, v⁺, acc⁺, err, вызовы SDF)."""
+    def lin(coefs, ks):
+        return sum(c * k for c, k in zip(coefs, ks) if c != 0.0)
+
+    def step(x, v, E, acc, dE, h):
+        """Одна попытка шага. Возвращает (x⁺, v⁺, E⁺, acc⁺, dE⁺, err, вызовы SDF)."""
         if naive:
             x1 = x + h * v
-            _, fv, g = R(x1, v)
+            _, _, fv, g = R(x1, v, E)
             xp, vp = project(x1, v, fv, g)
-            return xp, vp, acc, jnp.asarray(0.0), 1          # ускорение схеме не нужно
-        kx, kv = [v], [acc]
+            return xp, vp, E, acc, dE, jnp.asarray(0.0), 1   # ускорение схеме не нужно
+        kx, kv, kE = [v], [acc], [dE]
         fv = g = None
         for i in range(1, S):
-            xi = x + h * sum(a * k for a, k in zip(T.A[i], kx) if a != 0.0)
-            vi = v + h * sum(a * k for a, k in zip(T.A[i], kv) if a != 0.0)
-            ai, fv, g = R(xi, vi)
+            xi = x + h * lin(T.A[i], kx)
+            vi = v + h * lin(T.A[i], kv)
+            Ei = E + h * lin(T.A[i], kE) if i > 0 else E
+            ai, dEi, fv, g = R(xi, vi, Ei)
             kx.append(vi)
             kv.append(ai)
+            kE.append(dEi)
         if T.fsal:
-            xn, vn, an = xi, vi, kv[-1]                      # последняя стадия — в y⁺
+            xn, vn, En, an, dEn = xi, vi, Ei, kv[-1], kE[-1]  # последняя стадия — в y⁺
         else:
-            xn = x + h * sum(bj * k for bj, k in zip(T.b, kx))
-            vn = v + h * sum(bj * k for bj, k in zip(T.b, kv))
-            an, fv, g = R(xn, vn)
+            xn, vn, En = x + h * lin(T.b, kx), v + h * lin(T.b, kv), E + h * lin(T.b, kE)
+            an, dEn, fv, g = R(xn, vn, En)
         if adaptive:
             db = [bj - bh for bj, bh in zip(T.b, T.bhat)]
-            ex = h * sum(d * k for d, k in zip(db, kx) if d != 0.0)
-            ev = h * sum(d * k for d, k in zip(db, kv) if d != 0.0)
+            ex = h * lin(db, kx)
+            ev = h * lin(db, kv)
             n = g / jnp.linalg.norm(g)
             err = jnp.maximum(jnp.linalg.norm(tangential(ex, n)) / xs,
                               jnp.linalg.norm(tangential(ev, n)))       # M8
+            if nj and cfg.jacobi_err:
+                eJ = h * lin(db, kE)[1]
+                eJ = eJ - (eJ @ n)[:, None] * n
+                scale = jnp.maximum(jnp.linalg.norm(E[1], axis=-1), 1e-300)
+                err = jnp.maximum(err, jnp.max(jnp.linalg.norm(eJ, axis=-1) / scale))
         else:
             err = jnp.asarray(0.0)
         xp, vp = project(xn, vn, fv, g)                                  # M3
+        Ep = project_fields(En, g) if nj else En                         # M15
         if reeval:
-            ap, _, _ = R(xp, vp)
+            ap, dEp, _, _ = R(xp, vp, Ep)
         else:
-            ap = an                                                      # stale FSAL (DD-001)
-        return xp, vp, ap, err, (S - 1) + extra_eval + (1 if reeval else 0)
+            ap, dEp = an, dEn                                            # stale FSAL (DD-001)
+        return xp, vp, Ep, ap, dEp, err, (S - 1) + extra_eval + (1 if reeval else 0)
 
-    def run_one(x0, v0):
-        acc0, _, _ = R(x0, v0)
+    def run_one(x0, v0, E0):
+        acc0, dE0, _, _ = R(x0, v0, E0)
         h0 = jnp.minimum(jnp.minimum(cfg.h, hcap(x0)), cfg.s_max)
         if gcap is not None:
             h0 = jnp.minimum(h0, gcap(x0))
         rec = jnp.zeros((max(cfg.record, 1), 9)).at[0].set(jnp.concatenate([x0, v0, jnp.zeros(1)]))
-        st = dict(x=x0, v=v0, acc=acc0, h=h0, s=jnp.asarray(0.0), nacc=jnp.asarray(0), nrej=jnp.asarray(0),
+        st = dict(x=x0, v=v0, E=E0, acc=acc0, dE=dE0, h=h0, s=jnp.asarray(0.0), nacc=jnp.asarray(0), nrej=jnp.asarray(0),
                   nsdf=jnp.asarray(1), status=jnp.asarray(RUNNING), aux=jnp.zeros(naux), rec=rec)
 
         def cond(st):
@@ -148,12 +166,14 @@ def make_integrator(shape, cfg: Config, escape: Callable = None, aux: Callable =
 
         def body(st):
             x, v, h = st["x"], st["v"], st["h"]
-            xp, vp, ap, err, ncalls = step(x, v, st["acc"], h)
+            xp, vp, Ep, ap, dEp, err, ncalls = step(x, v, st["E"], st["acc"], st["dE"], h)
             accept = (err <= cfg.tol) | (h <= cfg.h_min) if adaptive else jnp.asarray(True)
             s_new = jnp.where(accept, st["s"] + h, st["s"])
             x_new = jnp.where(accept, xp, x)
             v_new = jnp.where(accept, vp, v)
             a_new = jnp.where(accept, ap, st["acc"])
+            E_new = jnp.where(accept, Ep, st["E"])
+            dE_new = jnp.where(accept, dEp, st["dE"])
             if adaptive:
                 fac = jnp.clip(0.9 * (cfg.tol / jnp.maximum(err, 1e-300)) ** (1.0 / (T.q + 1)), 0.2, 5.0)  # M7
                 h_new = h * fac
@@ -176,13 +196,27 @@ def make_integrator(shape, cfg: Config, escape: Callable = None, aux: Callable =
                 row = jnp.concatenate([x_new, v_new, s_new[None]])
                 idx = jnp.where(accept & (nacc < cfg.record), nacc, cfg.record)  # вне диапазона — отбрасывается
                 rec = rec.at[idx].set(row, mode="drop")
-            return dict(x=x_new, v=v_new, acc=a_new, h=h_new, s=s_new, nacc=nacc, nrej=nrej,
+            return dict(x=x_new, v=v_new, E=E_new, acc=a_new, dE=dE_new, h=h_new, s=s_new, nacc=nacc, nrej=nrej,
                         nsdf=st["nsdf"] + ncalls, status=status, aux=new_aux, rec=rec)
 
         out = lax.while_loop(cond, body, st)
         out.pop("acc")
+        out.pop("dE")
         if not cfg.record:
             out.pop("rec")
+        if nj:
+            out["nsdf15"] = out.pop("nsdf")                            # проходы Jet15
+            out["nsdf"] = jnp.asarray(0)
+        else:
+            out.pop("E")
         return out
 
-    return jax.jit(jax.vmap(run_one))
+    batched = jax.jit(jax.vmap(run_one))
+
+    def run(x0, v0, E0=None):
+        x0, v0 = jnp.asarray(x0), jnp.asarray(v0)
+        if E0 is None:
+            E0 = jnp.zeros(x0.shape[:1] + (2, nj, 4), x0.dtype)
+        return batched(x0, v0, jnp.asarray(E0))
+
+    return run
