@@ -11,7 +11,7 @@ import jax.numpy as jnp
 from .integrators import make_integrator, Config, DONE_ESCAPE
 from .camera import Camera, pixel_uv, jacobi_init, lens_rays_batch
 from .transfer import exit_dir_derivatives
-from .cubemap import sample_ellipse, sample_bilinear0
+from .cubemap import sample_ellipse, sample_bilinear0, sample_gauss_exact
 from .render import MISS
 
 SIGMA_PIX = 0.5   # M18: гауссов фильтр пикселя, пиксели
@@ -90,10 +90,15 @@ def detector_flags(cam: Camera, tr, det: Detector):
     return flags.ravel(), dict(rho=rho, resid=resid.ravel())
 
 
-def shade_mode_a(tr, mips, sigma_ap):
+def shade_mode_a(tr, mips, sigma_ap, exact_filter=False):
+    """Цвет режима A. exact_filter — гауссов фильтр квадратурой по уровню 0 вместо мипов (для разложения ошибки)."""
     a1, s1, a2, s2 = footprint(tr["dd"], sigma_ap)
-    col, L, n = jax.jit(sample_ellipse)(mips, _sheet_index(jnp.asarray(tr["sheet"])), jnp.asarray(tr["d"]),
-                                        jnp.asarray(a1), jnp.asarray(s1), jnp.asarray(a2), jnp.asarray(s2))
+    args = (mips, _sheet_index(jnp.asarray(tr["sheet"])), jnp.asarray(tr["d"]),
+            jnp.asarray(a1), jnp.asarray(s1), jnp.asarray(a2), jnp.asarray(s2))
+    if exact_filter:
+        col, L, n = jax.jit(sample_gauss_exact)(*args), np.zeros(len(a1)), np.full(len(a1), 64)
+    else:
+        col, L, n = jax.jit(sample_ellipse)(*args)
     col = np.where((tr["status"] == DONE_ESCAPE)[:, None], np.asarray(col), MISS)
     return col, np.asarray(L), np.asarray(n)
 

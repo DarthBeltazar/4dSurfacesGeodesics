@@ -225,3 +225,17 @@ def equirect_to_fn(img):
         y = jnp.clip(((0.5 - lat / np.pi) * H).astype(jnp.int32), 0, H - 1)
         return im[y, x]
     return fn
+
+
+def sample_gauss_exact(mips, sheet_idx, d, a1, s1, a2, s2, n=8):
+    """Эталонный гауссов фильтр по эллипсу: квадратура Гаусса–Эрмита n×n по уровню 0 (билинейно).
+    Для разложения ошибки режима A на «след Якоби» и «аппроксимацию фильтра мипами»."""
+    x, w = np.polynomial.hermite_e.hermegauss(n)
+    w = w / w.sum()
+    acc = 0.0
+    for xi, wi in zip(x, w):
+        for yj, wj in zip(x, w):
+            dd = d + (xi * s1)[..., None] * a1 + (yj * s2)[..., None] * a2
+            dd = dd / jnp.linalg.norm(dd, axis=-1, keepdims=True)
+            acc = acc + wi * wj * sample_bilinear0(mips, sheet_idx, dd)
+    return acc

@@ -34,7 +34,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--res", type=int, default=128)
     ap.add_argument("--spp", type=int, default=1024)
-    ap.add_argument("--nfb", type=int, default=64)
+    ap.add_argument("--nfb", type=int, default=256)
     ap.add_argument("--cube", type=int, default=512)
     ap.add_argument("--kappa", type=float, default=1e-3)
     ap.add_argument("--configs", default="pinhole,dof")
@@ -60,13 +60,15 @@ def main():
         tr = MA.trace_central(sh, cam, cfg, esc, ex)
         col_a, L, n = MA.shade_mode_a(tr, mips, cam.aperture)
         t_modea = time.time() - t0
+        col_exact, _, _ = MA.shade_mode_a(tr, mips, cam.aperture, exact_filter=True)
         t0 = time.time()
         half = a.spp // 2
         ref1 = MA.stochastic_pixels(sh, cam, allpix, half, cfg, esc, ex, mips, seed=1)
         ref2 = MA.stochastic_pixels(sh, cam, allpix, half, cfg, esc, ex, mips, seed=2)
         t_ref = time.time() - t0
         ref = 0.5 * (ref1 + ref2)
-        fb = MA.stochastic_pixels(sh, cam, allpix, a.nfb, cfg, esc, ex, mips, seed=3)
+        fb_s = MA.stochastic_pixels(sh, cam, allpix, a.nfb, cfg, esc, ex, mips, seed=3, return_samples=True)
+        fb, fb64 = fb_s.mean(1), fb_s[:, :64].mean(1)
         extra = {}
         if cam.aperture > 0:
             disk = MA.stochastic_pixels(sh, cam, allpix, 256, cfg, esc, ex, mips, seed=4, aperture="disk")
@@ -77,7 +79,12 @@ def main():
         s = dict(theta_pix=cam.theta_pix, tol=cfg.tol, time_modeA_s=t_modea, time_ref_s=t_ref,
                  nsdf15_mean=float(tr["nsdf15"].mean()), mip_level_mean=float(L.mean()), taps_mean=float(n.mean()),
                  psnr_modeA_no_fallback=MA.psnr(col_a, ref), psnr_modeA_default=MA.psnr(comb, ref),
-                 psnr_fb_only=MA.psnr(fb, ref), fallback_frac_default=float(flags.mean()),
+                 psnr_fb_only=MA.psnr(fb, ref), psnr_fb64_only=MA.psnr(fb64, ref),
+                 psnr_modeA_default_fb64=MA.psnr(np.where(flags[:, None], fb64, col_a), ref),
+                 psnr_modeA_exact_filter_no_fallback=MA.psnr(col_exact, ref),
+                 psnr_modeA_exact_filter_default=MA.psnr(np.where(flags[:, None], fb, col_exact), ref),
+                 psnr_modeA_exact_filter_unflagged=MA.psnr(col_exact[~flags], ref[~flags]),
+                 fallback_frac_default=float(flags.mean()),
                  psnr_ref_halves=floor_halves, psnr_ref_floor_est=floor_halves + 10 * np.log10(4),
                  psnr_modeA_unflagged=MA.psnr(col_a[~flags], ref[~flags]), **extra)
         sweep = []
@@ -85,14 +92,16 @@ def main():
             for tau in SWEEP_TAU:
                 fl, _ = MA.detector_flags(cam, tr, MA.Detector(det_lo=lo, det_hi=hi, tau=tau))
                 img = np.where(fl[:, None], fb, col_a)
+                img_x = np.where(fl[:, None], fb, col_exact)
                 sweep.append(dict(det_lo=lo, det_hi=str(hi), tau=str(tau), fallback_frac=float(fl.mean()),
-                                  psnr=MA.psnr(img, ref)))
+                                  psnr=MA.psnr(img, ref), psnr_exact_filter=MA.psnr(img_x, ref)))
         s["sweep"] = sweep
         summary[name] = s
         print(name, json.dumps({k: v for k, v in s.items() if k != "sweep"}, indent=1), flush=True)
         R = a.res
         tm = lambda c: MA.tonemap01(c.reshape(R, R, 3))
         err = np.abs(MA.tonemap01(comb) - MA.tonemap01(ref)).max(-1).reshape(R, R)
+        np.save(out / f"{name}_images.npy", np.stack([col_a, col_exact, comb, ref, fb]).astype(np.float32))
         fig, axs = plt.subplots(1, 5, figsize=(22, 4.6))
         for ax, img, t in [(axs[0], tm(col_a), "режим A (без фолбэка)"), (axs[1], tm(comb), "режим A + фолбэк"),
                            (axs[2], tm(ref), f"эталон {a.spp} spp")]:
@@ -113,7 +122,9 @@ def main():
         fig, ax = plt.subplots(figsize=(6, 4.2))
         for lo, hi in SWEEP_DET:
             pts = [(r["fallback_frac"], r["psnr"]) for r in sweep if r["det_lo"] == lo]
-            ax.plot(*zip(*pts), "o-", ms=3, label=f"|det| ∈ [{lo}, {hi}]")
+            ax.plot(*zip(*pts), "o-", ms=3, label=f"мипы, |det| ∈ [{lo}, {hi}]")
+            pts = [(r["fallback_frac"], r["psnr_exact_filter"]) for r in sweep if r["det_lo"] == lo]
+            ax.plot(*zip(*pts), "s--", ms=3, label=f"точный фильтр, |det| ∈ [{lo}, {hi}]")
         ax.axhline(floor_halves + 10 * np.log10(4), color="gray", ls=":", label="оценка шумового пола эталона")
         ax.set_xlabel("доля пикселей на фолбэке")
         ax.set_ylabel("PSNR, дБ")
