@@ -85,3 +85,23 @@ def f32(a):
 
 def groups_for(n, local=64):
     return ((n + local - 1) // local, 1, 1)
+
+
+def trace(scene, X, V, E=None, tol=1e-6, h0=0.05, s_max=10.0, h_max=0.0, h_min=1e-7, n_max=100_000,
+          escape_mode=0, escape_param=0.0, alpha=-1.0, xscale=0.0, fixed=False, nj=0, jacobi_jet="jet15",
+          repeat=1):
+    """Мегаядро trace.slang: лучи (N, 4) [+ поля (N, 2, 4, 4)] → x, v, E, статистика, статус, отчёт."""
+    X, V = f32(X), f32(V)
+    N = len(X)
+    defs = {"SCENE": SCENE_IDS[scene], "NJ": nj, "JACOBI_JET": 1 if jacobi_jet == "hvp" else 0}
+    spv = compile_shader("trace.slang", "trace", defs)
+    Ebuf = f32(np.asarray(E).reshape(N * 8, 4)) if nj else np.zeros((1, 4), np.float32)
+    push = [("u32", N), ("f32", tol), ("f32", h0), ("f32", s_max), ("f32", h_max), ("f32", h_min), ("u32", n_max),
+            ("u32", escape_mode), ("f32", escape_param), ("f32", alpha), ("f32", xscale), ("u32", int(fixed))]
+    bufs = [("inout", X), ("inout", V), ("inout", Ebuf), ("out", ("f4", (N, 4))), ("out", ("u4", (N,)))]
+    out, rep = run(spv, "trace", bufs, push=push, groups=groups_for(N), repeat=repeat)
+    res = dict(x=out[0], v=out[1], s=out[3][:, 0], nacc=out[3][:, 1], nrej=out[3][:, 2], npass=out[3][:, 3],
+               status=out[4])
+    if nj:
+        res["E"] = out[2].reshape(N, 2, 4, 4)
+    return res, rep
