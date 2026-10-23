@@ -71,8 +71,12 @@ def main():
         fb, fb64 = fb_s.mean(1), fb_s[:, :64].mean(1)
         extra = {}
         if cam.aperture > 0:
-            disk = MA.stochastic_pixels(sh, cam, allpix, 256, cfg, esc, ex, mips, seed=4, aperture="disk")
-            extra["psnr_modeA_vs_disk256"] = MA.psnr(col_a, disk)
+            disk1 = MA.stochastic_pixels(sh, cam, allpix, 256, cfg, esc, ex, mips, seed=4, aperture="disk")
+            disk2 = MA.stochastic_pixels(sh, cam, allpix, 256, cfg, esc, ex, mips, seed=6, aperture="disk")
+            disk = 0.5 * (disk1 + disk2)
+            extra["psnr_modeA_vs_disk512"] = MA.psnr(col_a, disk)
+            extra["psnr_modeA_vs_gauss_ref_same512"] = MA.psnr(col_a, ref1)
+            extra["psnr_disk_halves"] = MA.psnr(disk1, disk2)
         flags, diag = MA.detector_flags(cam, tr, MA.Detector())
         comb = np.where(flags[:, None], fb, col_a)
         floor_halves = MA.psnr(ref1, ref2)
@@ -84,6 +88,8 @@ def main():
                  psnr_modeA_exact_filter_no_fallback=MA.psnr(col_exact, ref),
                  psnr_modeA_exact_filter_default=MA.psnr(np.where(flags[:, None], fb, col_exact), ref),
                  psnr_modeA_exact_filter_unflagged=MA.psnr(col_exact[~flags], ref[~flags]),
+                 psnr_ref_halves_unflagged=MA.psnr(ref1[~flags], ref2[~flags]),
+                 psnr_ref_floor_est_unflagged=MA.psnr(ref1[~flags], ref2[~flags]) + 10 * np.log10(4),
                  fallback_frac_default=float(flags.mean()),
                  psnr_ref_halves=floor_halves, psnr_ref_floor_est=floor_halves + 10 * np.log10(4),
                  psnr_modeA_unflagged=MA.psnr(col_a[~flags], ref[~flags]), **extra)
@@ -101,7 +107,7 @@ def main():
         R = a.res
         tm = lambda c: MA.tonemap01(c.reshape(R, R, 3))
         err = np.abs(MA.tonemap01(comb) - MA.tonemap01(ref)).max(-1).reshape(R, R)
-        np.save(out / f"{name}_images.npy", np.stack([col_a, col_exact, comb, ref, fb]).astype(np.float32))
+        np.save(out / f"{name}_images.npy", np.stack([col_a, col_exact, comb, ref1, ref2, fb]).astype(np.float32))
         fig, axs = plt.subplots(1, 5, figsize=(22, 4.6))
         for ax, img, t in [(axs[0], tm(col_a), "режим A (без фолбэка)"), (axs[1], tm(comb), "режим A + фолбэк"),
                            (axs[2], tm(ref), f"эталон {a.spp} spp")]:
