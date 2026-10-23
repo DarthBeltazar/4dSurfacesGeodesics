@@ -18,9 +18,10 @@ class Shape:
     scale: float                      # ℓ_s: масштаб геометрии (M8, α)
     sample_raw: Callable              # rng, n -> (n, 4) точки около M (уточняются Ньютоном)
     planes: tuple = ()                # плоскости (i, j) с сохраняющимся Lᵢⱼ (M13)
-    exact: Optional[Callable] = None  # (x0, v0, s) -> (x, v), M13
+    exact: Optional[Callable] = None  # (x0, v0, s) -> (x, v), s: (...,), M13
     invariants: Optional[Callable] = None  # (x, v) -> массив дополнительных инвариантов
     params: dict = field(default_factory=dict)
+    hcap: Optional[Callable] = None   # x -> предельный шаг (иначе ℓ_s); защита от «туннелирования», DD-001
 
     @property
     def alpha(self):
@@ -73,6 +74,7 @@ def moments(x, v, planes):
 
 def hyperplane():
     def exact(x0, v0, s):
+        s = jnp.asarray(s)[..., None]
         return x0 + s * v0, v0
 
     return Shape("hyperplane", lambda p: p[3], 1.0,
@@ -82,6 +84,7 @@ def hyperplane():
 
 def sphere3(R=1.0):
     def exact(x0, v0, s):
+        s = jnp.asarray(s)[..., None]
         c, si = jnp.cos(s / R), jnp.sin(s / R)
         return c * x0 + R * si * v0, -si / R * x0 + c * v0
 
@@ -92,6 +95,7 @@ def sphere3(R=1.0):
 
 def sphere2_x_r(R=1.0):
     def exact(x0, v0, s):
+        s = jnp.asarray(s)[..., None]
         q0, u = x0[..., :3], v0[..., :3]
         c = jnp.linalg.norm(u, axis=-1, keepdims=True)
         om = c / R
@@ -110,6 +114,7 @@ def sphere1_x_r2(R=1.0):
         th0 = jnp.arctan2(x0[..., 1], x0[..., 0])
         vth = (x0[..., 0] * v0[..., 1] - x0[..., 1] * v0[..., 0]) / R  # R·dθ/ds
         th = th0 + vth / R * s
+        s = s[..., None]
         er = jnp.stack([jnp.cos(th), jnp.sin(th)], -1)
         et = jnp.stack([-jnp.sin(th), jnp.cos(th)], -1)
         x = jnp.concatenate([R * er, x0[..., 2:] + s * v0[..., 2:]], -1)
@@ -174,8 +179,10 @@ def ellis(b=1.0):
         ell = rng.uniform(-4 * b, 4 * b, n)
         return np.c_[np.sqrt(ell ** 2 + b ** 2)[:, None] * _unit(rng, n, 3), b * np.arcsinh(ell / b)]
 
+    # Радиус кривизны растёт как r²/b: шаг ограничен долей r = ρ.
     return Shape("ellis", lambda p: ops.length(p[0], p[1], p[2]) - b * ops.cosh(p[3] * (1.0 / b)), b, raw,
-                 planes=((0, 1), (1, 2), (0, 2)), params=dict(b=b))
+                 planes=((0, 1), (1, 2), (0, 2)), params=dict(b=b),
+                 hcap=lambda x: 0.5 * jnp.linalg.norm(x[:3]))
 
 
 def compact_psi(u):
@@ -201,8 +208,10 @@ def compact_wormhole(b=1.0, rho0=3.0, W=1.5):
         w = np.sqrt(np.maximum(h, 0.0)) * rng.choice([-1.0, 1.0], n)
         return np.c_[rho[:, None] * _unit(rng, n, 3), w]
 
+    # Вне шара ρ₀ оценка ошибки ≡ 0: шаг ограничен расстоянием до шара (sphere tracing), внутри — b/4.
     return Shape("compact_wh", f, b, raw, planes=((0, 1), (1, 2), (0, 2)),
-                 params=dict(b=b, rho0=rho0, W=W))
+                 params=dict(b=b, rho0=rho0, W=W),
+                 hcap=lambda x: jnp.maximum(jnp.linalg.norm(x[:3]) - rho0, 0.25 * b))
 
 
 def two_compact_wormholes(c1=(-4.0, 0.0, 0.0), c2=(4.0, 0.0, 0.0), b=1.0, rho0=3.0, W=1.5):
@@ -219,7 +228,12 @@ def two_compact_wormholes(c1=(-4.0, 0.0, 0.0), c2=(4.0, 0.0, 0.0), b=1.0, rho0=3
         P[:, :3] += np.where(rng.random(n) < 0.5, 1.0, 0.0)[:, None] * np.subtract(c1, c2) + np.asarray(c2)
         return P
 
-    return Shape("two_compact_wh", f, b, raw, params=dict(c1=c1, c2=c2, b=b, rho0=rho0, W=W))
+    def hcap(x):
+        d1 = jnp.linalg.norm(x[:3] - jnp.asarray(c1)) - rho0
+        d2 = jnp.linalg.norm(x[:3] - jnp.asarray(c2)) - rho0
+        return jnp.maximum(jnp.minimum(d1, d2), 0.25 * b)
+
+    return Shape("two_compact_wh", f, b, raw, params=dict(c1=c1, c2=c2, b=b, rho0=rho0, W=W), hcap=hcap)
 
 
 # ----------------------------------------------------------------------------------------------
@@ -230,3 +244,44 @@ def all_shapes():
 
 
 SHAPES = {s.name: s for s in all_shapes()}
+
+
+# ----------------------------------------------------------------------------------------------
+# Обёртки для U5 и U6
+
+def reparam(shape: Shape, kind: str) -> Shape:
+    """U5: та же M, другая f: φ(f) с φ(0) = 0, φ′ > 0, или f, умноженная на положительную функцию."""
+    f0 = shape.f
+    fs = {
+        "cubic": lambda p: f0(p) + f0(p) * f0(p) * f0(p),
+        "fexp": lambda p: f0(p) * ops.exp(f0(p)),
+        "mult": lambda p: f0(p) * (1.0 + 0.5 * (p[0] * p[0] + p[1] * p[1] + p[2] * p[2] + p[3] * p[3])),
+    }
+    return Shape(f"{shape.name}/{kind}", fs[kind], shape.scale, shape.sample_raw, shape.planes,
+                 shape.exact, shape.invariants, shape.params, shape.hcap)
+
+
+def random_rotation(seed):
+    """Случайное вращение из SO(4) (QR гауссовой матрицы с исправлением знаков)."""
+    rng = np.random.default_rng(seed)
+    Q, Rm = np.linalg.qr(rng.normal(size=(4, 4)))
+    Q = Q * np.sign(np.diag(Rm))
+    if np.linalg.det(Q) < 0:
+        Q[:, 0] = -Q[:, 0]
+    return Q
+
+
+def transformed(shape: Shape, Q, t) -> Shape:
+    """U6: f′(p) = f(Qᵀ(p − t)), M′ = Q M + t."""
+    Q, t = np.asarray(Q, float), np.asarray(t, float)
+
+    def back(p):
+        d = [p[j] - t[j] for j in range(4)]
+        return tuple(sum(float(Q[j, k]) * d[j] for j in range(4)) for k in range(4))
+
+    def raw(rng, n):
+        return shape.sample_raw(rng, n) @ Q.T + t
+
+    hcap = None if shape.hcap is None else (lambda x: shape.hcap(jnp.asarray(Q.T) @ (x - t)))
+    return Shape(f"{shape.name}/moved", lambda p: shape.f(back(p)), shape.scale, raw, (), None, None,
+                 shape.params, hcap)
