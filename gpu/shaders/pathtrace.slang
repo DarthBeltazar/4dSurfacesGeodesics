@@ -708,6 +708,16 @@ void pt_reset(uint3 id : SV_DispatchThreadID)
 
 bool modea_pixel(uint i) { return gClass[i] == 0 && gFlag[i] == 0; }
 
+// сцены без фона (компактные пространства): режим A не нужен — все пиксели в трассировщик, без прохода камеры
+[shader("compute")] [numthreads(64, 1, 1)]
+void pt_classall(uint3 id : SV_DispatchThreadID)
+{
+    uint i = id.x;
+    if (i >= pp.n) return;
+    gClass[i] = 1;
+    gFlag[i] = 0;
+}
+
 // кадр для денойзера: фон — режим A, остальное — среднее трассировщика; AOV — средние (у фона — цвет фона, нормаль 0)
 [shader("compute")] [numthreads(64, 1, 1)]
 void pt_compose(uint3 id : SV_DispatchThreadID)

@@ -1,0 +1,24 @@
+{
+ "moving": {
+  "total_ms": 36.3253,
+  "graph_ms": 27.7368,
+  "denoise_ms": 6.78618,
+  "post_present_ms": 0.9087,
+  "camera": 14.0056,
+  "lists": 0.629888,
+  "pt": 4.72272,
+  "fallback": 7.23712,
+  "compose": 0.299488,
+  "frames": 75
+ },
+ "static": {
+  "total_ms": 13.87845,
+  "graph_ms": 6.176399999999999,
+  "denoise_ms": 6.76352,
+  "post_present_ms": 0.83305,
+  "pt": 4.79003,
+  "fallback": 0.94472,
+  "compose": 0.30544,
+  "frames": 74
+ }
+}

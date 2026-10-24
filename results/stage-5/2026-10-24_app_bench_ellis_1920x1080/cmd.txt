@@ -1,0 +1,1 @@
+.venv/Scripts/python.exe prototype/scripts/app.py --bench --scene ellis --res 1920x1080 --frames 80 --dump 0,79,159

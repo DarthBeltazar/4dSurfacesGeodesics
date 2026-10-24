@@ -333,7 +333,8 @@ def app_graph(scene: Scene, cam, td, p: GPUPT = GPUPT(), nfb_move=8, speed=1.0, 
           f"pipeline camera {ptc} pt_camera {PT_BIND}",
           f"pipeline shade {md(2, 'modea_shade')} modea_shade cam Dir Dd Status Color Cube",
           f"pipeline detect {md(3, 'modea_detect')} modea_detect cam Dir Dd Status Flag"]
-    for name, entry in [("clear", "pt_clear"), ("lists", "pt_lists"), ("args", "pt_args"), ("ptA", "pt_sample"),
+    background = scene.flat is not None or scene.meta.get("exit") == 1     # компактные пространства — без фона
+    for name, entry in [("classall", "pt_classall"), ("clear", "pt_clear"), ("lists", "pt_lists"), ("args", "pt_args"), ("ptA", "pt_sample"),
                         ("ptB", "pt_sample"), ("reset", "pt_reset"), ("compose", "pt_compose"), ("present", "pt_present")]:
         L.append(f"pipeline {name} {pts(entry)} {entry} {PT_BIND}")
     L += [_push_line("camstep", [("f32", 0)] * 4 + [("f32", 0)] * 3 + [("f32", margin), ("u32", 16)]),
@@ -342,9 +343,12 @@ def app_graph(scene: Scene, cam, td, p: GPUPT = GPUPT(), nfb_move=8, speed=1.0, 
           _push_line("ptA", _push(scene, p, N, env_n, use_list=2, list_id=0, list_off=0)),
           _push_line("ptB", _push(scene, pfb, N, env_n, use_list=2, list_id=1, list_off=N)),
           _push_line("reset", _push(scene, p, N, env_n)), _push_line("compose", _push(scene, p, N, env_n)),
+          _push_line("classall", _push(scene, p, N, env_n)),
           _push_line("present", _push(scene, p, N, env_n, use_den=1, bgra=1)),
-          "section move", "mark start", "dispatch camstep 1 1 1", f"dispatch camera {g} 1 1", "mark camera",
-          f"dispatch shade {g} 1 1", f"dispatch detect {g} 1 1", "dispatch clear 1 1 1", f"dispatch lists {g} 1 1",
+          "section move", "mark start", "dispatch camstep 1 1 1"]
+    L += ([f"dispatch camera {g} 1 1", "mark camera", f"dispatch shade {g} 1 1", f"dispatch detect {g} 1 1"] if background
+          else [f"dispatch classall {g} 1 1", "mark camera"])
+    L += ["dispatch clear 1 1 1", f"dispatch lists {g} 1 1",
           "dispatch args 1 1 1", f"dispatch reset {g} 1 1", "mark lists", "indirect ptA Args 0", "mark pt",
           f"loop {nfb_move}", "indirect ptB Args 12", "endloop", "mark fallback", f"dispatch compose {g} 1 1", "mark compose",
           "section static", "mark start", "indirect ptA Args 0", "mark pt", "indirect ptB Args 12", "mark fallback",

@@ -1,0 +1,1 @@
+.venv/Scripts/python.exe prototype/scripts/app.py --bench --scene torisphere --res 1280x720 --frames 80 --dump 0,79,159
