@@ -68,7 +68,7 @@ gpu\build\geo4d_gpu.exe info                                # устройств
 
 ```sh
 .venv/Scripts/python prototype/scripts/app.py --scene two_wormholes --res 1280x720   # окно; сцены: two_wormholes,
-                                                                                     # ellis, S3, spheritorus, torisphere
+                                                                                     # ellis, S3, tiger (T³), spheritorus, torisphere
 .venv/Scripts/python prototype/scripts/app.py --bench --scene two_wormholes --res 1920x1080   # замер (скрытое окно)
 .venv/Scripts/python prototype/scripts/video.py --res 1920x1080 --spp 64            # ролик (нужен ffmpeg в PATH)
 ```

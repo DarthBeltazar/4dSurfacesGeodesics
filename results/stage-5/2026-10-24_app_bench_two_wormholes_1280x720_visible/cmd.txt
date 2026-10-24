@@ -1,0 +1,1 @@
+.venv/Scripts/python.exe prototype/scripts/app.py --bench --visible --scene two_wormholes --res 1280x720 --frames 40 --dump 5,39,79
