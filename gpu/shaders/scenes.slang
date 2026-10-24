@@ -77,13 +77,16 @@ __generic<T : IReal> T compact_h(T rho, float b, float rho0, float W)
 [[vk::binding(0, 0)]] RWStructuredBuffer<float4> gCam;
 #endif
 static const int MF_BASE = 209;           // OBJ_BASE + 9 + 6·PT_MAXOBJ (geo4d.gpu_pt.MF_BASE)
-int mf_kind() { return int(gCam[MF_BASE].x); }
-int mf_exit() { return int(gCam[MF_BASE].y); }
-#define SCALE (gCam[MF_BASE].z)
-float4 mf_p() { return gCam[MF_BASE + 1]; }
-float3 mf_c1() { return gCam[MF_BASE + 2].xyz; }
-float3 mf_c2() { return gCam[MF_BASE + 3].xyz; }
-float mf_env_scale() { return gCam[MF_BASE + 4].w; }
+#ifndef MF_ROW                            // мегаядро pt_sample читает строки из groupshared (pathtrace.slang)
+#define MF_ROW(i) gCam[MF_BASE + (i)]
+#endif
+int mf_kind() { return int(MF_ROW(0).x); }
+int mf_exit() { return int(MF_ROW(0).y); }
+#define SCALE (MF_ROW(0).z)
+float4 mf_p() { return MF_ROW(1); }
+float3 mf_c1() { return MF_ROW(2).xyz; }
+float3 mf_c2() { return MF_ROW(3).xyz; }
+float mf_env_scale() { return MF_ROW(4).w; }
 __generic<T : IReal> T sdf(T x, T y, T z, T w)
 {
     int k = mf_kind();

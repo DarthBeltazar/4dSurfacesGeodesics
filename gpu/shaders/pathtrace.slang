@@ -6,6 +6,9 @@
 //         5 статистика пикселя (оборванные пути: потолок или попадание с обратной стороны, проходов Jet7, шагов прямой,
 //           сегментов).
 #define PT_OBJECTS 1
+#if PT_STAGE && SCENE == 11
+#define MF_ROW(i) gsObj[OBJ_NROWS + (i)]    // SCENE_DYNAMIC: строки многообразия — в groupshared вслед за объектами
+#endif
 #include "modea.slang"
 #include "pt_scene.slang"
 
@@ -43,9 +46,9 @@ static PTParams pp;                 // cam_step не использует пар
 #endif
 // длина пути, уход (Эллис) и масштаб фона — свойства многообразия: в динамическом варианте (DD-009) — из его строк
 #if SCENE == SCENE_DYNAMIC
-#define PP_S_MAX (gCam[MF_BASE + 5].x)
-#define PP_ELL_MAX (gCam[MF_BASE + 5].y)
-#define PP_ENV_SCALE (gCam[MF_BASE + 4].w)
+#define PP_S_MAX (MF_ROW(5).x)
+#define PP_ELL_MAX (MF_ROW(5).y)
+#define PP_ENV_SCALE (MF_ROW(4).w)
 #else
 #define PP_S_MAX pp.s_max
 #define PP_ELL_MAX pp.ell_max
@@ -89,9 +92,14 @@ static const int OBJ_NROWS = 9 + 6 * PT_MAXOBJ;
 #else
 static const int OBJ_NROWS = 9 + 6 * PT_NOBJ;
 #endif
+#if SCENE == SCENE_DYNAMIC
+static const int GS_ROWS = OBJ_NROWS + 7;   // + строки многообразия (MF_BASE = OBJ_BASE + OBJ_NROWS при PT_DYNAMIC)
+#else
+static const int GS_ROWS = OBJ_NROWS;
+#endif
 #if PT_STAGE
-// мегаядро: строки объектов копируются в groupshared в начале группы (pt_sample)
-groupshared float4 gsObj[OBJ_NROWS];
+// мегаядро: строки объектов (и многообразия) копируются в groupshared в начале группы (pt_sample)
+groupshared float4 gsObj[GS_ROWS];
 #define OBJ_ROW(r) gsObj[(r) - OBJ_BASE]
 #else
 #define OBJ_ROW(r) gCam[r]
@@ -598,7 +606,7 @@ float light_pdf(float4 p, int k)
 void pt_sample(uint3 id : SV_DispatchThreadID, uint3 tid : SV_GroupThreadID)
 {
 #if PT_STAGE
-    for (int r = int(tid.x); r < OBJ_NROWS; r += 64) gsObj[r] = gCam[OBJ_BASE + r];
+    for (int r = int(tid.x); r < GS_ROWS; r += 64) gsObj[r] = gCam[OBJ_BASE + r];
     GroupMemoryBarrierWithGroupSync();
 #endif
     uint n = pp.use_list == 2 ? gCnt[pp.list_id] : pp.n;

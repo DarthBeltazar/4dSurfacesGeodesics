@@ -102,8 +102,8 @@ def scene_header(scene: Scene, dynamic=False) -> str:
          f"#define PT_MAXOBJ {PT_MAXOBJ}", f"#define PT_DYNAMIC {int(dynamic)}"]
     fz = scene.flat
     if dynamic:                    # строки MF_BASE + 2…4 (scenes.slang, SCENE_DYNAMIC)
-        L += ["#define PT_FLAT_DYNAMIC 1", "#define PT_HAS_FLAT (int(gCam[MF_BASE + 4].x))",
-              "#define PT_NBALL (int(gCam[MF_BASE + 4].y))", "#define PT_RHO0 (gCam[MF_BASE + 4].z)",
+        L += ["#define PT_FLAT_DYNAMIC 1", "#define PT_HAS_FLAT (int(MF_ROW(4).x))",
+              "#define PT_NBALL (int(MF_ROW(4).y))", "#define PT_RHO0 (MF_ROW(4).z)",
               "float3 pt_ball_c(int i) { return i == 0 ? mf_c1() : mf_c2(); }"]
         return "\n".join(L) + "\n"
     L.append("#define PT_FLAT_DYNAMIC 0")
