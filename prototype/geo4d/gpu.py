@@ -35,7 +35,8 @@ def _find_slangc():
 SLANGC = _find_slangc()
 
 SCENE_IDS = {"hyperplane": 0, "S3": 1, "S2xR": 2, "S1xR2": 3, "ellipsoid": 4, "spheritorus": 5, "torisphere": 6,
-             "tiger": 7, "ellis": 8, "compact_wh": 9, "two_compact_wh": 10}
+             "tiger": 7, "ellis": 8, "compact_wh": 9, "two_compact_wh": 10,
+             "dynamic": 11}             # DD-009: вид и параметры многообразия — из строк буфера камеры (окно)
 
 
 def available():

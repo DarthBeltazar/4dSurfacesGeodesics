@@ -29,6 +29,8 @@ def _arr(typ, name, rows, n):
 PT_MAXOBJ = 32                     # DD-008: объекты — строки float4 в хвосте буфера камеры (pathtrace.slang, obj_*)
 OBJ_BASE = 8                       # первая строка: (n_obj, n_light, 0, 0), затем 8 строк индексов источников
 OBJ_ROWS = 9 + 6 * PT_MAXOBJ       # объект k — строки 17 + 6k …: центр, вид, PL, альбедо, излучение, граница
+MF_BASE = OBJ_BASE + OBJ_ROWS      # DD-009: строки многообразия (scenes.slang, SCENE_DYNAMIC) — после строк объектов
+MF_ROWS = 7
 
 
 def object_rows(scene: Scene):
@@ -58,26 +60,60 @@ def object_rows(scene: Scene):
     return gpu.f32(R)
 
 
-def pt_camera_buffer(scene: Scene, cam, *args, **kw):
-    """Буфер камеры (gpu_modea.camera_buffer) + строки объектов сцены."""
-    return np.concatenate([camera_buffer(cam, *args, **kw), object_rows(scene)])
+def scene_env(scene: Scene, env=None):
+    """Фон сцены окна: "procedural" | "none" (как geo4d.scenefile.build: по умолчанию — по виду многообразия)."""
+    from .scenefile import COMPACT_SPACES, manifold_of
+    return env or ("none" if manifold_of(scene.shape)[0] in COMPACT_SPACES else "procedural")
+
+
+def manifold_rows(scene: Scene, env=None, p: "GPUPT" = None):
+    """Строки многообразия (MF_ROWS, 4) float32 для динамических шейдеров окна (DD-009, scenes.slang SCENE_DYNAMIC):
+    вид, выход, SCALE, есть ли фон; параметры фигуры; центры шаров кривизны; плоские зоны и масштаб фона;
+    s_max и ℓ_max; строка для нормали камеры (pt_snap). Зеркало — editor.cpp::manifold_rows (проверка mf_check)."""
+    from .scenefile import manifold_of
+    p = p or GPUPT()
+    kind, prm = manifold_of(scene.shape)
+    fz, meta = scene.flat, scene.meta
+    R = np.zeros((MF_ROWS, 4))
+    R[0] = (meta["scene_id"], meta["exit"], scene.shape.scale, float(fz is not None or meta["exit"] == 1))
+    keys = {"S3": ("R",), "spheritorus": ("R", "r"), "torisphere": ("R", "r"), "tiger": ("R1", "R2", "r"),
+            "ellis": ("b",), "compact_wh": ("b", "rho0", "W"), "two_compact_wh": ("b", "rho0", "W")}.get(kind, ())
+    R[1, :len(keys)] = [prm[k] for k in keys]
+    if fz is not None:
+        for i, c in enumerate(fz.centers[:2]):
+            R[2 + i, :3] = c
+        R[4, :3] = 1, len(fz.centers), fz.rho0
+    R[4, 3] = 0.0 if scene_env(scene, env) == "none" else 1.0
+    R[5, :2] = min(p.s_max, meta.get("s_max", p.s_max)), meta.get("ell_max", 0.0)
+    return gpu.f32(R)
+
+
+def pt_camera_buffer(scene: Scene, cam, *args, env=None, **kw):
+    """Буфер камеры (gpu_modea.camera_buffer) + строки объектов и многообразия сцены."""
+    return np.concatenate([camera_buffer(cam, *args, **kw), object_rows(scene), manifold_rows(scene, env)])
 
 
 def scene_header(scene: Scene, dynamic=False) -> str:
     """Плоские зоны (M29) и структура объектов (число, виды, оси полупространств) — при компиляции: циклы по объектам
     разворачиваются, ветви по виду сворачиваются. Параметры объектов (центры, размеры, материалы) — строки object_rows.
-    dynamic — вариант режима редактирования (DD-008): структура тоже из строк, заголовок от объектов не зависит."""
+    dynamic — вариант режима редактирования (DD-008): структура тоже из строк, заголовок от объектов не зависит;
+    плоские зоны — тоже из строк (многообразие задаётся строками, DD-009), заголовок от сцены не зависит вовсе."""
     L = ["// Сгенерировано geo4d.gpu_pt.scene_header из описания сцены прототипа — не редактировать.",
          f"#define PT_MAXOBJ {PT_MAXOBJ}", f"#define PT_DYNAMIC {int(dynamic)}"]
     fz = scene.flat
+    if dynamic:                    # строки MF_BASE + 2…4 (scenes.slang, SCENE_DYNAMIC)
+        L += ["#define PT_FLAT_DYNAMIC 1", "#define PT_HAS_FLAT (int(gCam[MF_BASE + 4].x))",
+              "#define PT_NBALL (int(gCam[MF_BASE + 4].y))", "#define PT_RHO0 (gCam[MF_BASE + 4].z)",
+              "float3 pt_ball_c(int i) { return i == 0 ? mf_c1() : mf_c2(); }"]
+        return "\n".join(L) + "\n"
+    L.append("#define PT_FLAT_DYNAMIC 0")
     if fz is not None:
         L += ["#define PT_HAS_FLAT 1", f"#define PT_NBALL {len(fz.centers)}", f"static const float PT_RHO0 = {_f(fz.rho0)};",
               _arr("float3", "PT_BALL_C", [f"float3({', '.join(_f(a) for a in c)})" for c in fz.centers], len(fz.centers))]
     else:
         L += ["#define PT_HAS_FLAT 0", "#define PT_NBALL 0", "static const float PT_RHO0 = 0;",
               "static const float3 PT_BALL_C[1] = { float3(0) };"]
-    if dynamic:
-        return "\n".join(L) + "\n"
+    L.append("float3 pt_ball_c(int i) { return PT_BALL_C[i]; }")
     objs = scene.objs
     L += [f"#define PT_NOBJ {len(objs)}",
           _arr("int", "PT_ISPLANE", ["1" if o.spec[0] == "plane" else "0" for o in objs], len(objs)),
@@ -162,7 +198,9 @@ def manifold_defines(shape):
     return d
 
 
-def _defs(scene, nj=0):
+def _defs(scene, nj=0, dynamic=False):
+    if dynamic:                    # DD-009: многообразие — из строк буфера камеры (scenes.slang, SCENE_DYNAMIC)
+        return {"SCENE": gpu.SCENE_IDS["dynamic"], "EXIT": 0, "KERNEL": 0, "NJ": nj}
     return {"SCENE": scene.meta["scene_id"], "EXIT": scene.meta["exit"], "KERNEL": 0, "NJ": nj,
             **manifold_defines(scene.shape)}
 
@@ -355,34 +393,40 @@ I_SEED, I_USE_DEN, I_BGRA, I_EXPOSURE = 1, 20, 21, 22     # индексы push-
 
 def app_graph(scene: Scene, cam, td, p: GPUPT = GPUPT(), nfb_move=8, speed=1.0, fmt="bc6h", hidden=False, vsync=False,
               bench=None, margin=0.05, det=None, k_grad=2.0, dumps=(), record=None, editor=None, edits=(), dynamic=False,
-              fullscreen=False):
+              fullscreen=False, dyn_mips=None):
     """Граф интерактивного приложения (DD-007): секции move / edit / static / post / snap и директивы app.
     td — каталог для файлов. bench = (файл сценария, json журнала) — режим замера. editor — dict(scene, work_dir, fov,
     env, python, script, args) для редактора сцен (DD-008): тогда рядом пишется и граф режима редактирования
-    (dynamic — шейдеры без зашитой структуры объектов, app_graph_dyn.txt, директива editgraph). edits — [(кадр, строки
+    (dynamic — шейдеры без зашитой структуры объектов и многообразия, app_graph_dyn.txt, директива editgraph; его
+    кубмапа — dyn_mips, процедурный фон: фон "none" — масштаб 0 в строках многообразия, DD-009). edits — [(кадр, строки
     объектов)] — правки в сценарии замера (проверка: правка = холодный старт). Возвращает путь к графу."""
+    import dataclasses
     from pathlib import Path
     from .gpu import cube_for_gpu
     from .gpu_modea import Detector
     td = Path(td)
     det = det or Detector()
-    cube = cube_for_gpu(np.asarray(scene.mips[0]))
+    env = editor.get("env") if editor else None
+    gsc = dataclasses.replace(scene, mips=dyn_mips) if dynamic and dyn_mips is not None else scene   # фон графа
+    cube = cube_for_gpu(np.asarray(gsc.mips[0]))
     N = cam.width * cam.height
     inc = write_header(scene, dynamic)
-    envb, env_n = env_buffer(scene)
-    ptc = gpu.compile_shader("pathtrace.slang", "pt_camera", _defs(scene, 4), include=inc)
-    pts = lambda e: gpu.compile_shader("pathtrace.slang", e, {**_defs(scene, 0), "PT_STAGE": int(e == "pt_sample")},
-                                       include=inc)
-    cst = gpu.compile_shader("pathtrace.slang", "cam_step", {**_defs(scene), "CAM_STEP": 1}, include=inc)
-    snp = gpu.compile_shader("pathtrace.slang", "pt_snap", {**_defs(scene), "CAM_STEP": 1}, include=inc)
-    md = lambda k, e: gpu.compile_shader("modea.slang", e, {**_defs(scene), "KERNEL": k})
+    envb, env_n = env_buffer(gsc)
+    df = lambda nj=0: _defs(scene, nj, dynamic)
+    ptc = gpu.compile_shader("pathtrace.slang", "pt_camera", df(4), include=inc)
+    pts = lambda e: gpu.compile_shader("pathtrace.slang", e, {**df(), "PT_STAGE": int(e == "pt_sample")}, include=inc)
+    cst = gpu.compile_shader("pathtrace.slang", "cam_step", {**df(), "CAM_STEP": 1}, include=inc)
+    snp = gpu.compile_shader("pathtrace.slang", "pt_snap", {**df(), "CAM_STEP": 1}, include=inc)
+    md = lambda k, e: gpu.compile_shader("modea.slang", e, {**df(), "KERNEL": k})
     g = gpu.groups_for(N)[0]
     pfb = GPUPT(**{**p.__dict__, "seed": p.seed + 7919})
-    np.save(td / "cam.npy", pt_camera_buffer(scene, cam, k_grad, 0.0, det, 0, cube.shape[2]))
-    np.save(td / "env.npy", envb)
-    np.save(td / "cube.npy", gpu.f32(cube))
+    sfx = "_dyn" if dynamic else ""              # у графа режима редактирования — свой фон (процедурный)
+    np.save(td / f"cam{sfx}.npy", pt_camera_buffer(scene, cam, k_grad, 0.0, det, 0, cube.shape[2], env=env))
+    np.save(td / f"env{sfx}.npy", envb)
+    np.save(td / f"cube{sfx}.npy", gpu.f32(cube))
     enc = f" {gpu.compile_shader('bc6h_encode.slang', 'bc6h_encode')}" if fmt == "bc6h" else ""
-    L = [f"buffer cam in {td / 'cam.npy'}", f"buffer Env in {td / 'env.npy'}", f"cube Cube {td / 'cube.npy'} {fmt} 16{enc}"]
+    L = [f"buffer cam in {td / f'cam{sfx}.npy'}", f"buffer Env in {td / f'env{sfx}.npy'}",
+         f"cube Cube {td / f'cube{sfx}.npy'} {fmt} 16{enc}"]
     for name, b in [("Acc", 16 * N), ("Acc2", 16 * N), ("Stats", 16 * N), ("Pix", 8 * N), ("Alb", 16 * N), ("Nrm", 16 * N),
                     ("Dir", 16 * N), ("Dd", 64 * N), ("Status", 4 * N), ("Class", 4 * N), ("Flag", 4 * N), ("Cnt", 16),
                     ("Args", 32), ("Color", 16 * N), ("Present", 4 * N)]:
@@ -407,24 +451,28 @@ def app_graph(scene: Scene, cam, td, p: GPUPT = GPUPT(), nfb_move=8, speed=1.0, 
           _push_line("classall", _push(scene, p, N, env_n)),
           _push_line("present", _push(scene, p, N, env_n, use_den=1, bgra=1))]
     # кадр со сбросом накопления: move — после шага камеры, edit — после правки объектов (камера на месте)
-    body = ([f"dispatch camera {g} 1 1", "mark camera", f"dispatch shade {g} 1 1", f"dispatch detect {g} 1 1"] if background
-            else [f"dispatch classall {g} 1 1", "mark camera"])
-    body += ["dispatch clear 1 1 1", f"dispatch lists {g} 1 1",
-             "dispatch args 1 1 1", f"dispatch reset {g} 1 1", "mark lists", "indirect ptA Args 0", "mark pt",
-             f"loop {nfb_move}", "indirect ptB Args 12", "endloop", "mark fallback", f"dispatch compose {g} 1 1", "mark compose"]
-    L += ["section move", "mark start", "dispatch camstep 1 1 1"] + body + ["section edit", "mark start"] + body
+    def body(bg):
+        b = ([f"dispatch camera {g} 1 1", "mark camera", f"dispatch shade {g} 1 1", f"dispatch detect {g} 1 1"] if bg
+             else [f"dispatch classall {g} 1 1", "mark camera"])
+        return b + ["dispatch clear 1 1 1", f"dispatch lists {g} 1 1", "dispatch args 1 1 1", f"dispatch reset {g} 1 1",
+                    "mark lists", "indirect ptA Args 0", "mark pt", f"loop {nfb_move}", "indirect ptB Args 12", "endloop",
+                    "mark fallback", f"dispatch compose {g} 1 1", "mark compose"]
+    # динамический граф (DD-009): многообразие меняется на лету — обе версии кадра, с фоном и без (_nobg), выбирает хост
+    for sfx_s, bg in ([("", True), ("_nobg", False)] if dynamic else [("", background)]):
+        L += [f"section move{sfx_s}", "mark start", "dispatch camstep 1 1 1"] + body(bg)
+        L += [f"section edit{sfx_s}", "mark start"] + body(bg)
     L += ["section snap", "dispatch snap 1 1 1",
           "section static", "mark start", "indirect ptA Args 0", "mark pt", "indirect ptB Args 12", "mark fallback",
           f"dispatch compose {g} 1 1", "mark compose",
           "section post", f"dispatch present {g} 1 1",
           f"app {cam.width} {cam.height} Present", "denoise Frame AlbF NrmF Den", "campipe camstep",
           f"presentpipe present {I_USE_DEN} {I_BGRA} {I_EXPOSURE}", f"seedpipes {I_SEED} ptA ptB", f"speed {speed}",
-          f"objrows cam {OBJ_BASE}"] + scene_directives(scene)
+          f"objrows cam {OBJ_BASE}", f"mfrows cam {MF_BASE}"] + scene_directives(scene)
     if editor:
         L += editor_directives(scene, editor)
         if not dynamic:
             dyn = app_graph(scene, cam, td, p, nfb_move, speed, fmt, margin=margin, det=det, k_grad=k_grad, editor=editor,
-                            dynamic=True)
+                            dynamic=True, dyn_mips=dyn_mips)
             L.append(f"editgraph {dyn}")
     for k, (fi, rows) in enumerate(edits):
         np.save(td / f"edit_rows_{k}.npy", gpu.f32(rows))

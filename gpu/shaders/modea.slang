@@ -120,7 +120,10 @@ __generic<T : IReal> void compact_dir(T x[4], T v[4], out T d[3])
 
 __generic<T : IReal> void exit_dir(T x[4], T v[4], out T d[3])
 {
-#if EXIT == 1
+#if SCENE == SCENE_DYNAMIC
+    if (mf_exit() == 1) ellis_dir(x, v, d);
+    else compact_dir(x, v, d);
+#elif EXIT == 1
     ellis_dir(x, v, d);
 #else
     compact_dir(x, v, d);
@@ -140,7 +143,9 @@ float3 exit_value(float4 x, float4 v)
 #if KERNEL == 1 && NJ > 0
 
 [[vk::push_constant]] ConstantBuffer<Params> pc;
+#ifndef GCAM_DECLARED
 [[vk::binding(0, 0)]] RWStructuredBuffer<float4> gCam;
+#endif
 [[vk::binding(1, 0)]] RWStructuredBuffer<float4> gDir;     // d∞.xyz, лист (+1/−1)
 [[vk::binding(2, 0)]] RWStructuredBuffer<float4> gDd;      // 4 float4 на пиксель: ∂d∞ по полям (ap_r, ap_u, pix_r, pix_u)
 [[vk::binding(3, 0)]] RWStructuredBuffer<float4> gStats;   // s, nacc, nrej, проходов
@@ -215,7 +220,9 @@ void modea_central(uint3 id : SV_DispatchThreadID)
 
 // ---- оттенение: след M18 → SampleGrad ----------------------------------------------------------
 #if KERNEL == 2
+#ifndef GCAM_DECLARED
 [[vk::binding(0, 0)]] RWStructuredBuffer<float4> gCam;
+#endif
 [[vk::binding(1, 0)]] RWStructuredBuffer<float4> gDir;
 [[vk::binding(2, 0)]] RWStructuredBuffer<float4> gDd;
 [[vk::binding(3, 0)]] RWStructuredBuffer<uint> gStatus;
@@ -255,12 +262,17 @@ void modea_shade(uint3 id : SV_DispatchThreadID)
         float3 gx3 = c.k_grad * sqrt(l1) * a1, gy3 = c.k_grad * sqrt(l2) * a2;
         gColor[i] = gCube.SampleGrad(float4(d, layer), gx3, gy3);
     }
+#if SCENE == SCENE_DYNAMIC
+    gColor[i] *= mf_env_scale();           // фон "none" — кубмапа та же (процедурная), масштаб 0
+#endif
 }
 #endif
 
 // ---- детектор нелинейности M20 -------------------------------------------------------------------
 #if KERNEL == 3
+#ifndef GCAM_DECLARED
 [[vk::binding(0, 0)]] RWStructuredBuffer<float4> gCam;
+#endif
 [[vk::binding(1, 0)]] RWStructuredBuffer<float4> gDir;
 [[vk::binding(2, 0)]] RWStructuredBuffer<float4> gDd;
 [[vk::binding(3, 0)]] RWStructuredBuffer<uint> gStatus;
@@ -308,7 +320,9 @@ void modea_detect(uint3 id : SV_DispatchThreadID)
 // ---- фолбэк: стохастические лучи пикселя (гаусс пикселя и апертуры), мип 0 -------------------------
 #if KERNEL == 4
 [[vk::push_constant]] ConstantBuffer<Params> pc;
+#ifndef GCAM_DECLARED
 [[vk::binding(0, 0)]] RWStructuredBuffer<float4> gCam;
+#endif
 [[vk::binding(1, 0)]] RWStructuredBuffer<uint4> gFb;       // [0] = (число пикселей, spp, seed, 0)
 [[vk::binding(2, 0)]] RWStructuredBuffer<uint> gPix;       // индексы пикселей
 [[vk::binding(3, 0)]] RWStructuredBuffer<float4> gColor;   // по одному на элемент списка

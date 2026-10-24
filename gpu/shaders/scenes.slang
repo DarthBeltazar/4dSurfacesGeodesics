@@ -14,6 +14,7 @@
 #define SCENE_ELLIS 8
 #define SCENE_COMPACT 9
 #define SCENE_TWO_COMPACT 10
+#define SCENE_DYNAMIC 11          // окно, режим редактирования (DD-009): вид и параметры многообразия — из буфера камеры
 
 #ifndef SCENE
 #error "задайте -DSCENE=<id>"
@@ -65,7 +66,53 @@ __generic<T : IReal> T compact_h(T rho, float b, float rho0, float W)
     return (W * W) * psi;
 }
 
-#if SCENE == SCENE_HYPERPLANE
+#if SCENE == SCENE_DYNAMIC
+// Строки многообразия в буфере камеры после строк объектов (geo4d.gpu_pt.manifold_rows, зеркало — editor.cpp):
+//   MF_BASE + 0: (вид = SCENE_*, выход EXIT, SCALE, есть фон)   + 1: параметры (a, b, c) — см. sdf ниже
+//   + 2, + 3: центры c₁, c₂ (шары кривизны плоских зон)          + 4: (есть плоские зоны, число шаров, ρ₀, масштаб фона)
+//   + 5: (s_max, ℓ_max, 0, невязка f камеры)                     + 6: нормаль M в спроецированной точке камеры (pt_snap)
+// Вид одинаков для всех потоков диспетчеризации — ветвление по нему не выбор ветви внутри SDF (M6), а выбор сцены.
+#ifndef GCAM_DECLARED
+#define GCAM_DECLARED
+[[vk::binding(0, 0)]] RWStructuredBuffer<float4> gCam;
+#endif
+static const int MF_BASE = 209;           // OBJ_BASE + 9 + 6·PT_MAXOBJ (geo4d.gpu_pt.MF_BASE)
+int mf_kind() { return int(gCam[MF_BASE].x); }
+int mf_exit() { return int(gCam[MF_BASE].y); }
+#define SCALE (gCam[MF_BASE].z)
+float4 mf_p() { return gCam[MF_BASE + 1]; }
+float3 mf_c1() { return gCam[MF_BASE + 2].xyz; }
+float3 mf_c2() { return gCam[MF_BASE + 3].xyz; }
+float mf_env_scale() { return gCam[MF_BASE + 4].w; }
+__generic<T : IReal> T sdf(T x, T y, T z, T w)
+{
+    int k = mf_kind();
+    float4 p = mf_p();
+    if (k == SCENE_S3) return jlength4(x, y, z, w) - p.x;                                         // R
+    if (k == SCENE_SPHERITORUS) return jlength2(jlength3(x, y, z) - p.x, w) - p.y;                // R, r
+    if (k == SCENE_TORISPHERE) return jlength3(jlength2(x, y) - p.x, z, w) - p.y;                 // R, r
+    if (k == SCENE_TIGER) return jlength2(jlength2(x, y) - p.x, jlength2(z, w) - p.y) - p.z;      // R1, R2, r
+    if (k == SCENE_ELLIS) return jlength3(x, y, z) - p.x * jcosh(w * (1.0 / p.x));                // b
+    if (k == SCENE_COMPACT) return w * w - compact_h(jlength3(x, y, z), p.x, p.y, p.z);           // b, ρ₀, W
+    if (k == SCENE_TWO_COMPACT)                                                                   // b, ρ₀, W; c₁, c₂
+    {
+        float3 c1 = mf_c1(), c2 = mf_c2();
+        T r1 = jlength3(x - c1.x, y - c1.y, z - c1.z), r2 = jlength3(x - c2.x, y - c2.y, z - c2.z);
+        return w * w - (compact_h(r1, p.x, p.y, p.z) + compact_h(r2, p.x, p.y, p.z) - p.z * p.z);
+    }
+    return w;                                                                                     // гиперплоскость
+}
+float hcap(float4 q)
+{
+    int k = mf_kind();
+    float4 p = mf_p();
+    if (k == SCENE_ELLIS) return 0.5 * length(q.xyz);
+    if (k == SCENE_COMPACT) return max(length(q.xyz) - p.y, 0.25 * p.x);
+    if (k == SCENE_TWO_COMPACT) return max(min(length(q.xyz - mf_c1()), length(q.xyz - mf_c2())) - p.y, 0.25 * p.x);
+    return SCALE;
+}
+
+#elif SCENE == SCENE_HYPERPLANE
 static const float SCALE = 1.0;
 __generic<T : IReal> T sdf(T x, T y, T z, T w) { return w; }
 float hcap(float4 p) { return SCALE; }
@@ -127,4 +174,8 @@ __generic<T : IReal> T sdf(T x, T y, T z, T w)
 float hcap(float4 p) { return max(min(length(p.xyz - MF_C1), length(p.xyz - MF_C2)) - MF_RHO0, 0.25 * MF_B); }
 #endif
 
+#if SCENE == SCENE_DYNAMIC
+#define ALPHA (0.1 / SCALE)
+#else
 static const float ALPHA = 0.1 / SCALE;
+#endif

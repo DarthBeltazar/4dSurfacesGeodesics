@@ -101,7 +101,7 @@ def main():
                           python=Path(sys.executable).as_posix(), script=Path(__file__).resolve().as_posix(),
                           args=["--res", a.res, "--cube", str(a.cube)] + (["--vsync"] if a.vsync else []))
         graph = G.app_graph(sc, cam, td, speed=speed, hidden=a.bench and not a.visible, vsync=a.vsync, bench=bench,
-                            dumps=dumps, editor=editor, fullscreen=a.fullscreen and not a.bench)
+                            dumps=dumps, editor=editor, fullscreen=a.fullscreen and not a.bench, dyn_mips=mips)
         switch = ()
         if a.bench and a.edit_mode:
             switch = (1, len(script) - 3)

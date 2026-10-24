@@ -41,7 +41,19 @@ struct PTParams
 #else
 static PTParams pp;                 // cam_step не использует параметры трассировщика
 #endif
+// длина пути, уход (Эллис) и масштаб фона — свойства многообразия: в динамическом варианте (DD-009) — из его строк
+#if SCENE == SCENE_DYNAMIC
+#define PP_S_MAX (gCam[MF_BASE + 5].x)
+#define PP_ELL_MAX (gCam[MF_BASE + 5].y)
+#define PP_ENV_SCALE (gCam[MF_BASE + 4].w)
+#else
+#define PP_S_MAX pp.s_max
+#define PP_ELL_MAX pp.ell_max
+#define PP_ENV_SCALE pp.env_scale
+#endif
+#ifndef GCAM_DECLARED
 [[vk::binding(0, 0)]] RWStructuredBuffer<float4> gCam;
+#endif
 [[vk::binding(1, 0)]] RWStructuredBuffer<float4> gAcc;
 [[vk::binding(2, 0)]] RWStructuredBuffer<float4> gAcc2;
 [[vk::binding(3, 0)]] RWStructuredBuffer<float> gEnv;
@@ -187,11 +199,15 @@ float pt_hit_floor(float4 x) { return ulp_floor(x); }
 
 // радиус шара кривизны с допуском float32 — один и тот же во всех проверках (иначе луч, отданный интегратором на
 // границе ρ ≈ ρ₀(1 − 1e-6), считался задевающим шар и летел до s_max)
+#if PT_FLAT_DYNAMIC
+#define RHO_IN (PT_RHO0 * (1 - 1e-5))
+#else
 static const float RHO_IN = PT_RHO0 * (1 - 1e-5);
+#endif
 
 bool in_flat(float4 x)
 {
-    for (int i = 0; i < PT_NBALL; i++) if (length(x.xyz - PT_BALL_C[i]) < RHO_IN) return false;
+    for (int i = 0; i < PT_NBALL; i++) if (length(x.xyz - pt_ball_c(i)) < RHO_IN) return false;
     return PT_HAS_FLAT != 0;
 }
 
@@ -199,7 +215,7 @@ bool ray_clear_balls(float4 x, float4 d)
 {
     for (int i = 0; i < PT_NBALL; i++)
     {
-        float3 q = x.xyz - PT_BALL_C[i];
+        float3 q = x.xyz - pt_ball_c(i);
         float t = max(-dot(q, d.xyz) / dot(d.xyz, d.xyz), 0.0);
         if (length(q + t * d.xyz) < RHO_IN) return false;
     }
@@ -211,7 +227,7 @@ bool seg_clear_balls(float4 x, float4 y)
     float3 d = y.xyz - x.xyz;
     for (int i = 0; i < PT_NBALL; i++)
     {
-        float3 q = x.xyz - PT_BALL_C[i];
+        float3 q = x.xyz - pt_ball_c(i);
         float t = clamp(-dot(q, d) / max(dot(d, d), 1e-30), 0.0, 1.0);
         if (length(q + t * d) < RHO_IN) return false;
     }
@@ -224,7 +240,7 @@ float ball_entry(float4 x, float4 d)
     float tb = 1e30;
     for (int i = 0; i < PT_NBALL; i++)
     {
-        float3 q = x.xyz - PT_BALL_C[i];
+        float3 q = x.xyz - pt_ball_c(i);
         float b = dot(q, d.xyz), c = dot(q, q) - RHO_IN * RHO_IN;
         float disc = b * b - c;
         if (disc > 0) { float t = -b - sqrt(disc); if (t >= 0) tb = min(tb, t); }
@@ -254,8 +270,8 @@ bool pt_escape(float4 x, float4 v)
     if (!in_flat(x)) return false;
     int ib = 0;
     float best = 1e30;
-    for (int i = 0; i < PT_NBALL; i++) { float d = length(x.xyz - PT_BALL_C[i]); if (d < best) { best = d; ib = i; } }
-    return dot(x.xyz - PT_BALL_C[ib], v.xyz) > 0;
+    for (int i = 0; i < PT_NBALL; i++) { float d = length(x.xyz - pt_ball_c(i)); if (d < best) { best = d; ib = i; } }
+    return dot(x.xyz - pt_ball_c(ib), v.xyz) > 0;
 }
 
 // отрезок x + t d, t ∈ (0, tmax) задевает объект (кроме skip)? Полупространства — аналитически, остальное — sphere tracing
@@ -407,7 +423,7 @@ uint flat_flight(inout float4 x, float4 v, inout float s, out int k, inout uint 
         x += step * v;
         s += step;
         tp -= step;
-        if (s > pp.s_max) return 3;
+        if (s > PP_S_MAX) return 3;
     }
     return 3;
 }
@@ -421,8 +437,8 @@ uint trace_segment(inout float4 x, inout float4 v, out float s, out int k, float
     k = -1;
     straight = in_flat(x);
     Params p;
-    p.n = 1; p.tol = tol; p.h0 = 0.05 * SCALE; p.s_max = pp.s_max; p.h_max = 0; p.h_min = 1e-7; p.n_max = pp.n_max;
-    p.escape_mode = PT_HAS_FLAT != 0 ? 3 : 1; p.escape_param = pp.ell_max; p.alpha = -1; p.xscale = 0; p.fixed = 0;
+    p.n = 1; p.tol = tol; p.h0 = 0.05 * SCALE; p.s_max = PP_S_MAX; p.h_max = 0; p.h_min = 1e-7; p.n_max = pp.n_max;
+    p.escape_mode = PT_HAS_FLAT != 0 ? 3 : 1; p.escape_param = PP_ELL_MAX; p.alpha = -1; p.xscale = 0; p.fixed = 0;
     uint nst = 0;
     for (int part = 0; part < 64; part++)
     {
@@ -440,7 +456,7 @@ uint trace_segment(inout float4 x, inout float4 v, out float s, out int k, float
         st.x = x; st.v = v;
         st.s = 0; st.h = 0; st.nacc = 0; st.nrej = 0; st.npass = 0; st.status = RUNNING;
         st.mix = 1e30; st.transport = transport ? 1 : 0; st.wr = wr; st.wu = wu;
-        p.s_max = pp.s_max - s;
+        p.s_max = PP_S_MAX - s;
         trace_ray(st, p);
         wr = st.wr; wu = st.wu;
         stats.y += st.npass;
@@ -559,7 +575,7 @@ float3 env_radiance(float3 d, float4 x, float gb)
         Cam c = load_cam(gCam);
         lod = max(log2(gb / (PI / (2 * c.cube_n))), 0.0);
     }
-    return gCube.SampleLevel(float4(d, x.w < 0 ? 1 : 0), lod).rgb * pp.env_scale;
+    return gCube.SampleLevel(float4(d, x.w < 0 ? 1 : 0), lod).rgb * PP_ENV_SCALE;
 }
 
 // ---- сферические источники ------------------------------------------------------------------------
@@ -837,7 +853,7 @@ uint flat_flight_E(inout float4 x, float4 v, inout float s, inout Fields E, inou
         s += t;
         [ForceUnroll] for (int j = 0; j < 4; j++) E.J[j] += t * E.Jp[j];
         if (tb <= step) return 2;
-        if (s > pp.s_max) return 3;
+        if (s > PP_S_MAX) return 3;
     }
     return 3;
 }
@@ -863,8 +879,8 @@ void pt_camera(uint3 id : SV_DispatchThreadID)
     g_fp_pix = 3 * c.sigma_pix; g_fp_ap = 3 * c.sigma_ap;
     g_c_hit = pp.c_hit; g_w0 = 0; g_gamma = c.theta_pix;
     Params p;
-    p.n = 1; p.tol = min(pp.tol_max, pp.tol_kappa * c.theta_pix); p.h0 = 0.05 * SCALE; p.s_max = pp.s_max; p.h_max = 0;
-    p.h_min = 1e-7; p.n_max = pp.n_max; p.escape_mode = PT_HAS_FLAT != 0 ? 3 : 1; p.escape_param = pp.ell_max;
+    p.n = 1; p.tol = min(pp.tol_max, pp.tol_kappa * c.theta_pix); p.h0 = 0.05 * SCALE; p.s_max = PP_S_MAX; p.h_max = 0;
+    p.h_min = 1e-7; p.n_max = pp.n_max; p.escape_mode = PT_HAS_FLAT != 0 ? 3 : 1; p.escape_param = PP_ELL_MAX;
     p.alpha = -1; p.xscale = 0; p.fixed = 0;
     float4 x = c.x, v = d0;
     float s = 0, mix = 1e30;
@@ -884,7 +900,7 @@ void pt_camera(uint3 id : SV_DispatchThreadID)
         st.x = x; st.v = v; st.E = E;
         st.s = 0; st.h = 0; st.nacc = 0; st.nrej = 0; st.npass = 0; st.status = RUNNING;
         st.mix = 1e30; st.transport = 0; st.wr = float4(0); st.wu = float4(0);
-        p.s_max = pp.s_max - s;
+        p.s_max = PP_S_MAX - s;
         trace_ray(st, p);
         stats.y += st.npass;
         mix = min(mix, st.mix);
@@ -927,7 +943,7 @@ void pt_camera(uint3 id : SV_DispatchThreadID)
 #ifdef CAM_STEP
 struct CamMove
 {
-    float4 move;        // (a, b, c, 0): перемещение a·f + b·r + c·u
+    float4 move;        // (a, b, c, 0): перемещение a·f + b·r + c·u; pt_snap: w ≠ 0 — спроецировать и камеру
     float4 rot;         // (рыскание, тангаж, крен, margin столкновений)
     uint substeps;
 };
@@ -984,5 +1000,18 @@ void pt_snap(uint3 id : SV_DispatchThreadID)
         for (int it = 0; it < 30; it++) { Eval e = rhs7(x, float4(0), 0.0); x -= e.f * e.g / dot(e.g, e.g); }
         if (all(isfinite(x))) gCam[row] = x;
     }
+#if SCENE == SCENE_DYNAMIC
+    // смена многообразия в окне (DD-009): точка камеры — на M (M3, Ньютон по ∇f); нормаль — в строку MF_BASE + 6,
+    // невязка f — в MF_BASE + 5.w; касательный базис по подсказкам f, u, r строит хост (как geo4d.camera.make_camera)
+    if (cm.move.w != 0)
+    {
+        float4 x = gCam[0];
+        for (int it = 0; it < 30; it++) { Eval e = rhs7(x, float4(0), 0.0); x -= e.f * e.g / dot(e.g, e.g); }
+        Eval e = rhs7(x, float4(0), 0.0);
+        gCam[0] = x;
+        gCam[MF_BASE + 6] = e.g / length(e.g);
+        gCam[MF_BASE + 5].w = e.f;
+    }
+#endif
 }
 #endif
