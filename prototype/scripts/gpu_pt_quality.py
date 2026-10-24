@@ -2,7 +2,9 @@
 4096 spp при tol 1e-4 без роста допуска и мипов.
 1. Смещение от роста допуска с конусом (M30) и мипов фона по конусу (M31): PSNR, z среднего по кадру, проходы, мс.
 2. Денойзер OptiX: PSNR шумного и денойзенного кадра при 1/4/16/64 spp; без AOV / +альбедо / +альбедо+нормаль.
-3. Кадр целиком (фон — режим A) против эталона."""
+3. Кадр целиком (фон — режим A) против эталона.
+4. Выдаваемый кадр: граф (фон — режим A, остальное — трассировщик) → денойзер → пиксели фона режима A
+   восстанавливаются; PSNR по кадру и по полосе ±2 px у границ «режим A / трассировщик» (ореолы денойзера)."""
 import json
 import sys
 from pathlib import Path
@@ -60,6 +62,26 @@ def main():
     fr = G.render_frame(sc, cam, 64, G.GPUPT(seed=7), nfb=64)
     bg = fr["cls"] == 0
     res["frame"] = dict(bg_psnr=psnr(fr["color"][bg], ref[bg]), frac_bg=float(bg.mean()), frac_fb=float(fr["flags"].mean()))
+    deliv = []
+    for spp, nfb in [(1, 8), (64, 64)]:
+        g = G.render_frame_graph(sc, cam, spp, G.GPUPT(seed=50 + spp), nfb=nfb, fmt="rgba32f")
+        alb, nrm = g["aov"]
+        d, _ = gpu.denoise(g["color"].reshape(H, W, 3), alb.reshape(H, W, 3), nrm.reshape(H, W, 3))
+        img = d.reshape(-1, 3).astype(np.float64)
+        keep = (g["cls"] == 0) & ~g["flags"]                   # фон режима A — точный, не из денойзера
+        img[keep] = g["color"][keep]
+        k2 = keep.reshape(H, W)
+        band = np.zeros_like(k2)
+        for dy in range(-2, 3):
+            for dx in range(-2, 3):
+                band |= k2 != np.roll(np.roll(k2, dy, 0), dx, 1)
+        band = band.ravel()
+        deliv.append(dict(spp=spp, nfb=nfb, noisy=psnr(g["color"], ref), delivered=psnr(img, ref),
+                          band=psnr(img[band], ref[band]), band_noisy=psnr(g["color"][band], ref[band]),
+                          traced_interior=psnr(img[~keep & ~band], ref[~keep & ~band]), frac_band=float(band.mean())))
+        print(json.dumps(deliv[-1]), flush=True)
+        plt.imsave(out / f"delivered_{spp}spp.png", tonemap01(img.reshape(H, W, 3)))
+    res["delivered"] = deliv
     plt.imsave(out / "reference.png", tonemap01(ref.reshape(H, W, 3)))
     plt.imsave(out / "classes.png", fr["cls"].reshape(H, W), cmap="viridis", vmin=0, vmax=2)
     (out / "results.json").write_text(json.dumps(res, indent=1), encoding="utf-8")
@@ -71,7 +93,12 @@ def main():
     L += ["", "| spp | шумный | денойз: цвет | + альбедо | + альбедо + нормаль |", "|---|---|---|---|---|"]
     L += [f"| {r['spp']} | {r['noisy']:.1f} | {r['color']:.1f} | {r['albedo']:.1f} | {r['albedo_normal']:.1f} |" for r in den]
     L += ["", f"Кадр (64 spp, фон — режим A): фон {100 * res['frame']['frac_bg']:.0f} % пикселей, PSNR фона против эталона "
-          f"{res['frame']['bg_psnr']:.1f} дБ; на фолбэке {100 * res['frame']['frac_fb']:.1f} %."]
+          f"{res['frame']['bg_psnr']:.1f} дБ; на фолбэке {100 * res['frame']['frac_fb']:.1f} %.", "",
+          "Выдаваемый кадр (денойзер + фон режима A), PSNR против эталона, дБ:", "",
+          "| spp / фолбэк | шумный кадр | выдаваемый кадр | полоса ±2 px у границ: шумный / выдаваемый | трассированные вне полосы | доля полосы |",
+          "|---|---|---|---|---|---|"]
+    L += [f"| {r['spp']} / {r['nfb']} | {r['noisy']:.1f} | {r['delivered']:.1f} | {r['band_noisy']:.1f} / {r['band']:.1f} | "
+          f"{r['traced_interior']:.1f} | {100 * r['frac_band']:.1f} % |" for r in deliv]
     (out / "table.md").write_text("\n".join(L) + "\n", encoding="utf-8")
     print("\n".join(L))
 
