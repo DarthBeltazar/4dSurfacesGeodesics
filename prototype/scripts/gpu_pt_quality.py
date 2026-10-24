@@ -39,7 +39,7 @@ def main():
         ms = float(np.median([t / 1e6 for r in rep for t in r["times_ns"]]))
         sweep.append(dict(k_cone=kc, k_lod=kl, psnr=psnr(m, ref), img_z=float((m.mean() - ref.mean()) / np.sqrt((v + vref).sum() / m.size ** 2)),
                           rel=float(m.mean() / ref.mean() - 1), var_ratio=float(v.mean() / vref.mean()),
-                          passes=float((st[:, 1] % 1e6).sum() / (W * H * NREF)), ms_per_spp=ms))
+                          passes=float(st[:, 1].sum() / (W * H * NREF)), ms_per_spp=ms))
         print(json.dumps(sweep[-1]), flush=True)
     res["cone_sweep"] = sweep
     den = []

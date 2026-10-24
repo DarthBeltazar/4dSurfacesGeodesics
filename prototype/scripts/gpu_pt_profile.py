@@ -1,6 +1,6 @@
 """Этап 4 (DD-005, план проверки п. 11): профиль кадра режима B на GPU — 1080p и 4K, «интерактив» (1 spp, фолбэк 8)
 и «финал» (64 spp, фолбэк 64) + денойзер OptiX. Кадр — один командный буфер (geo4d_gpu graph), 4 прогона, время по
-меткам — медиана прогонов 2–4 (первый — прогрев частот GPU). Денойзер — отдельно (OptiX через CUDA, медиана 5 вызовов),
+меткам — медиана прогонов после первой трети (прогрев частот GPU; интерактив — 12 прогонов, финал — 4). Денойзер — отдельно (OptiX через CUDA, медиана 5 вызовов),
 без пересылок хост↔GPU. Доли классов пикселей, проходов Jet7 на путь, регистры."""
 import argparse
 import json
@@ -55,8 +55,9 @@ def main():
         for W, H in [(1920, 1080), (3840, 2160)]:
             sc, cam = setup(name, W, H, mips)
             for mode, spp, nfb in [("interactive", 1, 8), ("final", 64, 64)]:
-                fr = G.render_frame_graph(sc, cam, spp, p, nfb=nfb, fmt=a.fmt, repeat=4)
-                runs = fr["report"]["runs"][1:]
+                nrep = 12 if mode == "interactive" else 4
+                fr = G.render_frame_graph(sc, cam, spp, p, nfb=nfb, fmt=a.fmt, repeat=nrep)
+                runs = fr["report"]["runs"][nrep // 3:]
                 t = {k: float(np.median([rr[k] for rr in runs])) / 1e6 for k in runs[0] if k != "start"}
                 alb, nrm = fr["aov"]
                 den, drep = gpu.denoise(fr["color"].reshape(H, W, 3), alb.reshape(H, W, 3), nrm.reshape(H, W, 3), repeat=5)
@@ -66,14 +67,14 @@ def main():
                 final = den.reshape(-1, 3).copy()
                 final[bg & ~fr["flags"]] = fr["color"][bg & ~fr["flags"]]     # фон режима A — точный, не из денойзера
                 st = fr["stats"]
-                npath = max((cls != 0).sum() * spp * 4, 1)             # статистика накоплена за 4 прогона
+                npath = max((cls != 0).sum() * spp * nrep, 1)          # статистика накоплена за все прогоны
                 regs_pt = fr["report"]["stats"].get("ptA:CS/Register Count", "?")
                 regs_cam = fr["report"]["stats"].get("camera:CS/Register Count", "?")
                 row = dict(scene=name, res=f"{W}x{H}", mode=mode, spp=spp, nfb=nfb,
                            camera_ms=t["camera"], modea_ms=t["modea"], lists_ms=t["lists"], pt_ms=t["pt"],
                            fallback_ms=t.get("fallback", 0.0), denoise_ms=dn_ms,
                            frac_bg=float(bg.mean()), frac_obj=float((cls == 1).mean()), frac_mixed=float((cls == 2).mean()),
-                           frac_fb=float(fr["flags"].mean()), passes_per_path=float((st[cls != 0, 1] % 1e6).sum() / npath),
+                           frac_fb=float(fr["flags"].mean()), passes_per_path=float(st[cls != 0, 1].sum() / npath),
                            flat_steps_per_path=float(st[cls != 0, 2].sum() / npath),
                            capped_frac=float(st[cls != 0, 0].sum() / npath), regs_pt=regs_pt, regs_camera=regs_cam,
                            occ_pt=occupancy(regs_pt), occ_camera=occupancy(regs_cam))

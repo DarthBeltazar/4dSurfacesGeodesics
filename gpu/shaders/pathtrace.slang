@@ -3,7 +3,8 @@
 // Сцена: -DSCENE=<id> (многообразие, scenes.slang), -DEXIT=1|2 (modea.slang), объекты/материалы/источники/плоские
 // зоны — сгенерированный pt_scene.slang (geo4d.gpu_pt.scene_header, каталог через -I).
 // Буферы: 0 камера (Cam), 1 Σ цвет и число сэмплов, 2 Σ квадратов, 3 таблица выборки фона (M29), 4 кубмапа-массив,
-//         5 статистика пикселя (оборванные пути, проходов Jet7 + 1e6·попаданий с обратной стороны, шагов прямой, сегментов).
+//         5 статистика пикселя (оборванные пути: потолок или попадание с обратной стороны, проходов Jet7, шагов прямой,
+//           сегментов).
 #define PT_OBJECTS 1
 #include "modea.slang"
 #include "pt_scene.slang"
@@ -552,7 +553,7 @@ void pt_sample(uint3 id : SV_DispatchThreadID)
         float4 n, ng, t1, t2;
         shading_frame(k, x, n, ng, t1, t2);
         float3 wo = float3(dot(-v, t1), dot(-v, t2), dot(-v, ng));
-        if (wo.z <= 0) { stats.y += 1e6; break; }         // попадание с обратной стороны (счётчик в статистике)
+        if (wo.z <= 0) { stats.x += 1; break; }           // попадание с обратной стороны — обрыв (как потолок шагов)
         float3 alb = MAT_A[k].rgb;
         float rough = MAT_E[k].w;
         bool flat_here = PT_HAS_FLAT != 0 && in_flat(x);

@@ -36,7 +36,7 @@ def test_gpu_furnace(name):
     z = np.where(var > 0, (m - 1) / np.sqrt(np.maximum(var, 1e-30)), 0)
     assert abs((m.mean() - 1) / np.sqrt(var.sum() / m.size ** 2 + 1e-30)) < 4
     assert np.abs(z).max() < 5
-    assert (st[:, 1] // 1e6).sum() < 1e-3 * 2048 * m.shape[0]   # попадания с обратной стороны (скользящие) — редки
+    assert st[:, 0].sum() < 5e-3 * 2048 * m.shape[0]          # обрывы (потолок, попадание с обратной стороны) — редки
 
 
 def test_gpu_mis_consistent():
