@@ -60,3 +60,28 @@ def test_gpu_vs_prototype(name, spp):
     b, vb, _, _ = G.render(sc, cam, 32768, G.GPUPT(**TOL))
     assert abs(_img_z(a, va, b, vb)) < 4
     assert np.mean(np.abs(a - b) > 4 * np.sqrt(va + vb)) <= 0.05
+
+
+def test_camera_pass_classes():
+    """Проход камеры: класс «объект» ⇔ центральный луч попал (сверка с альбедо AOV трассировщика: у ушедших в фон
+    первичных лучей альбедо = цвет фона, у попавших — альбедо материала); фон режима A близок к трассировщику."""
+    from geo4d.modea import psnr
+    sc = PT.scene_two_wormholes()
+    cam = make_camera(sc.shape, np.array([0, -11.0, 0.5, 1.5]), np.array([0, 1.0, -0.12, 0]), np.array([0, 0, 1.0, 0]),
+                      fov=75, width=96, height=54)
+    fr = G.render_frame(sc, cam, 64, nfb=256)
+    cls = fr["cls"]
+    assert set(np.unique(cls)) <= {0, 1, 2} and (cls == 0).mean() > 0.2 and (cls == 1).mean() > 0.3
+    ref, _, _, _ = G.render(sc, cam, 4096)
+    bg = cls == 0
+    assert psnr(fr["color"][bg], ref[bg]) > 34          # фон режима A против трассировки; ошибка — фильтр фона (ADR-0005)
+
+
+def test_denoise_improves():
+    sc, cam = _setup("two_wormholes", 64)
+    ref, _, _, _ = G.render(sc, cam, 4096)
+    m, _, _, _ = G.render(sc, cam, 4, G.GPUPT(seed=5))
+    alb, nrm = G.render.aov
+    d, rep = gpu.denoise(m.reshape(64, 64, 3), alb.reshape(64, 64, 3), nrm.reshape(64, 64, 3))
+    from geo4d.modea import psnr
+    assert psnr(d.reshape(-1, 3), ref) > psnr(m, ref) + 5

@@ -16,6 +16,19 @@ add_executable(geo4d_gpu
   src/job.cpp
   src/graph.cpp
 )
+
+# Денойзер OptiX (DD-005, ADR-0007): заголовки optix-dev скачиваются при сборке (лицензия NVIDIA SDK — не в репозиторий),
+# библиотека — в драйвере; вместо CUDA Toolkit — шим src/cuda_min/cuda.h и динамическая загрузка nvcuda.dll.
+option(GEO4D_OPTIX "Денойзер OptiX" ON)
+if(GEO4D_OPTIX)
+  include(FetchContent)
+  FetchContent_Declare(optix_dev GIT_REPOSITORY https://github.com/NVIDIA/optix-dev.git GIT_TAG v9.1.0 GIT_SHALLOW TRUE)
+  FetchContent_MakeAvailable(optix_dev)
+  target_sources(geo4d_gpu PRIVATE src/denoise.cpp)
+  target_include_directories(geo4d_gpu PRIVATE "${optix_dev_SOURCE_DIR}/include" src/cuda_min)
+  target_compile_definitions(geo4d_gpu PRIVATE GEO4D_OPTIX=1)
+  target_link_libraries(geo4d_gpu PRIVATE cfgmgr32)
+endif()
 target_include_directories(geo4d_gpu PRIVATE
   "${VK_SDK}/Include"
   "${VK_SDK}/Include/Volk"

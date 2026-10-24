@@ -121,3 +121,25 @@ def cube_for_gpu(cube_bordered):
     """Кубмапа прототипа (листы, 6, N+2, N+2, 3) с рамкой → без рамки (листы, 6, N, N, 3) float32 для GPU
     (выборка куба в Vulkan бесшовная — рамка не нужна, DD-004 п. 8)."""
     return f32(np.asarray(cube_bordered)[:, :, 1:-1, 1:-1])
+
+
+def denoise(color, albedo=None, normal=None, repeat=1):
+    """Денойзер OptiX (geo4d_gpu denoise, DD-005 п. 5): color (H, W, 3|4), AOV той же формы. -> (H, W, 3), отчёт."""
+    def rgba(a):
+        a = np.asarray(a, np.float32)
+        return np.ascontiguousarray(np.concatenate([a[..., :3], np.ones(a.shape[:-1] + (1,), np.float32)], -1))
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        lines = [f"color {td / 'c.npy'}", f"output {td / 'o.npy'}", f"repeat {repeat}", f"report {td / 'r.json'}"]
+        np.save(td / "c.npy", rgba(color))
+        if albedo is not None:
+            np.save(td / "a.npy", rgba(albedo))
+            lines.append(f"albedo {td / 'a.npy'}")
+        if normal is not None:
+            np.save(td / "n.npy", rgba(normal))
+            lines.append(f"normal {td / 'n.npy'}")
+        (td / "job.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
+        r = subprocess.run([str(EXE), "denoise", str(td / "job.txt")], capture_output=True, text=True)
+        if r.returncode != 0:
+            raise RuntimeError(f"geo4d_gpu denoise: {r.stdout}\n{r.stderr}")
+        return np.load(td / "o.npy")[..., :3], json.loads((td / "r.json").read_text(encoding="utf-8"))
