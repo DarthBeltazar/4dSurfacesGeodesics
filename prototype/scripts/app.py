@@ -7,8 +7,8 @@
 Управление: W/S, A/D — вперёд/вбок; Q/E — вниз/вверх; ЛКМ — захват мыши (взгляд); стрелки; Z/C — крен; Shift — ×4;
 R — денойзер вкл/выкл; Esc — выход. Сцены: two_wormholes, ellis, S3, spheritorus, torisphere.
 
-Замер (--bench): 60 кадров полёта вперёд (у сцены 3 — сквозь горловину c₁ на нижний лист), затем 60 кадров покоя
-(накопление); журнал времени — results/stage-5/<дата>_app_bench_<сцена>_<разрешение>/frames.json."""
+Замер (--bench): 60 кадров покоя на стартовом виде (накопление), затем 60 кадров полёта (у сцены 3 — сквозь
+горловину c₁ на нижний лист); журнал времени — results/stage-5/<дата>_app_bench_<сцена>_<разрешение>/frames.json."""
 import argparse
 import json
 import subprocess
@@ -47,11 +47,12 @@ def main():
             from geo4d.results import new_run
             out = new_run(5, f"app_bench_{a.scene}_{W}x{H}", dict(vars(a), gpupt=G.GPUPT().__dict__,
                                                                   slangc=gpu.slangc_version()))
+            # сначала покой на стартовом виде (накопление), затем полёт
+            script = [[0, 0, 0, 0, 0, 0]] * a.frames
             if a.scene == "two_wormholes":     # к горловине c₁ = (−4, 0, 0): поворот налево, затем вперёд сквозь неё
-                script = [[0, 0, 0, -0.0175, 0.0, 0]] * 20 + [[0.25, 0, 0, 0, 0.0, 0]] * (a.frames - 20)
+                script += [[0, 0, 0, -0.0175, 0.0, 0]] * 20 + [[0.25, 0, 0, 0, 0.0, 0]] * (a.frames - 20)
             else:
-                script = [[0.05 * speed, 0, 0, 0.005, 0.002, 0]] * a.frames
-            script += [[0, 0, 0, 0, 0, 0]] * a.frames
+                script += [[0.05 * speed, 0, 0, 0.005, 0.002, 0]] * a.frames
             np.savetxt(td / "script.txt", np.array(script), fmt="%.6f")
             bench = (td / "script.txt", out / "frames.json")
         dumps = [(int(f), (out or td).as_posix()) for f in a.dump.split(",") if f] if a.bench else ()
@@ -61,7 +62,7 @@ def main():
             raise RuntimeError(f"geo4d_gpu app: {r.stdout}\n{r.stderr}")
     if out is not None:
         fr = json.loads((out / "frames.json").read_text(encoding="utf-8"))
-        mv = [f for f in fr[5:] if f["moving"]]
+        mv = [f for f in fr[1:] if f["moving"]][5:]
         st = [f for f in fr if not f["moving"]][5:]
         keys = ["total_ms", "graph_ms", "denoise_ms", "post_present_ms", "camera", "lists", "pt", "fallback", "compose"]
         summ = {}
