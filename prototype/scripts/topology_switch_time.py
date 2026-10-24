@@ -3,7 +3,7 @@
 (сразу, шейдеры SCENE_DYNAMIC), кадры 6…frames−1 — покой в режиме редактирования, затем выход (перегенерация быстрых
 шейдеров в Python, ожидание) и покой на быстрых.
 
-    python prototype/scripts/topology_switch_time.py --res 1280x720 --frames 30"""
+    python prototype/scripts/topology_switch_time.py --res 1280x720 --frames 90"""
 import argparse
 import json
 import subprocess
@@ -24,7 +24,7 @@ APP = Path(__file__).resolve().parent / "app.py"
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--res", default="1280x720")
-    ap.add_argument("--frames", type=int, default=30)
+    ap.add_argument("--frames", type=int, default=90)
     ap.add_argument("--targets", default="S3,ellis,tiger,hyperplane")
     ap.add_argument("--cube", type=int, default=512)
     ap.add_argument("--tag", default="")
@@ -54,8 +54,9 @@ def main():
         fr = json.loads((td / "frames.json").read_text(encoding="utf-8"))
         apply_ms = [float(t.split()[1]) for t in r.stdout.splitlines() if t.startswith("apply_scene_ms")]
         med = lambda rows: float(np.median([f["total_ms"] for f in rows]))
-        res[tgt] = dict(apply_scene_ms=apply_ms[0], edit_mode_static_ms=med(fr[F:2 * F - 2]),
-                        exit_frame_ms=fr[2 * F]["total_ms"], baked_static_ms=med(fr[2 * F + 5:]))
+        # вторая половина каждой фазы: после ожидания Python частоты GPU поднимаются не сразу
+        res[tgt] = dict(apply_scene_ms=apply_ms[0], edit_mode_static_ms=med(fr[F + F // 2:2 * F - 2]),
+                        exit_frame_ms=fr[2 * F]["total_ms"], baked_static_ms=med(fr[2 * F + F // 2:]))
         for f in td.glob("*.npy"):
             f.unlink()                                  # входы графов (кубмапа — десятки МБ)
         for d in td.glob("edit_*"):
