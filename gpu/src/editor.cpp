@@ -58,6 +58,19 @@ float max3(const float* v) { return std::max(v[0], std::max(v[1], v[2])); }
 
 }  // namespace
 
+const ResPreset kResPresets[] = {{"как окно", 1.0f, 0, 0},          {"3/4 окна", 0.75f, 0, 0},
+                                 {"1/2 окна", 0.5f, 0, 0},          {"3840×2160", 0, 3840, 2160},
+                                 {"2560×1440", 0, 2560, 1440},      {"1920×1080", 0, 1920, 1080},
+                                 {"1600×900", 0, 1600, 900},        {"1280×720", 0, 1280, 720},
+                                 {"960×540", 0, 960, 540},          {"640×360", 0, 640, 360}};
+const int kNumResPresets = int(sizeof(kResPresets) / sizeof(kResPresets[0]));
+
+std::pair<uint32_t, uint32_t> preset_size(int i, uint32_t ww, uint32_t wh) {
+    const ResPreset& p = kResPresets[i];
+    if (p.frac <= 0) return {p.w, p.h};
+    return {std::max(64u, uint32_t(std::lround(p.frac * ww))), std::max(64u, uint32_t(std::lround(p.frac * wh)))};
+}
+
 // ---- модель: M34, упаковка строк -------------------------------------------------------------------
 
 std::vector<int> nee_lights(const std::vector<EdObject>& objs, const EdFlat& flat) {
@@ -251,14 +264,15 @@ void Editor::save(const std::string& path, const CameraState& cam) {
     status_ = "сохранено: " + path;
 }
 
-void Editor::start_rebuild(const CameraState& cam, bool same_manifold) {
+void Editor::start_rebuild(const CameraState& cam, RebuildKind rk) {
+    const bool same_manifold = rk != RebuildKind::Manifold;
     if (cfg_.python.empty()) { status_ = "перегенерация недоступна (нет директивы rebuild)"; return; }
     ++rebuild_n_;
     std::string base = cfg_.work_dir + "/edit_" + std::to_string(rebuild_n_);
     std::string json = base + ".json";
     graph_out_ = base;
     log_path_ = base + ".log";
-    struct_rebuild_ = same_manifold;            // только структура объектов: многообразие прежнее, камера — та же
+    rebuild_kind_ = rk;                         // структура объектов или разрешение: многообразие прежнее, камера — та же
     requested_ = structure(objs_);
     const std::string& kind = same_manifold ? cfg_.kind : kind_edit_;
     const auto& params = same_manifold ? cfg_.params : params_edit_;
@@ -268,15 +282,17 @@ void Editor::start_rebuild(const CameraState& cam, bool same_manifold) {
         f << scene_json(kind, params, env, objs_, cam, cfg_.fov, cfg_.speed);
     }
     auto q = [](const std::string& s) { return "\"" + s + "\""; };
-    std::string cmd = q(cfg_.python) + " " + q(cfg_.script) + " --scene " + q(json) + " --graph-only " + q(base);
+    // -X utf8: лог Python (сообщение об ошибке в окне) — в UTF-8 и при перенаправлении в файл на Windows
+    std::string cmd = q(cfg_.python) + " -X utf8 " + q(cfg_.script) + " --scene " + q(json) + " --graph-only " + q(base);
     for (auto& a : cfg_.rebuild_args) cmd += " " + a;
     cmd += " > " + q(log_path_) + " 2>&1";
 #ifdef _WIN32
     cmd = "\"" + cmd + "\"";                       // cmd /c снимает внешние кавычки
 #endif
     done_ = false;
-    status_ = same_manifold ? "перегенерация быстрых шейдеров (новая структура объектов)…"
-                            : "перегенерация: шейдеры и граф (Python)…";
+    status_ = rk == RebuildKind::Structure    ? "перегенерация быстрых шейдеров (новая структура объектов)…"
+              : rk == RebuildKind::Resolution ? "перегенерация графа под новое разрешение…"
+                                              : "перегенерация: шейдеры и граф (Python)…";
     worker_ = std::make_unique<std::thread>([this, cmd]() {
         rc_ = std::system(cmd.c_str());
         done_ = true;
@@ -289,12 +305,22 @@ void Editor::rebuild(const std::string& kind, const std::vector<ManifoldParam>& 
     for (auto& p : params)
         for (auto& q : params_edit_)
             if (q.key == p.key) q.v = p.v;
-    start_rebuild(cam, false);
+    start_rebuild(cam, RebuildKind::Manifold);
     while (wait && worker_ && !done_) std::this_thread::sleep_for(std::chrono::milliseconds(20));
 }
 
 void Editor::rebuild_structure(const CameraState& cam, bool wait) {
-    start_rebuild(cam, true);
+    start_rebuild(cam, RebuildKind::Structure);
+    while (wait && worker_ && !done_) std::this_thread::sleep_for(std::chrono::milliseconds(20));
+}
+
+void Editor::rebuild_resolution(const CameraState& cam, uint32_t w, uint32_t h, bool wait) {
+    const std::string res = std::to_string(w) + "x" + std::to_string(h);
+    auto& a = cfg_.rebuild_args;
+    auto it = std::find(a.begin(), a.end(), "--res");
+    if (it != a.end() && it + 1 != a.end()) *(it + 1) = res;
+    else { a.push_back("--res"); a.push_back(res); }
+    start_rebuild(cam, RebuildKind::Resolution);
     while (wait && worker_ && !done_) std::this_thread::sleep_for(std::chrono::milliseconds(20));
 }
 
@@ -303,7 +329,9 @@ std::string Editor::poll_rebuild() {
     worker_->join();
     worker_.reset();
     if (rc_ == 0) {
-        status_ = struct_rebuild_ ? "быстрый режим: шейдеры с новой структурой объектов" : "многообразие обновлено";
+        status_ = rebuild_kind_ == RebuildKind::Structure    ? "быстрый режим: шейдеры с новой структурой объектов"
+                  : rebuild_kind_ == RebuildKind::Resolution ? "разрешение рендера обновлено"
+                                                             : "многообразие обновлено";
         return graph_out_ + "/app_graph.txt";
     }
     std::ifstream f(log_path_);
@@ -328,6 +356,27 @@ UiActions Editor::draw(const FrameInfo& fi, const CameraState& cam, bool edit_mo
         else ImGui::TextDisabled("денойзер недоступен");
         ImGui::SliderFloat("экспозиция", &exposure, 0.05f, 20.0f, "%.2f", ImGuiSliderFlags_Logarithmic);
         ImGui::SliderFloat("скорость", &speed, 0.05f, 20.0f, "%.2f", ImGuiSliderFlags_Logarithmic);
+        if (fi.interactive) {
+            // разрешение рендера: новое — перегенерация графа (шейдеры из кэша); пока она идёт, кадр масштабируется
+            char cur[64];
+            std::snprintf(cur, sizeof(cur), "%s%s%u×%u", fi.res_choice >= 0 ? kResPresets[fi.res_choice].label : "",
+                          fi.res_choice >= 0 ? " — " : "", fi.rw, fi.rh);
+            ImGui::BeginDisabled(rebuilding());
+            if (ImGui::BeginCombo("разрешение", cur)) {
+                for (int i = 0; i < kNumResPresets; ++i) {
+                    auto [w, h] = preset_size(i, fi.ww, fi.wh);
+                    char lab[64];
+                    if (kResPresets[i].frac > 0) std::snprintf(lab, sizeof(lab), "%s (%u×%u)", kResPresets[i].label, w, h);
+                    else std::snprintf(lab, sizeof(lab), "%s", kResPresets[i].label);
+                    if (ImGui::Selectable(lab, i == fi.res_choice)) act.res_choice = i;
+                }
+                ImGui::EndCombo();
+            }
+            ImGui::EndDisabled();
+            bool fs = fi.fullscreen;
+            if (ImGui::Checkbox("полноэкранный режим (F11)", &fs)) act.toggle_fullscreen = true;
+            ImGui::TextDisabled("окно %u×%u", fi.ww, fi.wh);
+        }
         ImGui::TextDisabled("WASD, Q/E — полёт; ЛКМ — взгляд мышью; Z/C — крен");
     }
 
@@ -344,7 +393,7 @@ UiActions Editor::draw(const FrameInfo& fi, const CameraState& cam, bool edit_mo
             if (p.v.size() == 3) ImGui::DragFloat3(p.key.c_str(), p.v.data(), 0.02f);
             else ImGui::DragFloat(p.key.c_str(), p.v.data(), 0.01f, 0.0f, 0.0f, "%.3f");
         }
-        if (ImGui::Button("Применить (перекомпиляция)")) start_rebuild(cam, false);
+        if (ImGui::Button("Применить (перекомпиляция)")) start_rebuild(cam, RebuildKind::Manifold);
         ImGui::SameLine();
         if (ImGui::Button("Сброс")) { kind_edit_ = cfg_.kind; params_edit_ = cfg_.params; }
         ImGui::EndDisabled();

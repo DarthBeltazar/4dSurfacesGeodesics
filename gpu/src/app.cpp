@@ -1,7 +1,8 @@
 // Интерактивное приложение (DD-007, редактор сцен — DD-008): geo4d_gpu app <graph.txt>
 //
 // Граф (graph_program.cpp) с секциями move / edit / static / post / snap и директивами приложения:
-//   app <W> <H> <буфер RGBA8>       размер кадра и буфер вывода (uint на пиксель)
+//   app <W> <H> <буфер RGBA8>       разрешение рендера и буфер вывода (uint на пиксель); окно может быть другого
+//                                    размера: кадр масштабируется в образ swapchain с сохранением пропорций (DD-009)
 //   denoise <кадр> <альбедо> <нормаль> <выход>   экспортируемые буферы (обмен с CUDA без копий); без OptiX/CUDA
 //                                    (сборка без GEO4D_OPTIX, не-NVIDIA GPU, macOS) кадр идёт без денойзера (ADR-0008)
 //   campipe <конвейер>               cam_step: push 0..2 — перемещение (f, r, u), 4..6 — рыскание/тангаж/крен
@@ -13,16 +14,20 @@
 //                                    упаковывает их заново и печатает «rows_check <макс. расхождение>» (C++ = Python)
 //   editor / manifold / flat / objname / rebuild — редактор сцен (editor.hpp)
 //   hidden | vsync                   скрытое окно (замеры) / вертикальная синхронизация
+//   fullscreen                       полноэкранный режим (без рамки, на весь экран) при запуске; F11 — переключение
+//   window <w> <h>                   размер окна в сценарии (проверка масштабирования кадра в образ swapchain)
 //   ui                               оверлей и в режиме замера/дампа (снимок окна с панелями — проверка оверлея)
 //   bench <сценарий> <json>          движение из файла (строка на кадр: a b c ψ θ φ за кадр), журнал времени, выход
 //   edit <кадр> <строки.npy>         в сценарии замера: заменить строки объектов перед кадром (как правка в окне)
 //   remanifold <кадр> <вид> k=v…     в сценарии: смена многообразия как кнопкой «Применить» (ждёт Python, перезагрузка)
+//   resize <кадр> <W> <H>            в сценарии: новое разрешение рендера, как в панели «Рендер» (ждёт перегенерацию)
 //   editgraph <граф>                 граф режима редактирования (шейдеры без зашитой структуры объектов, DD-008)
 //   editmode <кадр> on|off           в сценарии: войти в режим редактирования / выйти (ждёт перегенерацию)
 //   record <файл.raw> <период>       дописывать вывод (BGRA8/RGBA8, W·H·4 байт) каждого период-го кадра — для ролика
 //   dump <кадр> <каталог>            сохранить вывод (u32 RGBA8), кадр, выход денойзера и камеру этого кадра (.npy)
 // Управление: W/S, A/D — вперёд/вбок; Q/E — вниз/вверх; мышь (ЛКМ — захват) и стрелки — взгляд; Z/C — крен;
-//             Shift — ×4; R — денойзер вкл/выкл; F1 — панели редактора; Esc — выход.
+//             Shift — ×4; R — денойзер вкл/выкл; F1 — панели редактора; Tab — режим редактирования;
+//             F11 — полноэкранный режим; Esc — выход. Разрешение рендера — в панели «Рендер» (перегенерация графа).
 // Оверлей ImGui — только в интерактивном режиме (не hidden/bench/dump: там вывод сверяется с образом swapchain),
 // если нет директивы ui.
 #include "app.hpp"
@@ -34,6 +39,7 @@
 #include <imgui_impl_vulkan.h>
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cmath>
 #include <cstdio>
@@ -67,8 +73,11 @@ struct Swapchain {
     VkFormat format = VK_FORMAT_UNDEFINED;
 };
 
-Swapchain make_swapchain(VkContext& ctx, VkSurfaceKHR surf, uint32_t W, uint32_t H, bool vsync, bool overlay) {
+Swapchain make_swapchain(VkContext& ctx, VkSurfaceKHR surf, SDL_Window* win, bool vsync, bool overlay) {
     Swapchain s;
+    int pw = 0, ph = 0;
+    SDL_GetWindowSizeInPixels(win, &pw, &ph);
+    const uint32_t W = uint32_t(std::max(pw, 1)), H = uint32_t(std::max(ph, 1));
     VkSurfaceCapabilitiesKHR caps;
     check(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(ctx.physical(), surf, &caps), "SurfaceCapabilities");
     uint32_t nf = 0;
@@ -87,6 +96,8 @@ Swapchain make_swapchain(VkContext& ctx, VkSurfaceKHR surf, uint32_t W, uint32_t
         for (auto m : pms)
             if (m == VK_PRESENT_MODE_IMMEDIATE_KHR || m == VK_PRESENT_MODE_MAILBOX_KHR) { pm = m; break; }
     s.extent = caps.currentExtent.width != UINT32_MAX ? caps.currentExtent : VkExtent2D{W, H};
+    s.extent.width = std::clamp(s.extent.width, caps.minImageExtent.width, caps.maxImageExtent.width);
+    s.extent.height = std::clamp(s.extent.height, caps.minImageExtent.height, caps.maxImageExtent.height);
     if (!(caps.supportedUsageFlags & VK_IMAGE_USAGE_TRANSFER_DST_BIT)) throw std::runtime_error("swapchain без TRANSFER_DST");
     VkSwapchainCreateInfoKHR ci{VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR};
     ci.surface = surf;
@@ -140,8 +151,9 @@ struct AppDirs {
     std::vector<std::pair<uint32_t, std::string>> dumps, edits;
     std::vector<std::pair<uint32_t, std::vector<std::string>>> remanifold;     // кадр, вид, k=v…
     std::vector<std::pair<uint32_t, bool>> editmode;                            // кадр, вкл/выкл
+    std::vector<std::array<uint32_t, 3>> resize;                                // кадр, W, H
     std::string editgraph;
-    uint32_t record_period = 1;
+    uint32_t record_period = 1, W = 0, H = 0;
     size_t i_use_den = 0, i_bgra = 0, i_seed = 1, i_exposure = SIZE_MAX;
     float speed = 1.0f;
     int obj_base = -1;
@@ -150,7 +162,11 @@ struct AppDirs {
 AppDirs parse_dirs(const GraphProgram& prog) {
     AppDirs d;
     for (auto& w : prog.extra()) {
-        if (w[0] == "app") d.present_buf = w.at(3);
+        if (w[0] == "app") {
+            d.W = uint32_t(std::stoul(w.at(1)));
+            d.H = uint32_t(std::stoul(w.at(2)));
+            d.present_buf = w.at(3);
+        }
         else if (w[0] == "denoise") d.den_bufs = {w.at(1), w.at(2), w.at(3), w.at(4)};
         else if (w[0] == "campipe") d.campipe = w.at(1);
         else if (w[0] == "presentpipe") {
@@ -166,6 +182,8 @@ AppDirs parse_dirs(const GraphProgram& prog) {
         else if (w[0] == "record") { d.record_path = w.at(1); d.record_period = uint32_t(std::stoul(w.at(2))); }
         else if (w[0] == "objrows") { d.objbuf = w.at(1); d.obj_base = std::stoi(w.at(2)); }
         else if (w[0] == "editgraph") d.editgraph = w.at(1);
+        else if (w[0] == "resize")
+            d.resize.push_back({uint32_t(std::stoul(w.at(1))), uint32_t(std::stoul(w.at(2))), uint32_t(std::stoul(w.at(3)))});
         else if (w[0] == "editmode") d.editmode.emplace_back(uint32_t(std::stoul(w.at(1))), w.at(2) == "on");
         else if (w[0] == "remanifold") d.remanifold.emplace_back(uint32_t(std::stoul(w.at(1))),
                                                                  std::vector<std::string>(w.begin() + 2, w.end()));
@@ -181,8 +199,8 @@ const char* kFonts[] = {"C:/Windows/Fonts/segoeui.ttf", "C:/Windows/Fonts/arial.
 
 int run_app(const std::string& graph_path) {
     // директивы приложения — до создания контекста (нужны размер окна и флаги)
-    uint32_t W = 0, H = 0;
-    bool hidden = false, vsync = false, batch = false, editor_on = false, ui_forced = false;
+    uint32_t W = 0, H = 0, win_w = 0, win_h = 0;
+    bool hidden = false, vsync = false, batch = false, editor_on = false, ui_forced = false, fullscreen = false;
     {
         std::ifstream f(graph_path);
         for (std::string line; std::getline(f, line);) {
@@ -195,31 +213,47 @@ int run_app(const std::string& graph_path) {
             else if (cmd == "bench" || cmd == "dump" || cmd == "record") batch = true;
             else if (cmd == "editor") editor_on = true;
             else if (cmd == "ui") ui_forced = true;
+            else if (cmd == "fullscreen") fullscreen = true;
+            else if (cmd == "window") ss >> win_w >> win_h;
         }
     }
     if (!W || !H) throw std::runtime_error("app: нет директивы app <W> <H>");
     if (!SDL_Init(SDL_INIT_VIDEO)) throw std::runtime_error(std::string("SDL_Init: ") + SDL_GetError());
-    SDL_Window* win = SDL_CreateWindow("geo4d", int(W), int(H), SDL_WINDOW_VULKAN | (hidden ? SDL_WINDOW_HIDDEN : 0));
+    // интерактивно — окно с изменяемым размером (кадр масштабируется); замеры и дампы — окно ровно W×H
+    const bool interactive = !hidden && !batch;
+    SDL_Window* win = SDL_CreateWindow("geo4d", int(win_w ? win_w : W), int(win_h ? win_h : H), SDL_WINDOW_VULKAN | (hidden ? SDL_WINDOW_HIDDEN : 0) |
+                                                                    (interactive ? SDL_WINDOW_RESIZABLE : 0));
     if (!win) throw std::runtime_error(std::string("SDL_CreateWindow: ") + SDL_GetError());
+    if (fullscreen && interactive) {
+        SDL_SetWindowFullscreen(win, true);        // режим не задан — полноэкранное окно без рамки на весь рабочий стол
+        SDL_SyncWindow(win);
+    }
     Uint32 next = 0;
     const char* const* se = SDL_Vulkan_GetInstanceExtensions(&next);
     std::vector<const char*> iexts(se, se + next);
     int rc = 0;
     {
         VkContext ctx(iexts, true);
-        const bool overlay = editor_on && (ui_forced || (!hidden && !batch)) && ctx.dynamic_rendering();
+        const bool overlay = editor_on && (ui_forced || interactive) && ctx.dynamic_rendering();
         VkSurfaceKHR surf;
         if (!SDL_Vulkan_CreateSurface(win, ctx.instance(), nullptr, &surf))
             throw std::runtime_error(std::string("SDL_Vulkan_CreateSurface: ") + SDL_GetError());
         VkBool32 present_ok = VK_FALSE;
         vkGetPhysicalDeviceSurfaceSupportKHR(ctx.physical(), ctx.queue_family(), surf, &present_ok);
         if (!present_ok) throw std::runtime_error("очередь compute не умеет present");
-        Swapchain sc = make_swapchain(ctx, surf, W, H, vsync, overlay);
+        Swapchain sc = make_swapchain(ctx, surf, win, vsync, overlay);
         auto recreate = [&]() {
             vkDeviceWaitIdle(ctx.device());
             destroy_swapchain(ctx, sc);
-            sc = make_swapchain(ctx, surf, W, H, vsync, overlay);
+            sc = make_swapchain(ctx, surf, win, vsync, overlay);
         };
+        // масштабирование кадра W×H в образ swapchain другого размера (DD-009): копия в образ того же формата, blit
+        VkFormatProperties fprops{};
+        vkGetPhysicalDeviceFormatProperties(ctx.physical(), sc.format, &fprops);
+        const VkFormatFeatureFlags ft = fprops.optimalTilingFeatures;
+        const bool can_blit = (ft & VK_FORMAT_FEATURE_BLIT_SRC_BIT) && (ft & VK_FORMAT_FEATURE_BLIT_DST_BIT);
+        const VkFilter blit_filter = (ft & VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT) ? VK_FILTER_LINEAR : VK_FILTER_NEAREST;
+        Image2D scale_img{};
 
         // программа графа и денойзер на памяти её буферов; перезагружаются при смене многообразия (DD-008)
         std::unique_ptr<GraphProgram> prog;
@@ -250,9 +284,12 @@ int run_app(const std::string& graph_path) {
             if (!old.present_buf.empty()) {            // перезагрузка: сценарий, дампы и запись — из исходного графа
                 d.bench_in = old.bench_in; d.bench_out = old.bench_out;
                 d.dumps = old.dumps; d.edits = old.edits; d.remanifold = old.remanifold; d.editmode = old.editmode;
+                d.resize = old.resize;
                 d.record_path = old.record_path; d.record_period = old.record_period;
             }
             prog->set_push_u32(d.presentpipe, d.i_bgra, sc.format == VK_FORMAT_B8G8R8A8_UNORM ? 1u : 0u);
+            W = d.W;                                   // разрешение рендера — из графа (меняется перегенерацией)
+            H = d.H;
             has_den = false;
 #ifdef GEO4D_OPTIX
             if (!d.den_bufs.empty()) {
@@ -405,6 +442,9 @@ int run_app(const std::string& graph_path) {
         std::ofstream log;
         if (!d.bench_out.empty()) { log.open(d.bench_out); log << "[\n"; }
         bool quit = false, grab = false, minimized = false, toggle_req = false;
+        // разрешение рендера (DD-009): пресет из панели; доли окна пересчитываются после изменения размера окна
+        int res_choice = -1;
+        auto last_resize = std::chrono::steady_clock::now();
         uint32_t frame = 0, accum = 0;
         auto t_prev = std::chrono::steady_clock::now();
         double fps_acc = 0, last_ms = 0;
@@ -432,8 +472,14 @@ int run_app(const std::string& graph_path) {
                     grab = !grab;
                     SDL_SetWindowRelativeMouseMode(win, grab);
                 } else if (e.type == SDL_EVENT_MOUSE_MOTION && grab) { mdx += e.motion.xrel; mdy += e.motion.yrel; }
+                else if (e.type == SDL_EVENT_KEY_DOWN && e.key.key == SDLK_F11 && !e.key.repeat && interactive)
+                    SDL_SetWindowFullscreen(win, !(SDL_GetWindowFlags(win) & SDL_WINDOW_FULLSCREEN));
                 else if (e.type == SDL_EVENT_WINDOW_MINIMIZED) minimized = true;
                 else if (e.type == SDL_EVENT_WINDOW_RESTORED) { minimized = false; recreate(); }
+                else if (e.type == SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED && !minimized) {
+                    recreate();
+                    last_resize = std::chrono::steady_clock::now();
+                }
             }
             if (minimized && script.empty()) { SDL_Delay(20); continue; }   // свёрнуто: extent 0×0 — не рисуем
             if (!script.empty()) {
@@ -480,7 +526,16 @@ int run_app(const std::string& graph_path) {
                 ImGui::NewFrame();
                 if (show_ui) {
                     FrameInfo fi{last_ms, accum, has_den};
+                    fi.rw = W;
+                    fi.rh = H;
+                    fi.ww = sc.extent.width;
+                    fi.wh = sc.extent.height;
+                    fi.res_choice = res_choice;
+                    fi.fullscreen = (SDL_GetWindowFlags(win) & SDL_WINDOW_FULLSCREEN) != 0;
+                    fi.interactive = interactive;
                     UiActions act = editor->draw(fi, camst, edit_mode, use_den, exposure, speed);
+                    if (act.res_choice >= 0) res_choice = act.res_choice;
+                    if (act.toggle_fullscreen) SDL_SetWindowFullscreen(win, !fi.fullscreen);
                     if (act.toggle_edit) toggle_req = true;
                     if (act.structural && !edit_mode) enter_edit();      // форма/число объектов — в режиме редактирования
                     if (act.objects_changed) {
@@ -548,8 +603,42 @@ int run_app(const std::string& graph_path) {
             reg.bufferRowLength = W;
             reg.bufferImageHeight = H;
             reg.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
-            reg.imageExtent = {std::min(W, sc.extent.width), std::min(H, sc.extent.height), 1};
-            vkCmdCopyBufferToImage(cb, prog->buffer(d.present_buf).buf, sc.images[idx], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &reg);
+            if ((W == sc.extent.width && H == sc.extent.height) || !can_blit) {     // размеры равны — копия как есть
+                reg.imageExtent = {std::min(W, sc.extent.width), std::min(H, sc.extent.height), 1};
+                vkCmdCopyBufferToImage(cb, prog->buffer(d.present_buf).buf, sc.images[idx], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &reg);
+            } else {               // кадр → образ W×H → blit в прямоугольник с теми же пропорциями, поля — чёрные
+                if (scale_img.w != W || scale_img.h != H || scale_img.format != sc.format) {
+                    ctx.destroy_image2d(scale_img);    // прошлый кадр завершён (ожидание забора)
+                    scale_img = ctx.create_image2d(W, H, sc.format, VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT);
+                }
+                VkImageMemoryBarrier sb = ib;
+                sb.image = scale_img.image;
+                vkCmdPipelineBarrier(cb, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &sb);
+                reg.imageExtent = {W, H, 1};
+                vkCmdCopyBufferToImage(cb, prog->buffer(d.present_buf).buf, scale_img.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &reg);
+                sb.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+                sb.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+                sb.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+                sb.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+                VkClearColorValue black{};
+                black.float32[3] = 1.0f;
+                vkCmdClearColorImage(cb, sc.images[idx], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &black, 1, &ib.subresourceRange);
+                VkImageMemoryBarrier cl = ib;          // очистка → blit в тот же образ
+                cl.oldLayout = cl.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+                cl.srcAccessMask = cl.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+                VkImageMemoryBarrier bs[2] = {sb, cl};
+                vkCmdPipelineBarrier(cb, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 2, bs);
+                const double k = std::min(double(sc.extent.width) / W, double(sc.extent.height) / H);
+                const int32_t dw = std::max(1, int32_t(std::lround(W * k))), dh = std::max(1, int32_t(std::lround(H * k)));
+                const int32_t ox = (int32_t(sc.extent.width) - dw) / 2, oy = (int32_t(sc.extent.height) - dh) / 2;
+                VkImageBlit bl{};
+                bl.srcSubresource = bl.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+                bl.srcOffsets[1] = {int32_t(W), int32_t(H), 1};
+                bl.dstOffsets[0] = {ox, oy, 0};
+                bl.dstOffsets[1] = {ox + dw, oy + dh, 1};
+                vkCmdBlitImage(cb, scale_img.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, sc.images[idx],
+                               VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &bl, blit_filter);
+            }
             // образ: TRANSFER_DST → [оверлей ImGui: COLOR_ATTACHMENT] → [чтение: TRANSFER_SRC] → PRESENT_SRC
             VkPipelineStageFlags last_stage = VK_PIPELINE_STAGE_TRANSFER_BIT;
             ib.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
@@ -661,7 +750,17 @@ int run_app(const std::string& graph_path) {
                         }
                         editor->rebuild(w.at(0), ps, camst, true);
                     }
+                for (auto& r : d.resize)
+                    if (r[0] == frame) editor->rebuild_resolution(camst, r[1], r[2], true);
+                // разрешение рендера: перегенерация графа (Python, шейдеры из кэша), окно пока масштабирует старый кадр
+                if (res_choice >= 0 && !editor->rebuilding() && !pending_exit && ms_since(last_resize) > 400) {
+                    auto [tw, th] = preset_size(res_choice, sc.extent.width, sc.extent.height);
+                    if (tw != W || th != H) editor->rebuild_resolution(camst, tw, th, false);
+                }
                 std::string next_graph = editor->poll_rebuild();
+                if (next_graph.empty() && !editor->rebuilding() && editor->last_rebuild_kind() == RebuildKind::Resolution &&
+                    !editor->status().empty() && editor->status().rfind("ошибка", 0) == 0)
+                    res_choice = -1;                   // не повторять неудачную перегенерацию каждый кадр
                 if (next_graph.empty() && !editor->rebuilding() && !d.remanifold.empty() && !editor->status().empty() &&
                     editor->status().rfind("ошибка", 0) == 0) {
                     std::fprintf(stderr, "%s\n", editor->status().c_str());
@@ -671,18 +770,20 @@ int run_app(const std::string& graph_path) {
                 if (!next_graph.empty()) {             // перезагрузка графа без закрытия окна
                     const std::string dir = next_graph.substr(0, next_graph.rfind('/'));
                     const std::string next_dyn = dir + "/app_graph_dyn.txt";
-                    if (editor->last_rebuild_structural()) {      // быстрые шейдеры под новую структуру объектов
+                    if (editor->last_rebuild_kind() != RebuildKind::Manifold) {
+                        // быстрые шейдеры под новую структуру объектов или граф под новое разрешение; камера — прежняя
                         baked_path = next_graph;
                         dyn_path = next_dyn;
                         baked_struct = editor->requested_structure();
-                        if (pending_exit) {
-                            if (structure(editor->objects()) == baked_struct) {
-                                switch_graph(baked_path, true, true);
-                                edit_mode = false;
-                                pending_exit = false;
-                            } else {
-                                editor->rebuild_structure(camst, false);   // структура менялась во время перегенерации
-                            }
+                        const bool same = structure(editor->objects()) == baked_struct;
+                        if (pending_exit && same) {
+                            switch_graph(baked_path, true, true);
+                            edit_mode = false;
+                            pending_exit = false;
+                        } else {
+                            if (editor->last_rebuild_kind() == RebuildKind::Resolution)
+                                switch_graph(edit_mode ? dyn_path : baked_path, true, true);
+                            if (pending_exit) editor->rebuild_structure(camst, false);   // структура менялась во время перегенерации
                         }
                     } else {                                       // новое многообразие: камера и объекты — из Python
                         baked_path = next_graph;
@@ -724,6 +825,7 @@ int run_app(const std::string& graph_path) {
         den.reset();
 #endif
         prog.reset();
+        ctx.destroy_image2d(scale_img);
         destroy_swapchain(ctx, sc);
         SDL_Vulkan_DestroySurface(ctx.instance(), surf, nullptr);
     }

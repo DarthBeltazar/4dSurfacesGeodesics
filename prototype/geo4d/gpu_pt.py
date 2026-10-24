@@ -354,7 +354,8 @@ I_SEED, I_USE_DEN, I_BGRA, I_EXPOSURE = 1, 20, 21, 22     # индексы push-
 
 
 def app_graph(scene: Scene, cam, td, p: GPUPT = GPUPT(), nfb_move=8, speed=1.0, fmt="bc6h", hidden=False, vsync=False,
-              bench=None, margin=0.05, det=None, k_grad=2.0, dumps=(), record=None, editor=None, edits=(), dynamic=False):
+              bench=None, margin=0.05, det=None, k_grad=2.0, dumps=(), record=None, editor=None, edits=(), dynamic=False,
+              fullscreen=False):
     """Граф интерактивного приложения (DD-007): секции move / edit / static / post / snap и директивы app.
     td — каталог для файлов. bench = (файл сценария, json журнала) — режим замера. editor — dict(scene, work_dir, fov,
     env, python, script, args) для редактора сцен (DD-008): тогда рядом пишется и граф режима редактирования
@@ -432,6 +433,8 @@ def app_graph(scene: Scene, cam, td, p: GPUPT = GPUPT(), nfb_move=8, speed=1.0, 
         L.append("hidden")
     if vsync:
         L.append("vsync")
+    if fullscreen:
+        L.append("fullscreen")
     if bench:
         L.append(f"bench {bench[0]} {bench[1]}")
     for fi, d in dumps:

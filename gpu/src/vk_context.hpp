@@ -30,6 +30,14 @@ struct CubeImage {
     VkFormat format = VK_FORMAT_UNDEFINED;
 };
 
+// 2D-образ на устройстве (окно: кадр рендера перед масштабированием в образ swapchain, DD-009)
+struct Image2D {
+    VkImage image = VK_NULL_HANDLE;
+    VmaAllocation alloc = VK_NULL_HANDLE;
+    uint32_t w = 0, h = 0;
+    VkFormat format = VK_FORMAT_UNDEFINED;
+};
+
 // Привязка: буфер хранения или комбинированный сэмплер кубмапы
 struct Binding {
     Buffer* buffer = nullptr;
@@ -87,6 +95,8 @@ public:
     // texels: cubes × 6 × N × N × 4 float (RGBA, уровень 0); формат RGBA16F или RGBA32F; мипы — blit (бокс 2×2)
     CubeImage create_cube(const float* texels, uint32_t cubes, uint32_t N, VkFormat format, float max_aniso);
     void destroy_cube(CubeImage& c);
+    Image2D create_image2d(uint32_t w, uint32_t h, VkFormat format, VkImageUsageFlags usage);
+    void destroy_image2d(Image2D& im);
     // BC6H (UFLOAT) из float-кубмапы с мипами: каждый уровень кодируется на GPU (bc6h_encode.slang); src уничтожается
     CubeImage compress_bc6h(CubeImage& src, const std::vector<uint32_t>& encoder_spirv, float max_aniso);
 

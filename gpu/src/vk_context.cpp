@@ -487,6 +487,32 @@ uint16_t to_half(float f) {
 
 }  // namespace
 
+Image2D VkContext::create_image2d(uint32_t w, uint32_t h, VkFormat format, VkImageUsageFlags usage) {
+    Image2D im;
+    im.w = w;
+    im.h = h;
+    im.format = format;
+    VkImageCreateInfo ici{VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
+    ici.imageType = VK_IMAGE_TYPE_2D;
+    ici.format = format;
+    ici.extent = {w, h, 1};
+    ici.mipLevels = 1;
+    ici.arrayLayers = 1;
+    ici.samples = VK_SAMPLE_COUNT_1_BIT;
+    ici.tiling = VK_IMAGE_TILING_OPTIMAL;
+    ici.usage = usage;
+    ici.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    VmaAllocationCreateInfo ai{};
+    ai.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
+    check(vmaCreateImage(vma_, &ici, &ai, &im.image, &im.alloc, nullptr), "vmaCreateImage(2D)");
+    return im;
+}
+
+void VkContext::destroy_image2d(Image2D& im) {
+    if (im.image) vmaDestroyImage(vma_, im.image, im.alloc);
+    im = Image2D{};
+}
+
 CubeImage VkContext::create_cube(const float* texels, uint32_t cubes, uint32_t N, VkFormat format, float max_aniso) {
     CubeImage c;
     c.size = N;

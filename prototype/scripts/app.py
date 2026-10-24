@@ -1,12 +1,15 @@
 """Этап 5 (DD-007): интерактивное окно — генерирует сцену, шейдеры и граф, запускает `geo4d_gpu app`.
 
     python prototype/scripts/app.py --scene two_wormholes --res 1280x720
+    python prototype/scripts/app.py --scene two_wormholes --res 1920x1080 --fullscreen   # на весь экран (F11)
     python prototype/scripts/app.py --scene S3 --res 960x540
     python prototype/scripts/app.py --bench --scene two_wormholes --res 1920x1080   # замер: сценарий, скрытое окно
     python prototype/scripts/app.py --graph-only gpu/build-debug/app/two_wormholes  # только граф — запуск хоста из IDE
 
 Управление: W/S, A/D — вперёд/вбок; Q/E — вниз/вверх; ЛКМ — захват мыши (взгляд); стрелки; Z/C — крен; Shift — ×4;
-R — денойзер вкл/выкл; F1 — панели редактора; Tab — режим редактирования; Esc — выход. Сцены — файлы scenes/*.json (DD-008): two_wormholes,
+R — денойзер вкл/выкл; F1 — панели редактора; Tab — режим редактирования; F11 — полноэкранный режим; Esc — выход.
+--res — разрешение рендера; окно можно растянуть или развернуть на весь экран — кадр масштабируется с сохранением
+пропорций; другое разрешение рендера (доля окна или фиксированное) выбирается в панели «Рендер» (DD-009). Сцены — файлы scenes/*.json (DD-008): two_wormholes,
 ellis, S3, spheritorus, torisphere, tiger (T³), hyperplane, или путь к своему JSON. Редактор в окне правит объекты
 сразу, а многообразие — перегенерацией графа (этот же скрипт с --graph-only) без закрытия окна.
 
@@ -30,7 +33,8 @@ from geo4d.camera import make_camera
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--scene", default="two_wormholes", help="имя сцены из scenes/ или путь к JSON (DD-008)")
-    ap.add_argument("--res", default="1280x720")
+    ap.add_argument("--res", default="1280x720", help="разрешение рендера W×H")
+    ap.add_argument("--fullscreen", action="store_true", help="полноэкранный режим при запуске (F11 — переключение)")
     ap.add_argument("--fov", type=float, default=0, help="угол обзора, ° (0 — из файла сцены)")
     ap.add_argument("--cube", type=int, default=512)
     ap.add_argument("--vsync", action="store_true")
@@ -77,7 +81,7 @@ def main():
                           python=Path(sys.executable).as_posix(), script=Path(__file__).resolve().as_posix(),
                           args=["--res", a.res, "--cube", str(a.cube)] + (["--vsync"] if a.vsync else []))
         graph = G.app_graph(sc, cam, td, speed=speed, hidden=a.bench and not a.visible, vsync=a.vsync, bench=bench,
-                            dumps=dumps, editor=editor)
+                            dumps=dumps, editor=editor, fullscreen=a.fullscreen and not a.bench)
         switch = ()
         if a.bench and a.edit_mode:
             switch = (1, len(script) - 3)

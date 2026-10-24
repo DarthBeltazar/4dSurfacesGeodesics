@@ -70,19 +70,37 @@ std::string scene_json(const std::string& kind, const std::vector<ManifoldParam>
                        const std::vector<EdObject>& objs, const CameraState& cam, float fov, float speed);
 
 // Что окно должно сделать после панелей
+// разрешение рендера (DD-009): доля размера окна в пикселях (frac > 0) или фиксированное W×H
+struct ResPreset {
+    const char* label;
+    float frac;
+    uint32_t w, h;
+};
+extern const ResPreset kResPresets[];
+extern const int kNumResPresets;
+// W×H пресета для окна ww×wh (доля — не меньше 64 по каждой оси)
+std::pair<uint32_t, uint32_t> preset_size(int i, uint32_t ww, uint32_t wh);
+
 struct UiActions {
     bool objects_changed = false;                 // загрузить строки, сбросить накопление
     bool structural = false;                      // изменилась структура (число/формы/оси) — нужен режим редактирования
     bool toggle_edit = false;                     // войти в режим редактирования / выйти из него
     bool snap = false;                            // спроецировать центры on_M на M (ядро pt_snap) и прочитать обратно
     bool need_camera = false;                     // прочитать камеру (поставить объект перед ней) — следующий кадр
+    int res_choice = -1;                          // выбран пресет разрешения (индекс kResPresets)
+    bool toggle_fullscreen = false;
 };
 
 struct FrameInfo {
     double ms = 0;
     uint32_t spp = 0;
     bool has_den = false;
+    uint32_t rw = 0, rh = 0, ww = 0, wh = 0;      // разрешение рендера и окна (пиксели)
+    int res_choice = -1;                          // текущий пресет (−1 — заданное в --res)
+    bool fullscreen = false, interactive = false;
 };
+
+enum class RebuildKind { Manifold, Structure, Resolution };
 
 class Editor {
 public:
@@ -105,7 +123,9 @@ public:
     const std::string& status() const { return status_; }
     // быстрые шейдеры под текущую структуру объектов (многообразие и камера прежние) — при выходе из режима редактирования
     void rebuild_structure(const CameraState& cam, bool wait);
-    bool last_rebuild_structural() const { return struct_rebuild_; }
+    // то же многообразие и объекты, новое разрешение рендера (аргумент --res перегенераций меняется насовсем)
+    void rebuild_resolution(const CameraState& cam, uint32_t w, uint32_t h, bool wait);
+    RebuildKind last_rebuild_kind() const { return rebuild_kind_; }
     const std::vector<std::pair<int, int>>& requested_structure() const { return requested_; }
     bool rebuilding() const { return worker_ != nullptr; }
 
@@ -123,8 +143,8 @@ private:
     int rc_ = 0;
     std::string log_path_, graph_out_;
 
-    bool struct_rebuild_ = false;
+    RebuildKind rebuild_kind_ = RebuildKind::Manifold;
     std::vector<std::pair<int, int>> requested_;
-    void start_rebuild(const CameraState& cam, bool same_manifold);
+    void start_rebuild(const CameraState& cam, RebuildKind kind);
     void save(const std::string& path, const CameraState& cam);
 };
