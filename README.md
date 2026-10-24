@@ -4,12 +4,12 @@
 геодезические индуцированной метрики. Полное задание — [TASK.md](TASK.md), текущий статус —
 [docs/PROGRESS.md](docs/PROGRESS.md).
 
-## Сборка и запуск (этап 1: прототип Python + JAX, CPU, float64)
+## Сборка и запуск (прототип Python + JAX, CPU, float64)
 
 ```sh
 python -m venv .venv
 .venv/Scripts/python -m pip install -r requirements.txt     # Linux: .venv/bin/python
-.venv/Scripts/python -m pytest tests -q                    # все тесты (~4 мин)
+.venv/Scripts/python -m pytest tests -q                    # все тесты (~8 мин)
 .venv/Scripts/python -m pytest tests/test_u1_jet.py -q     # один файл
 .venv/Scripts/python -m pytest "tests/test_u2_reference.py::test_vs_dop853[ellis]"   # один случай
 ```
@@ -35,6 +35,23 @@ python -m venv .venv
 
 На Windows для кириллицы в консоли: `PYTHONIOENCODING=utf-8`.
 
+## Этап 3: GPU (Slang → Vulkan compute, float32)
+
+Нужны Vulkan SDK 1.4.328.1 (slangc, volk, VMA; путь из `VULKAN_SDK`), MSVC 2022, CMake/Ninja (берутся из CLion).
+
+```sh
+gpu\build.cmd                                               # Release → gpu/build/geo4d_gpu.exe
+gpu\build\geo4d_gpu.exe info                                # устройство и драйвер
+.venv/Scripts/python -m pytest tests -q -m gpu             # GPU-тесты (~30 с); без бинарника пропускаются
+.venv/Scripts/python prototype/scripts/gpu_vs_prototype.py  # таблица GPU / прототип-f32 / f64 по фигурам
+.venv/Scripts/python prototype/scripts/gpu_kappa_alpha.py   # выбор κ и α во float32
+.venv/Scripts/python prototype/scripts/gpu_profile.py       # профиль режима A 1080p/4K
+.venv/Scripts/python prototype/scripts/gpu_modea_quality.py # качество режима A против эталона этапа 2
+```
+
+Шейдеры компилирует Python (`geo4d.gpu.compile_shader`, кэш в `gpu/build/spv/`); хост исполняет job-файлы
+(`run`) и графы диспетчеризаций (`graph`), данные — через `.npy`.
+
 ## Обзор архитектуры
 
 `prototype/geo4d/`:
@@ -51,6 +68,10 @@ python -m venv .venv
 - `cubemap.py` — кубмапы, мипы, фильтр по эллипсу, .hdr.
 - `modea.py` — режим A, детектор, фолбэк, эталонный стохастический рендерер.
 - `results.py` — каталоги воспроизводимых результатов.
+- `gpu.py`, `gpu_modea.py` — стенд GPU: компиляция шейдеров, запуск `geo4d_gpu`, трассировка и режим A на GPU.
+
+`gpu/`: `src/` — хост (Vulkan-контекст, `run`/`graph`, .npy); `shaders/` — `jet.slang` (jet-числа за `IReal`),
+`scenes.slang` (SDF), `integrator.slang`, `trace.slang`, `modea.slang`, `wavefront.slang`, `bc6h_*.slang`.
 
 ## Документы
 
@@ -58,6 +79,7 @@ python -m venv .venv
 - Дизайн: [DD-001 интегратор](docs/design/DD-001-integrator.md),
   [DD-002 компактная червоточина и фигуры](docs/design/DD-002-wormhole-f-and-shapes.md),
   [DD-003 Якоби и режим A](docs/design/DD-003-jacobi-mode-a.md),
+  [DD-004 архитектура GPU](docs/design/DD-004-gpu-architecture.md),
   [DD-006 тесты и эталоны](docs/design/DD-006-test-infrastructure.md)
 - Решения: [docs/adr/](docs/adr/)
 - Отчёты по этапам: [docs/reports/](docs/reports/)

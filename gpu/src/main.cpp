@@ -14,7 +14,7 @@
 int main(int argc, char** argv) {
     try {
         if (argc < 2) {
-            std::fprintf(stderr, "использование: geo4d_gpu info | run <job.txt>\n");
+            std::fprintf(stderr, "использование: geo4d_gpu info | run <job.txt> | graph <graph.txt>\n");
             return 2;
         }
         std::string cmd = argv[1];

@@ -4,11 +4,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project state
 
-Greenfield. The only real content is `TASK.md` (in Russian) — the full task spec for a renderer of curved 3D
-spaces (wormholes etc.) defined as hypersurfaces `M = {x ∈ R⁴ : f(x) = 0}`, with light rays as geodesics of the
-induced metric. **Do not edit `TASK.md` without the user's consent.** There is no GPU/C++ code yet and no
-`CMakeLists.txt` (`cmake-build-debug/` and `.idea/` are CLion artifacts, git-ignored). Stages 1–2 (Python + JAX
-prototype, mode A) are done; read `docs/PROGRESS.md` for the current state.
+`TASK.md` (in Russian) is the full task spec for a renderer of curved 3D spaces (wormholes etc.) defined as
+hypersurfaces `M = {x ∈ R⁴ : f(x) = 0}`, with light rays as geodesics of the induced metric. **Do not edit
+`TASK.md` without the user's consent.** Stages 1–3 are done (Python + JAX prototype, mode A, GPU port in `gpu/`);
+`cmake-build-debug/` and `.idea/` are CLion artifacts, git-ignored. Read `docs/PROGRESS.md` for the current state.
 
 ## Commands (Python prototype, Windows venv at `.venv/`)
 
@@ -18,6 +17,13 @@ prototype, mode A) are done; read `docs/PROGRESS.md` for the current state.
 .venv/Scripts/python -m pytest tests/test_u1_jet.py -q                    # one file
 .venv/Scripts/python -m pytest "tests/test_u2_reference.py::test_vs_dop853[ellis]"   # one case
 PYTHONIOENCODING=utf-8 .venv/Scripts/python prototype/scripts/<name>.py   # experiments → results/stage-1/
+```
+
+GPU (Vulkan SDK 1.4.328.1 with slangc/volk/VMA, MSVC 2022; CMake/Ninja are taken from CLion):
+
+```sh
+gpu\build.cmd                                         # → gpu/build/geo4d_gpu.exe (info | run <job> | graph <file>)
+.venv/Scripts/python -m pytest tests -q -m gpu       # GPU tests, ~30 s; skipped if the exe or slangc is missing
 ```
 
 `pyproject.toml` puts `prototype/` on the pytest path. Experiments write `results/stage-N/<date>_<name>/`
@@ -45,6 +51,17 @@ hash and a dirty flag).
 - In tests, never draw direction hints from the same RNG stream/seed as `shapes.sample` (on S³ they coincide with
   the normal); `make_camera` falls back robustly, but test axes must be decorrelated.
 - `x64` must be enabled before any array is created (`geo4d/__init__.py`, `tests/conftest.py`).
+
+## GPU architecture (`gpu/`, DD-004)
+
+- Shaders are compiled by Python (`geo4d.gpu.compile_shader`, cache `gpu/build/spv/`, scene chosen by define), not
+  by CMake; rebuilding `gpu\build.cmd` is needed only for host changes. Host = generic executor: `run` (one
+  dispatch from a job file) and `graph` (named buffers, indirect dispatches, loops, timestamps); scenes, cameras
+  and result parsing live in `geo4d.gpu` / `geo4d.gpu_modea`, data via `.npy`.
+- SDFs are written once in `scenes.slang` against `IReal` (`jet.slang`: Real, Jet7, JetHVP, Jet15, Dual4); keep the
+  scene IDs in sync with `gpu.SCENE_IDS`. Push constants must be plain Python floats (np.float64 repr broke parsing).
+- GPU correctness criterion: error vs DOP853 ≤ 4× that of the float32 prototype (`GEO4D_X64=0`) on the same inputs.
+- Float32 defaults: κ = 3e-3 (ADR-0004); background SampleGrad k = 2 + BC6H, M19 optional (ADR-0005).
 
 ## Planned stages (gate: don't start stage N+1 until stage N acceptance criteria pass)
 
