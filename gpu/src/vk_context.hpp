@@ -81,7 +81,8 @@ public:
     uint32_t queue_family() const { return qfam_; }
     VkCommandPool command_pool() const { return pool_; }
     void destroy_buffer(Buffer& b);
-    void copy_buffer(const Buffer& src, const Buffer& dst, size_t bytes);
+    void copy_buffer(const Buffer& src, const Buffer& dst, size_t bytes, size_t src_off = 0, size_t dst_off = 0);
+    bool dynamic_rendering() const { return dyn_render_; }
 
     // texels: cubes × 6 × N × N × 4 float (RGBA, уровень 0); формат RGBA16F или RGBA32F; мипы — blit (бокс 2×2)
     CubeImage create_cube(const float* texels, uint32_t cubes, uint32_t N, VkFormat format, float max_aniso);
@@ -114,6 +115,7 @@ private:
     float ts_period_ = 1.0f;
     bool exec_props_ = false;
     bool ext_mem_ = false;
+    bool dyn_render_ = false;
     VkPhysicalDeviceProperties props_{};
 
     VkCommandBuffer begin_cmd();

@@ -87,8 +87,10 @@ VkContext::VkContext(const std::vector<const char*>& instance_exts, bool swapcha
     std::vector<VkQueueFamilyProperties> qf(nq);
     vkGetPhysicalDeviceQueueFamilyProperties(phys_, &nq, qf.data());
     qfam_ = UINT32_MAX;
+    // окно (DD-008): оверлей ImGui рисуется на той же очереди — нужна и GRAPHICS
+    const VkQueueFlags need = VK_QUEUE_COMPUTE_BIT | (swapchain ? VK_QUEUE_GRAPHICS_BIT : 0);
     for (uint32_t i = 0; i < nq; ++i)
-        if ((qf[i].queueFlags & VK_QUEUE_COMPUTE_BIT) && qf[i].timestampValidBits > 0) { qfam_ = i; break; }
+        if ((qf[i].queueFlags & need) == need && qf[i].timestampValidBits > 0) { qfam_ = i; break; }
     if (qfam_ == UINT32_MAX) throw std::runtime_error("нет очереди compute с timestamp");
 
     uint32_t ne = 0;
@@ -133,6 +135,8 @@ VkContext::VkContext(const std::vector<const char*>& instance_exts, bool swapcha
     f13.pNext = &f12;
     f13.computeFullSubgroups = s13.computeFullSubgroups;
     f13.subgroupSizeControl = s13.subgroupSizeControl;
+    f13.dynamicRendering = swapchain ? s13.dynamicRendering : VK_FALSE;      // оверлей ImGui (DD-008)
+    dyn_render_ = f13.dynamicRendering == VK_TRUE;
     VkPhysicalDeviceFeatures2 f2{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2};
     f2.pNext = &f13;
     f2.features.shaderInt64 = VK_TRUE;
@@ -319,10 +323,10 @@ void VkContext::submit_wait(VkCommandBuffer cb) {
     vkFreeCommandBuffers(device_, pool_, 1, &cb);
 }
 
-void VkContext::copy_buffer(const Buffer& src, const Buffer& dst, size_t bytes) {
+void VkContext::copy_buffer(const Buffer& src, const Buffer& dst, size_t bytes, size_t src_off, size_t dst_off) {
     if (bytes == 0) return;
     VkCommandBuffer cb = begin_cmd();
-    VkBufferCopy c{0, 0, bytes};
+    VkBufferCopy c{src_off, dst_off, bytes};
     vkCmdCopyBuffer(cb, src.buf, dst.buf, 1, &c);
     submit_wait(cb);
 }

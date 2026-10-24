@@ -30,7 +30,8 @@ class Obj:
     center: np.ndarray = None             # ограничивающая 4D-сфера {g ≤ 0} (для аналитического пропуска)
     bound: float = np.inf
     plane: tuple = None                   # (ось, смещение, знак) для полупространства — аналитика на прямых
-    spec: tuple = ()                      # (вид, параметры…) — для генерации описания сцены на GPU (gpu_pt.py)
+    spec: tuple = ()                      # (вид, параметры…) — для строк объектов на GPU (gpu_pt.object_rows)
+    on_M: bool = False                    # редактор (DD-008): центр проецируется на M после правки
 
     def g_vec(self, P):
         return self.g(tuple(P[..., k] for k in range(4)))

@@ -65,8 +65,20 @@ if(GEO4D_APP)
     FetchContent_Declare(SDL3 GIT_REPOSITORY https://github.com/libsdl-org/SDL.git GIT_TAG release-3.2.22 GIT_SHALLOW TRUE)
     FetchContent_MakeAvailable(SDL3)
   endif()
-  target_sources(geo4d_gpu PRIVATE src/app.cpp)
-  target_link_libraries(geo4d_gpu PRIVATE SDL3::SDL3)
+  # GUI редактора сцен (DD-008): Dear ImGui, бэкенды SDL3 + Vulkan (через volk)
+  FetchContent_Declare(imgui GIT_REPOSITORY https://github.com/ocornut/imgui.git GIT_TAG v1.91.9b GIT_SHALLOW TRUE
+                       SOURCE_SUBDIR none)
+  FetchContent_MakeAvailable(imgui)
+  add_library(geo4d_imgui STATIC
+    "${imgui_SOURCE_DIR}/imgui.cpp" "${imgui_SOURCE_DIR}/imgui_draw.cpp" "${imgui_SOURCE_DIR}/imgui_tables.cpp"
+    "${imgui_SOURCE_DIR}/imgui_widgets.cpp" "${imgui_SOURCE_DIR}/imgui_demo.cpp"
+    "${imgui_SOURCE_DIR}/backends/imgui_impl_sdl3.cpp" "${imgui_SOURCE_DIR}/backends/imgui_impl_vulkan.cpp")
+  target_include_directories(geo4d_imgui PUBLIC "${imgui_SOURCE_DIR}" "${imgui_SOURCE_DIR}/backends"
+                             PRIVATE "${GEO4D_VULKAN_INC}" "${GEO4D_VOLK_INC}")
+  target_compile_definitions(geo4d_imgui PUBLIC IMGUI_IMPL_VULKAN_USE_VOLK PRIVATE VK_NO_PROTOTYPES)
+  target_link_libraries(geo4d_imgui PUBLIC SDL3::SDL3)
+  target_sources(geo4d_gpu PRIVATE src/app.cpp src/editor.cpp)
+  target_link_libraries(geo4d_gpu PRIVATE SDL3::SDL3 geo4d_imgui)
   target_compile_definitions(geo4d_gpu PRIVATE GEO4D_APP=1)
   if(WIN32)       # SDL3.dll рядом с exe
     add_custom_command(TARGET geo4d_gpu POST_BUILD COMMAND ${CMAKE_COMMAND} -E copy_if_different

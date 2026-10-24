@@ -67,6 +67,33 @@ static PTParams pp;                 // cam_step не использует пар
 [[vk::binding(20, 0)]] RWStructuredBuffer<uint> gPresent;
 [[vk::binding(21, 0)]] RWStructuredBuffer<float4> gColor;
 
+// объекты (DD-008): строки float4 в хвосте буфера камеры (geo4d.gpu_pt.object_rows) — правятся без перекомпиляции
+static const int OBJ_BASE = 8;
+int pt_nobj() { return int(gCam[OBJ_BASE].x); }
+int pt_nlight() { return int(gCam[OBJ_BASE].y); }
+int light_obj(int i) { return int(gCam[OBJ_BASE + 1 + i / 4][i % 4]); }
+float4 obj_c(int k) { return gCam[OBJ_BASE + 9 + 6 * k]; }          // центр
+float4 obj_s(int k) { return gCam[OBJ_BASE + 10 + 6 * k]; }         // (вид, a, b, знак)
+float4 obj_pl(int k) { return gCam[OBJ_BASE + 11 + 6 * k]; }        // (1, ось, смещение, знак) у полупространства
+float4 mat_a(int k) { return gCam[OBJ_BASE + 12 + 6 * k]; }         // (альбедо, вид материала)
+float4 mat_e(int k) { return gCam[OBJ_BASE + 13 + 6 * k]; }         // (излучение, шероховатость)
+float obj_r(int k) { return gCam[OBJ_BASE + 14 + 6 * k].x; }        // радиус ограничивающей 4D-сферы
+
+// 4D SDF объекта k (geo4d.objects: ball4, torus_in_sheet, halfspace)
+__generic<T : IReal> T obj_g(int k, T x, T y, T z, T w)
+{
+    float4 c = obj_c(k), s = obj_s(k);
+    int kind = int(s.x);
+    if (kind == 0) return jlength4(x - c.x, y - c.y, z - c.z, w - c.w) - s.y;
+    if (kind == 1) return jlength3(jlength2(x - c.x, y - c.y) - s.y, z - c.z, w - c.w) - s.z;
+    int ax = int(s.y);
+    T p = w;
+    if (ax == 0) p = x;
+    else if (ax == 1) p = y;
+    else if (ax == 2) p = z;
+    return s.w * (p - s.z);
+}
+
 static const float PI = 3.14159265;
 
 // ГСЧ (как в фолбэке modea.slang, KERNEL 4)
@@ -97,7 +124,7 @@ float gmin_k(float4 p, out int k)
 {
     float g = 1e30;
     k = -1;
-    for (int i = 0; i < PT_NOBJ; i++) { float v = obj_val(i, p); if (v < g) { g = v; k = i; } }
+    for (int i = 0; i < pt_nobj(); i++) { float v = obj_val(i, p); if (v < g) { g = v; k = i; } }
     return g;
 }
 
@@ -108,7 +135,7 @@ float gmin_bounded_k(float4 p, out int k)
 {
     float g = 1e30;
     k = -1;
-    for (int i = 0; i < PT_NOBJ; i++) if (OBJ_PL[i].x == 0) { float v = obj_val(i, p); if (v < g) { g = v; k = i; } }
+    for (int i = 0; i < pt_nobj(); i++) if (obj_pl(i).x == 0) { float v = obj_val(i, p); if (v < g) { g = v; k = i; } }
     return g;
 }
 
@@ -117,9 +144,9 @@ float plane_hit(float4 x, float4 v, out int kp)
 {
     float tp = 1e30;
     kp = -1;
-    for (int k = 0; k < PT_NOBJ; k++)
+    for (int k = 0; k < pt_nobj(); k++)
     {
-        float4 pl = OBJ_PL[k];
+        float4 pl = obj_pl(k);
         if (pl.x == 0) continue;
         int ax = int(pl.y);
         if (pl.w * v[ax] < 0) { float t = (pl.z - x[ax]) / v[ax]; if (t >= 0 && t < tp) { tp = t; kp = k; } }
@@ -187,12 +214,12 @@ float ball_entry(float4 x, float4 d)
 // planes = false — только ограниченные объекты
 bool ahead_clear(float4 x, float4 v, bool planes = true)
 {
-    for (int k = 0; k < PT_NOBJ; k++)
+    for (int k = 0; k < pt_nobj(); k++)
     {
-        float4 pl = OBJ_PL[k];
+        float4 pl = obj_pl(k);
         if (pl.x > 0) { if (planes && pl.w * v[int(pl.y)] < 0) return false; continue; }
-        float4 oc = OBJ_C[k] - x;
-        float tca = dot(oc, v), r = OBJ_R[k];
+        float4 oc = obj_c(k) - x;
+        float tca = dot(oc, v), r = obj_r(k);
         if (dot(oc, oc) < r * r) return false;
         if (tca > 0 && dot(oc, oc) - tca * tca < r * r) return false;
     }
@@ -213,23 +240,23 @@ bool pt_escape(float4 x, float4 v)
 bool line_blocked(float4 x, float4 d, float tmax, int skip, float eps)
 {
     float tfar = 0;
-    for (int k = 0; k < PT_NOBJ; k++)
+    for (int k = 0; k < pt_nobj(); k++)
     {
         if (k == skip) continue;
-        float4 pl = OBJ_PL[k];
+        float4 pl = obj_pl(k);
         if (pl.x > 0)
         {
             int ax = int(pl.y);
             if (pl.w * d[ax] < 0) { float tp = (pl.z - x[ax]) / d[ax]; if (tp > 0 && tp < tmax) return true; }
         }
-        else tfar = max(tfar, dot(OBJ_C[k] - x, d) + OBJ_R[k]);
+        else tfar = max(tfar, dot(obj_c(k) - x, d) + obj_r(k));
     }
     float t = 0, lim = min(tmax, tfar);
     for (int it = 0; it < 512 && t < lim; it++)
     {
         float4 p = x + t * d;
         float g = 1e30;
-        for (int k = 0; k < PT_NOBJ; k++) if (k != skip && OBJ_PL[k].x == 0) g = min(g, obj_val(k, p));
+        for (int k = 0; k < pt_nobj(); k++) if (k != skip && obj_pl(k).x == 0) g = min(g, obj_val(k, p));
         if (g < ulp_floor(p)) return true;          // пересечение (шаг g + ε/2 перескакивает поверхность)
         t += g + 0.5 * eps;
     }
@@ -515,15 +542,15 @@ float3 env_radiance(float3 d, float4 x, float gb)
 
 // ---- сферические источники ------------------------------------------------------------------------
 
-bool is_light(int k) { for (int i = 0; i < PT_NLIGHT; i++) if (LIGHT_OBJ[i] == k) return true; return false; }
+bool is_light(int k) { for (int i = 0; i < pt_nlight(); i++) if (light_obj(i) == k) return true; return false; }
 
 // 1 − cos θ_max конуса сферы без потери знаков: x/(1 + √(1 − x)), x = r²/d² (у далёких точек 1 − cos → 0 во float32)
 float one_minus_cmax(float r, float d2) { float x = min(r * r / d2, 1.0); return x / (1 + sqrt(1 - x)); }
 
 float light_pdf(float4 p, int k)
 {
-    float3 dc = OBJ_C[k].xyz - p.xyz;
-    return 1.0 / (2 * PI * one_minus_cmax(OBJ_R[k], dot(dc, dc))) / float(PT_NLIGHT);
+    float3 dc = obj_c(k).xyz - p.xyz;
+    return 1.0 / (2 * PI * one_minus_cmax(obj_r(k), dot(dc, dc))) / float(pt_nlight());
 }
 
 // ---- ядро -----------------------------------------------------------------------------------------
@@ -586,12 +613,12 @@ void pt_sample(uint3 id : SV_DispatchThreadID)
             break;
         }
         // попадание в объект k
-        float3 em = MAT_E[k].rgb;
+        float3 em = mat_e(k).rgb;
         if (depth == 0)
         {
             float4 gk = obj_grad(k, x), nM = normal_M(x);
             float4 ngk = normalize(gk - dot(gk, nM) * nM);
-            aov_alb = int(MAT_A[k].w) == 2 ? saturate(em) : MAT_A[k].rgb;
+            aov_alb = int(mat_a(k).w) == 2 ? saturate(em) : mat_a(k).rgb;
             aov_nrm = float3(dot(ngk, wr), dot(ngk, wu), -dot(ngk, v));
         }
         if (any(em > 0))
@@ -601,14 +628,14 @@ void pt_sample(uint3 id : SV_DispatchThreadID)
                 wgt = mis_w(prev_pdf, light_pdf(x0, k), false);
             L += T * wgt * em;
         }
-        int kind = int(MAT_A[k].w);
+        int kind = int(mat_a(k).w);
         if (kind == 2) break;
         float4 n, ng, t1, t2;
         shading_frame(k, x, n, ng, t1, t2);
         float3 wo = float3(dot(-v, t1), dot(-v, t2), dot(-v, ng));
         if (wo.z <= 0) { stats.x += 1; break; }           // попадание с обратной стороны — обрыв (как потолок шагов)
-        float3 alb = MAT_A[k].rgb;
-        float rough = MAT_E[k].w;
+        float3 alb = mat_a(k).rgb;
+        float rough = mat_e(k).w;
         bool flat_here = PT_HAS_FLAT != 0 && in_flat(x);
         // смещение от поверхности: попадание — только по смене знака g (M26), поэтому достаточно g(x₀) выше пола
         // округления; смещение порядка ε_hit (как было сначала) на крупных пикселях уводило точку за соседнюю
@@ -620,11 +647,11 @@ void pt_sample(uint3 id : SV_DispatchThreadID)
         if (pp.nee != 0 && flat_here)
         {
             // NEE: сферический источник
-            if (PT_NLIGHT > 0)
+            if (pt_nlight() > 0)
             {
-                int lk = LIGHT_OBJ[min(uint(urand(seed) * PT_NLIGHT), uint(PT_NLIGHT - 1))];
-                float3 cc = OBJ_C[lk].xyz, p3 = xo.xyz;
-                float r = OBJ_R[lk];
+                int lk = light_obj(min(uint(urand(seed) * pt_nlight()), uint(pt_nlight() - 1)));
+                float3 cc = obj_c(lk).xyz, p3 = xo.xyz;
+                float r = obj_r(lk);
                 float3 ax3 = cc - p3;
                 float dist = length(ax3);
                 ax3 /= dist;
@@ -637,11 +664,11 @@ void pt_sample(uint3 id : SV_DispatchThreadID)
                 float bq = dot(oc, d3);
                 float tl = -bq - sqrt(max(bq * bq - (dot(oc, oc) - r * r), 0.0));
                 float4 wi4 = float4(d3, 0);
-                float pl = 1.0 / (2 * PI * omc) / float(PT_NLIGHT), pb;
+                float pl = 1.0 / (2 * PI * omc) / float(pt_nlight()), pb;
                 float3 f = bsdf_eval(kind, alb, rough, wo, float3(dot(wi4, t1), dot(wi4, t2), dot(wi4, ng)), pb);
-                bool vis = abs(OBJ_C[lk].w - x.w) < 1e-4 && any(f > 0) && seg_clear_balls(xo, xo + tl * wi4) &&
+                bool vis = abs(obj_c(lk).w - x.w) < 1e-4 && any(f > 0) && seg_clear_balls(xo, xo + tl * wi4) &&
                            !line_blocked(xo, wi4, tl * (1 - 1e-4), lk, eh);
-                if (vis) L += T * f * MAT_E[lk].rgb / pl * mis_w(pl, pb, true);
+                if (vis) L += T * f * mat_e(lk).rgb / pl * mis_w(pl, pb, true);
             }
             // NEE: фон
             {
@@ -917,5 +944,19 @@ void cam_step(uint3 id : SV_DispatchThreadID)
     u = gs_one(u, n, f, r);
     if (s > 0 && pt_gmin(X) >= cm.rot.w) x = X;                          // столкновение — без перемещения
     gCam[0] = x; gCam[1] = f; gCam[2] = r; gCam[3] = u;
+}
+
+// DD-008: центры объектов с флагом on_M — на M (M3, Ньютон по ∇f); в плоской зоне ∇f ∥ e_w — меняется только w
+[shader("compute")] [numthreads(1, 1, 1)]
+void pt_snap(uint3 id : SV_DispatchThreadID)
+{
+    for (int k = 0; k < pt_nobj(); k++)
+    {
+        int row = OBJ_BASE + 9 + 6 * k;
+        if (gCam[row + 5].y == 0 || int(gCam[row + 1].x) == 2) continue;
+        float4 x = gCam[row];
+        for (int it = 0; it < 30; it++) { Eval e = rhs7(x, float4(0), 0.0); x -= e.f * e.g / dot(e.g, e.g); }
+        if (all(isfinite(x))) gCam[row] = x;
+    }
 }
 #endif

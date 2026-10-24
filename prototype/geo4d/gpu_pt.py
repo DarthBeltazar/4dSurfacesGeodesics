@@ -21,31 +21,52 @@ def _f(x):
     return f"{float(x):.9g}"
 
 
-def _expr(spec):
-    kind = spec[0]
-    if kind == "ball4":
-        c, r = spec[1], spec[2]
-        return f"jlength4(x - {_f(c[0])}, y - {_f(c[1])}, z - {_f(c[2])}, w - {_f(c[3])}) - {_f(r)}"
-    if kind == "torus":
-        c, R, r = spec[1], spec[2], spec[3]
-        return (f"jlength3(jlength2(x - {_f(c[0])}, y - {_f(c[1])}) - {_f(R)}, z - {_f(c[2])}, w - {_f(c[3])})"
-                f" - {_f(r)}")
-    if kind == "plane":
-        ax, off, sg = spec[1], spec[2], spec[3]
-        return f"{_f(sg)} * ({'xyzw'[ax]} - {_f(off)})"
-    raise ValueError(f"нет генератора для объекта {kind}")
-
-
 def _arr(typ, name, rows, n):
     rows = rows or ["0"]
     return f"static const {typ} {name}[{max(n, 1)}] = {{ {', '.join(rows)} }};"
 
 
-def scene_header(scene: Scene) -> str:
+PT_MAXOBJ = 32                     # DD-008: объекты — строки float4 в хвосте буфера камеры (pathtrace.slang, obj_*)
+OBJ_BASE = 8                       # первая строка: (n_obj, n_light, 0, 0), затем 8 строк индексов источников
+OBJ_ROWS = 9 + 6 * PT_MAXOBJ       # объект k — строки 17 + 6k …: центр, вид, PL, альбедо, излучение, граница
+
+
+def object_rows(scene: Scene):
+    """Строки объектов сцены (OBJ_ROWS, 4) float32. NEE-источники — по правилу M34 (`pathtrace.nee_lights`)."""
     objs = scene.objs
-    n = len(objs)
+    if len(objs) > PT_MAXOBJ:
+        raise ValueError(f"объектов {len(objs)} > PT_MAXOBJ = {PT_MAXOBJ}")
+    lights = PT.nee_lights(objs, scene.flat)
+    R = np.zeros((OBJ_ROWS, 4))
+    R[0, :2] = len(objs), len(lights)
+    R[1:9].ravel()[:len(lights)] = lights
+    for k, o in enumerate(objs):
+        sp, m = o.spec, o.mat
+        b = 9 + 6 * k
+        if sp[0] == "ball4":
+            R[b], R[b + 1] = sp[1], (0, sp[2], 0, 0)
+        elif sp[0] == "torus":
+            R[b], R[b + 1] = sp[1], (1, sp[2], sp[3], 0)
+        elif sp[0] == "plane":
+            R[b + 1] = (2, sp[1], sp[2], sp[3])
+            R[b + 2] = (1, sp[1], sp[2], sp[3])
+        else:
+            raise ValueError(f"нет вида объекта {sp[0]} на GPU")
+        R[b + 3] = (*m.albedo, KIND[m.kind])
+        R[b + 4] = (*m.emit, m.rough)
+        R[b + 5] = (min(o.bound, 1e30), float(o.on_M), 0, 0)
+    return gpu.f32(R)
+
+
+def pt_camera_buffer(scene: Scene, cam, *args, **kw):
+    """Буфер камеры (gpu_modea.camera_buffer) + строки объектов сцены."""
+    return np.concatenate([camera_buffer(cam, *args, **kw), object_rows(scene)])
+
+
+def scene_header(scene: Scene) -> str:
+    """Данные многообразия для трассировщика: плоские зоны (M29). Объекты — в буфере (object_rows)."""
     L = ["// Сгенерировано geo4d.gpu_pt.scene_header из описания сцены прототипа — не редактировать.",
-         f"#define PT_NOBJ {n}", f"#define PT_NLIGHT {len(scene.lights)}"]
+         f"#define PT_MAXOBJ {PT_MAXOBJ}"]
     fz = scene.flat
     if fz is not None:
         L += ["#define PT_HAS_FLAT 1", f"#define PT_NBALL {len(fz.centers)}", f"static const float PT_RHO0 = {_f(fz.rho0)};",
@@ -53,25 +74,6 @@ def scene_header(scene: Scene) -> str:
     else:
         L += ["#define PT_HAS_FLAT 0", "#define PT_NBALL 0", "static const float PT_RHO0 = 0;",
               "static const float3 PT_BALL_C[1] = { float3(0) };"]
-    C, R, PL, MA, ME = [], [], [], [], []
-    for o in objs:
-        c = o.center if o.center is not None else np.zeros(4)
-        C.append(f"float4({', '.join(_f(a) for a in c)})")
-        R.append(_f(min(o.bound, 1e30)))
-        if o.plane is not None:
-            PL.append(f"float4(1, {o.plane[0]}, {_f(o.plane[1])}, {_f(o.plane[2])})")
-        else:
-            PL.append("float4(0, 0, 0, 0)")
-        m = o.mat
-        MA.append(f"float4({', '.join(_f(a) for a in m.albedo)}, {KIND[m.kind]})")
-        ME.append(f"float4({', '.join(_f(a) for a in m.emit)}, {_f(m.rough)})")
-    L += [_arr("float4", "OBJ_C", C, n), _arr("float", "OBJ_R", R, n), _arr("float4", "OBJ_PL", PL, n),
-          _arr("float4", "MAT_A", MA, n), _arr("float4", "MAT_E", ME, n),
-          _arr("int", "LIGHT_OBJ", [str(k) for k in scene.lights], len(scene.lights))]
-    L.append("__generic<T : IReal> T obj_g(int k, T x, T y, T z, T w)\n{")
-    for k, o in enumerate(objs):
-        L.append(f"    if (k == {k}) return {_expr(o.spec)};")
-    L.append("    return T.cst(1e30);\n}")
     return "\n".join(L) + "\n"
 
 
@@ -117,8 +119,27 @@ def _push(scene, p: GPUPT, n, env_n, use_list=0, c_mix=1.0, list_id=0, list_off=
             ("u32", list_id), ("u32", list_off), ("u32", use_den), ("u32", bgra), ("f32", exposure)]
 
 
+# параметры фигур geo4d.shapes → дефайны scenes.slang (DD-008)
+_MF = {"S3": {"R": "MF_R"}, "spheritorus": {"R": "MF_R", "r": "MF_RT"}, "torisphere": {"R": "MF_R", "r": "MF_RT"},
+       "tiger": {"R1": "MF_R1", "R2": "MF_R2", "r": "MF_RT"}, "ellis": {"b": "MF_B"},
+       "compact_wh": {"b": "MF_B", "rho0": "MF_RHO0", "W": "MF_W"},
+       "two_compact_wh": {"b": "MF_B", "rho0": "MF_RHO0", "W": "MF_W"}}
+
+
+def manifold_defines(shape):
+    """Дефайны параметров многообразия для scenes.slang (значения — как у фигуры прототипа)."""
+    lit = lambda x: repr(float(x))                     # вещественный литерал Slang (не «1» — целое)
+    d = {v: lit(shape.params[k]) for k, v in _MF.get(shape.name, {}).items() if k in shape.params}
+    if shape.name == "two_compact_wh":
+        for i in (1, 2):
+            for a, c in zip("XYZ", shape.params[f"c{i}"]):
+                d[f"MF_C{i}{a}"] = lit(c)
+    return d
+
+
 def _defs(scene, nj=0):
-    return {"SCENE": scene.meta["scene_id"], "EXIT": scene.meta["exit"], "KERNEL": 0, "NJ": nj}
+    return {"SCENE": scene.meta["scene_id"], "EXIT": scene.meta["exit"], "KERNEL": 0, "NJ": nj,
+            **manifold_defines(scene.shape)}
 
 
 def render(scene: Scene, cam, spp, p: GPUPT = GPUPT(), fmt="rgba32f", pix=None, cube=None):
@@ -139,7 +160,7 @@ def render(scene: Scene, cam, spp, p: GPUPT = GPUPT(), fmt="rgba32f", pix=None, 
     reps, done = [], 0
     while done < spp and n > 0:          # порциями: у хоста ограничен пул меток времени
         r = min(spp - done, MAX_REPEAT)
-        bufs = [("in", camera_buffer(cam, cube_n=cube.shape[2])), ("inout", acc), ("inout", acc2), ("in", envb),
+        bufs = [("in", pt_camera_buffer(scene, cam, cube_n=cube.shape[2])), ("inout", acc), ("inout", acc2), ("in", envb),
                 ("cube", (cube, fmt, 16)), ("inout", stats), ("in", lst), ("inout", alb), ("inout", nrm)]
         out, rep = gpu.run(spv, "pt_sample", bufs, push=push, groups=gpu.groups_for(n), repeat=r)
         acc, acc2, stats, alb, nrm = out[1], out[2], out[5], out[7], out[8]
@@ -159,7 +180,7 @@ def camera_pass(scene: Scene, cam, p: GPUPT = GPUPT(), c_mix=1.0, repeat=1):
     N = cam.width * cam.height
     envb, env_n = env_buffer(scene)
     d1 = np.zeros((1, 4), np.float32)
-    bufs = [("in", camera_buffer(cam)), ("in", d1), ("in", d1), ("in", envb), ("in", d1), ("out", ("f4", (N, 4))),
+    bufs = [("in", pt_camera_buffer(scene, cam)), ("in", d1), ("in", d1), ("in", envb), ("in", d1), ("out", ("f4", (N, 4))),
             ("in", np.zeros(1, np.uint32)), ("in", d1), ("in", d1), ("out", ("f4", (N, 4))), ("out", ("f4", (4 * N, 4))),
             ("out", ("u4", (N,))), ("out", ("u4", (N,)))]
     out, rep = gpu.run(spv, "pt_camera", bufs, push=_push(scene, p, N, env_n, c_mix=c_mix), groups=gpu.groups_for(N),
@@ -179,7 +200,7 @@ def render_frame(scene: Scene, cam, spp, p: GPUPT = GPUPT(), nfb=64, c_mix=1.0, 
     N = cam.width * cam.height
     cp = camera_pass(scene, cam, p, c_mix, repeat)
     camb = camera_buffer(cam, k_grad, 0.0, det, 0, cube.shape[2])
-    defs = lambda k: {"SCENE": scene.meta["scene_id"], "NJ": 0, "EXIT": scene.meta["exit"], "KERNEL": k}
+    defs = lambda k: {**_defs(scene), "KERNEL": k}
     dd = gpu.f32(cp["dd"].reshape(4 * N, 4))
     st = cp["status"].astype(np.uint32)
     out, rep_s = gpu.run(gpu.compile_shader("modea.slang", "modea_shade", defs(2)), "modea_shade",
@@ -234,14 +255,13 @@ def render_frame_graph(scene: Scene, cam, spp, p: GPUPT = GPUPT(), nfb=64, c_mix
     envb, env_n = env_buffer(scene)
     ptc = gpu.compile_shader("pathtrace.slang", "pt_camera", _defs(scene, 4), include=inc)
     pts = lambda e: gpu.compile_shader("pathtrace.slang", e, _defs(scene, 0), include=inc)
-    md = lambda k, e: gpu.compile_shader("modea.slang", e, {"SCENE": scene.meta["scene_id"], "NJ": 0,
-                                                            "EXIT": scene.meta["exit"], "KERNEL": k})
+    md = lambda k, e: gpu.compile_shader("modea.slang", e, {**_defs(scene), "KERNEL": k})
     bind = "cam Acc Acc2 Env Cube Stats Pix Alb Nrm Dir Dd Status Class Flag Cnt Args"
     g = gpu.groups_for(N)[0]
     pfb = GPUPT(**{**p.__dict__, "seed": p.seed + 7919})
     with tempfile.TemporaryDirectory() as td:
         td = Path(td)
-        np.save(td / "cam.npy", camera_buffer(cam, k_grad, 0.0, det, 0, cube.shape[2]))
+        np.save(td / "cam.npy", pt_camera_buffer(scene, cam, k_grad, 0.0, det, 0, cube.shape[2]))
         np.save(td / "env.npy", envb)
         np.save(td / "cube.npy", gpu.f32(cube))
         enc = f" {gpu.compile_shader('bc6h_encode.slang', 'bc6h_encode')}" if fmt == "bc6h" else ""
@@ -290,18 +310,30 @@ def cam_step(scene: Scene, cam, move, rot, frames=1, substeps=16, margin=0.05):
     spv = gpu.compile_shader("pathtrace.slang", "cam_step", {**_defs(scene), "CAM_STEP": 1}, include=inc)
     push = [("f32", move[0]), ("f32", move[1]), ("f32", move[2]), ("f32", 0.0),
             ("f32", rot[0]), ("f32", rot[1]), ("f32", rot[2]), ("f32", margin), ("u32", substeps)]
-    out, _ = gpu.run(spv, "cam_step", [("inout", camera_buffer(cam))], push=push, repeat=frames)
+    out, _ = gpu.run(spv, "cam_step", [("inout", pt_camera_buffer(scene, cam))], push=push, repeat=frames)
     return out[0][:4]
 
 
+def snap_objects(scene: Scene):
+    """DD-008 на GPU: ядро pt_snap проецирует центры объектов с on_M на M. Возвращает строки объектов после ядра."""
+    inc = write_header(scene)
+    spv = gpu.compile_shader("pathtrace.slang", "pt_snap", {**_defs(scene), "CAM_STEP": 1}, include=inc)
+    buf = np.concatenate([np.zeros((OBJ_BASE, 4), np.float32), object_rows(scene)])
+    push = [("f32", 0.0)] * 7 + [("f32", 0.0), ("u32", 16)]
+    out, _ = gpu.run(spv, "pt_snap", [("inout", buf)], push=push)
+    return out[0][OBJ_BASE:]
+
+
 PT_BIND = ("cam Acc Acc2 Env Cube Stats Pix Alb Nrm Dir Dd Status Class Flag Cnt Args Frame AlbF NrmF Den Present Color")
-I_SEED, I_USE_DEN, I_BGRA = 1, 20, 21          # индексы push-констант PTParams (см. _push)
+I_SEED, I_USE_DEN, I_BGRA, I_EXPOSURE = 1, 20, 21, 22     # индексы push-констант PTParams (см. _push)
 
 
 def app_graph(scene: Scene, cam, td, p: GPUPT = GPUPT(), nfb_move=8, speed=1.0, fmt="bc6h", hidden=False, vsync=False,
-              bench=None, margin=0.05, det=None, k_grad=2.0, dumps=(), record=None):
-    """Граф интерактивного приложения (DD-007): секции move / static / post и директивы app. td — каталог для файлов.
-    bench = (файл сценария, json журнала) — режим замера. Возвращает путь к графу."""
+              bench=None, margin=0.05, det=None, k_grad=2.0, dumps=(), record=None, editor=None, edits=()):
+    """Граф интерактивного приложения (DD-007): секции move / edit / static / post / snap и директивы app.
+    td — каталог для файлов. bench = (файл сценария, json журнала) — режим замера. editor — dict(scene, work_dir, fov,
+    env, python, script, args) для редактора сцен (DD-008); edits — [(кадр, строки объектов)] — горячие правки в
+    сценарии замера (проверка: правка = холодный старт). Возвращает путь к графу."""
     from pathlib import Path
     from .gpu import cube_for_gpu
     from .gpu_modea import Detector
@@ -314,11 +346,11 @@ def app_graph(scene: Scene, cam, td, p: GPUPT = GPUPT(), nfb_move=8, speed=1.0, 
     ptc = gpu.compile_shader("pathtrace.slang", "pt_camera", _defs(scene, 4), include=inc)
     pts = lambda e: gpu.compile_shader("pathtrace.slang", e, _defs(scene, 0), include=inc)
     cst = gpu.compile_shader("pathtrace.slang", "cam_step", {**_defs(scene), "CAM_STEP": 1}, include=inc)
-    md = lambda k, e: gpu.compile_shader("modea.slang", e, {"SCENE": scene.meta["scene_id"], "NJ": 0,
-                                                            "EXIT": scene.meta["exit"], "KERNEL": k})
+    snp = gpu.compile_shader("pathtrace.slang", "pt_snap", {**_defs(scene), "CAM_STEP": 1}, include=inc)
+    md = lambda k, e: gpu.compile_shader("modea.slang", e, {**_defs(scene), "KERNEL": k})
     g = gpu.groups_for(N)[0]
     pfb = GPUPT(**{**p.__dict__, "seed": p.seed + 7919})
-    np.save(td / "cam.npy", camera_buffer(cam, k_grad, 0.0, det, 0, cube.shape[2]))
+    np.save(td / "cam.npy", pt_camera_buffer(scene, cam, k_grad, 0.0, det, 0, cube.shape[2]))
     np.save(td / "env.npy", envb)
     np.save(td / "cube.npy", gpu.f32(cube))
     enc = f" {gpu.compile_shader('bc6h_encode.slang', 'bc6h_encode')}" if fmt == "bc6h" else ""
@@ -329,7 +361,7 @@ def app_graph(scene: Scene, cam, td, p: GPUPT = GPUPT(), nfb_move=8, speed=1.0, 
         L.append(f"buffer {name} zero {b}")
     for name in ["Frame", "AlbF", "NrmF", "Den"]:
         L.append(f"buffer {name} export {16 * N}")
-    L += [f"pipeline camstep {cst} cam_step cam",
+    L += [f"pipeline camstep {cst} cam_step cam", f"pipeline snap {snp} pt_snap cam",
           f"pipeline camera {ptc} pt_camera {PT_BIND}",
           f"pipeline shade {md(2, 'modea_shade')} modea_shade cam Dir Dd Status Color Cube",
           f"pipeline detect {md(3, 'modea_detect')} modea_detect cam Dir Dd Status Flag"]
@@ -337,25 +369,34 @@ def app_graph(scene: Scene, cam, td, p: GPUPT = GPUPT(), nfb_move=8, speed=1.0, 
     for name, entry in [("classall", "pt_classall"), ("clear", "pt_clear"), ("lists", "pt_lists"), ("args", "pt_args"), ("ptA", "pt_sample"),
                         ("ptB", "pt_sample"), ("reset", "pt_reset"), ("compose", "pt_compose"), ("present", "pt_present")]:
         L.append(f"pipeline {name} {pts(entry)} {entry} {PT_BIND}")
-    L += [_push_line("camstep", [("f32", 0)] * 4 + [("f32", 0)] * 3 + [("f32", margin), ("u32", 16)]),
+    cm = [("f32", 0)] * 4 + [("f32", 0)] * 3 + [("f32", margin), ("u32", 16)]
+    L += [_push_line("camstep", cm), _push_line("snap", cm),
           _push_line("camera", _push(scene, p, N, env_n)), _push_line("clear", _push(scene, p, N, env_n)),
           _push_line("lists", _push(scene, p, N, env_n, list_off=N)), _push_line("args", _push(scene, p, N, env_n)),
           _push_line("ptA", _push(scene, p, N, env_n, use_list=2, list_id=0, list_off=0)),
           _push_line("ptB", _push(scene, pfb, N, env_n, use_list=2, list_id=1, list_off=N)),
           _push_line("reset", _push(scene, p, N, env_n)), _push_line("compose", _push(scene, p, N, env_n)),
           _push_line("classall", _push(scene, p, N, env_n)),
-          _push_line("present", _push(scene, p, N, env_n, use_den=1, bgra=1)),
-          "section move", "mark start", "dispatch camstep 1 1 1"]
-    L += ([f"dispatch camera {g} 1 1", "mark camera", f"dispatch shade {g} 1 1", f"dispatch detect {g} 1 1"] if background
-          else [f"dispatch classall {g} 1 1", "mark camera"])
-    L += ["dispatch clear 1 1 1", f"dispatch lists {g} 1 1",
-          "dispatch args 1 1 1", f"dispatch reset {g} 1 1", "mark lists", "indirect ptA Args 0", "mark pt",
-          f"loop {nfb_move}", "indirect ptB Args 12", "endloop", "mark fallback", f"dispatch compose {g} 1 1", "mark compose",
+          _push_line("present", _push(scene, p, N, env_n, use_den=1, bgra=1))]
+    # кадр со сбросом накопления: move — после шага камеры, edit — после правки объектов (камера на месте)
+    body = ([f"dispatch camera {g} 1 1", "mark camera", f"dispatch shade {g} 1 1", f"dispatch detect {g} 1 1"] if background
+            else [f"dispatch classall {g} 1 1", "mark camera"])
+    body += ["dispatch clear 1 1 1", f"dispatch lists {g} 1 1",
+             "dispatch args 1 1 1", f"dispatch reset {g} 1 1", "mark lists", "indirect ptA Args 0", "mark pt",
+             f"loop {nfb_move}", "indirect ptB Args 12", "endloop", "mark fallback", f"dispatch compose {g} 1 1", "mark compose"]
+    L += ["section move", "mark start", "dispatch camstep 1 1 1"] + body + ["section edit", "mark start"] + body
+    L += ["section snap", "dispatch snap 1 1 1",
           "section static", "mark start", "indirect ptA Args 0", "mark pt", "indirect ptB Args 12", "mark fallback",
           f"dispatch compose {g} 1 1", "mark compose",
           "section post", f"dispatch present {g} 1 1",
           f"app {cam.width} {cam.height} Present", "denoise Frame AlbF NrmF Den", "campipe camstep",
-          f"presentpipe present {I_USE_DEN} {I_BGRA}", f"seedpipes {I_SEED} ptA ptB", f"speed {speed}"]
+          f"presentpipe present {I_USE_DEN} {I_BGRA} {I_EXPOSURE}", f"seedpipes {I_SEED} ptA ptB", f"speed {speed}",
+          f"objrows cam {OBJ_BASE}"] + scene_directives(scene)
+    if editor:
+        L += editor_directives(scene, editor)
+    for k, (fi, rows) in enumerate(edits):
+        np.save(td / f"edit_rows_{k}.npy", gpu.f32(rows))
+        L.append(f"edit {fi} {td / f'edit_rows_{k}.npy'}")
     if hidden:
         L.append("hidden")
     if vsync:
@@ -369,6 +410,28 @@ def app_graph(scene: Scene, cam, td, p: GPUPT = GPUPT(), nfb_move=8, speed=1.0, 
     path = td / "app_graph.txt"
     path.write_text("\n".join(L) + "\n", encoding="utf-8")
     return path
+
+
+def scene_directives(scene: Scene):
+    """Плоские зоны (правило M34 в хосте) и имена объектов (DD-008)."""
+    L = []
+    fz = scene.flat
+    if fz is not None:
+        L.append(" ".join(["flat", str(len(fz.sheets))] + [_f(w) for w in fz.sheets] + [str(len(fz.centers)), _f(fz.rho0)]
+                          + [_f(a) for c in fz.centers for a in c]))
+    return L + [f"objname {k} {o.name.replace(' ', '_')}" for k, o in enumerate(scene.objs)]
+
+
+def editor_directives(scene: Scene, ed):
+    """Директивы редактора сцен (DD-008): файл сцены, многообразие, команда перегенерации графа."""
+    from .scenefile import manifold_of
+    kind, params = manifold_of(scene.shape)
+    pv = lambda v: ",".join(_f(a) for a in np.atleast_1d(v))
+    L = [f"editor {ed['scene']} {ed['work_dir']} {_f(ed['fov'])}",
+         " ".join(["manifold", kind, ed.get("env") or "-"] + [f"{k}={pv(v)}" for k, v in params.items()])]
+    if ed.get("python"):
+        L.append(" ".join(["rebuild", ed["python"], ed["script"]] + list(ed.get("args", ()))))
+    return L
 
 
 def app_scene(name, mips=None):

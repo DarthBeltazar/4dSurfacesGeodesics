@@ -88,7 +88,8 @@ def host(fname, name, params, before=()):
 
 SCENES = [("two_wormholes", "две червоточины (сцена 3)", "1280x720"), ("ellis", "Эллис", "1280x720"),
           ("S3", "S³", "1280x720"), ("tiger", "T³ («тигр»)", "1280x720"),
-          ("spheritorus", "сферитор", "1280x720"), ("torisphere", "ториосфера", "1280x720")]
+          ("spheritorus", "сферитор", "1280x720"), ("torisphere", "ториосфера", "1280x720"),
+          ("hyperplane", "R³ (песочница редактора)", "1280x720")]
 for key, title, res in SCENES:
     py(f"window_{key}", f"Окно: {title}", "Окно", "prototype/scripts/app.py", f"--scene {key} --res {res}")
 py("bench_two_wormholes_1080p", "Замер окна: две червоточины 1080p", "Замеры", "prototype/scripts/app.py",

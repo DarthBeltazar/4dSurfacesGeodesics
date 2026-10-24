@@ -6,7 +6,9 @@
     python prototype/scripts/app.py --graph-only gpu/build-debug/app/two_wormholes  # только граф — запуск хоста из IDE
 
 Управление: W/S, A/D — вперёд/вбок; Q/E — вниз/вверх; ЛКМ — захват мыши (взгляд); стрелки; Z/C — крен; Shift — ×4;
-R — денойзер вкл/выкл; Esc — выход. Сцены: two_wormholes, ellis, S3, spheritorus, torisphere, tiger (T³).
+R — денойзер вкл/выкл; F1 — панели редактора; Esc — выход. Сцены — файлы scenes/*.json (DD-008): two_wormholes,
+ellis, S3, spheritorus, torisphere, tiger (T³), hyperplane, или путь к своему JSON. Редактор в окне правит объекты
+сразу, а многообразие — перегенерацией графа (этот же скрипт с --graph-only) без закрытия окна.
 
 Замер (--bench): 60 кадров покоя на стартовом виде (накопление), затем 60 кадров полёта (у сцены 3 — сквозь
 горловину c₁ на нижний лист); журнал времени — results/stage-5/<дата>_app_bench_<сцена>_<разрешение>/frames.json."""
@@ -21,28 +23,31 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import numpy as np
 
-from geo4d import gpu, gpu_pt as G, pathtrace as PT
+from geo4d import gpu, gpu_pt as G, pathtrace as PT, scenefile as SF
 from geo4d.camera import make_camera
 
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--scene", default="two_wormholes")
+    ap.add_argument("--scene", default="two_wormholes", help="имя сцены из scenes/ или путь к JSON (DD-008)")
     ap.add_argument("--res", default="1280x720")
-    ap.add_argument("--fov", type=float, default=75)
+    ap.add_argument("--fov", type=float, default=0, help="угол обзора, ° (0 — из файла сцены)")
     ap.add_argument("--cube", type=int, default=512)
     ap.add_argument("--vsync", action="store_true")
     ap.add_argument("--bench", action="store_true")
     ap.add_argument("--visible", action="store_true", help="замер в видимом окне (проверка пути на экран)")
     ap.add_argument("--frames", type=int, default=60)
+    ap.add_argument("--tag", default="", help="суффикс имени каталога результатов замера")
     ap.add_argument("--dump", default="", help="кадры для сохранения через запятую (в каталог результатов замера)")
     ap.add_argument("--graph-only", metavar="DIR", default="",
                     help="записать граф и его входные данные в DIR и выйти (запуск/отладка `geo4d_gpu app DIR/app_graph.txt` из IDE)")
     a = ap.parse_args()
     W, H = (int(v) for v in a.res.split("x"))
     mips = PT.procedural_env(a.cube)
-    sc, c0, speed = G.app_scene(a.scene, mips)
-    cam = make_camera(sc.shape, c0["x"], c0["f"], c0["up"], fov=a.fov, width=W, height=H)
+    sc, c0, speed = SF.load(SF.resolve(a.scene), mips)
+    name = SF.resolve(a.scene).stem
+    cam_fov = a.fov or c0["fov"]
+    cam = make_camera(sc.shape, c0["x"], c0["f"], c0["up"], c0["right"], fov=cam_fov, width=W, height=H)
     out = None
     with tempfile.TemporaryDirectory() as tmp:
         td = Path(a.graph_only).resolve() if a.graph_only else Path(tmp)
@@ -50,19 +55,26 @@ def main():
         bench = None
         if a.bench:
             from geo4d.results import new_run
-            out = new_run(5, f"app_bench_{a.scene}_{W}x{H}" + ("_visible" if a.visible else ""), dict(vars(a), gpupt=G.GPUPT().__dict__,
+            out = new_run(5, f"app_bench_{name}_{W}x{H}" + ("_visible" if a.visible else "") + (f"_{a.tag}" if a.tag else ""), dict(vars(a), gpupt=G.GPUPT().__dict__,
                                                                   slangc=gpu.slangc_version()))
             # сначала покой на стартовом виде (накопление), затем полёт
             script = [[0, 0, 0, 0, 0, 0]] * a.frames
-            if a.scene == "two_wormholes":     # к горловине c₁ = (−4, 0, 0): поворот налево, затем вперёд сквозь неё
+            if name == "two_wormholes":     # к горловине c₁ = (−4, 0, 0): поворот налево, затем вперёд сквозь неё
                 script += [[0, 0, 0, -0.0175, 0.0, 0]] * 20 + [[0.25, 0, 0, 0, 0.0, 0]] * (a.frames - 20)
             else:
                 script += [[0.05 * speed, 0, 0, 0.005, 0.002, 0]] * a.frames
             np.savetxt(td / "script.txt", np.array(script), fmt="%.6f")
             bench = (td / "script.txt", out / "frames.json")
         dumps = [(int(f), (out or td).as_posix()) for f in a.dump.split(",") if f] if a.bench else ()
+        editor = None
+        if not a.bench:          # редактор сцен (DD-008): окно перегенерирует граф этим же скриптом
+            scene_path = SF.resolve(a.scene).resolve()
+            editor = dict(scene=scene_path.as_posix(), work_dir=td.as_posix(), fov=cam_fov,
+                          env=json.loads(scene_path.read_text(encoding="utf-8")).get("env"),
+                          python=Path(sys.executable).as_posix(), script=Path(__file__).resolve().as_posix(),
+                          args=["--res", a.res, "--cube", str(a.cube)] + (["--vsync"] if a.vsync else []))
         graph = G.app_graph(sc, cam, td, speed=speed, hidden=a.bench and not a.visible, vsync=a.vsync, bench=bench,
-                            dumps=dumps)
+                            dumps=dumps, editor=editor)
         if a.graph_only:
             print(f"граф: {graph}\nзапуск: {gpu.EXE} app {graph}")
             return

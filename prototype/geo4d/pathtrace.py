@@ -70,6 +70,24 @@ class FlatZones:
         return jnp.all(dist >= self.rho0 * (1 - 1e-12), axis=-1)
 
 
+def nee_lights(objs, flat: Optional[FlatZones], tol=1e-6):
+    """M34: индексы излучающих 4D-шаров, допустимых для NEE — центр на листе, шар целиком в плоской зоне
+    (|c_xyz − cᵢ| ≥ ρ₀ + r). Остальные излучатели светят только через сэмплирование BSDF. То же правило — в хосте."""
+    if flat is None:
+        return ()
+    out = []
+    for k, o in enumerate(objs):
+        if o.mat.kind != "emit" or not o.spec or o.spec[0] != "ball4":
+            continue
+        c, r = np.asarray(o.spec[1], float), o.spec[2]
+        if min(abs(c[3] - s) for s in flat.sheets) >= tol:
+            continue
+        if len(flat.centers) and np.min(np.linalg.norm(np.asarray(flat.centers) - c[:3], axis=-1)) < flat.rho0 + r:
+            continue
+        out.append(k)
+    return tuple(out)
+
+
 def sheet_index(w):
     """Индекс листа кубмапы: 0 — w ≥ 0 (верхний / единственный), 1 — w < 0."""
     return (w < 0).astype(jnp.int32)

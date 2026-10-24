@@ -1,0 +1,69 @@
+{
+ "manifold": {
+  "kind": "hyperplane",
+  "params": {}
+ },
+ "env": "procedural",
+ "objects": [
+  {
+   "name": "floor",
+   "kind": "plane",
+   "axis": 2,
+   "offset": -1.0,
+   "sign": 1.0,
+   "on_M": false,
+   "material": {
+    "kind": "diffuse",
+    "albedo": [0.6, 0.6, 0.6],
+    "rough": 0.3,
+    "emit": [0.0, 0.0, 0.0]
+   }
+  },
+  {
+   "name": "ball",
+   "kind": "ball4",
+   "center": [0.0, 3.0, 0.0, 0.0],
+   "r": 1.0,
+   "on_M": false,
+   "material": {
+    "kind": "diffuse",
+    "albedo": [0.8, 0.3, 0.2],
+    "rough": 0.3,
+    "emit": [0.0, 0.0, 0.0]
+   }
+  },
+  {
+   "name": "ball",
+   "kind": "ball4",
+   "center": [2.0, 4.0, -0.4, 0.0],
+   "r": 0.6,
+   "on_M": false,
+   "material": {
+    "kind": "metal",
+    "albedo": [0.9, 0.8, 0.5],
+    "rough": 0.25,
+    "emit": [0.0, 0.0, 0.0]
+   }
+  },
+  {
+   "name": "light",
+   "kind": "ball4",
+   "center": [-1.5, 2.0, 2.5, 0.0],
+   "r": 0.4,
+   "on_M": false,
+   "material": {
+    "kind": "emit",
+    "albedo": [0.8, 0.8, 0.8],
+    "rough": 0.3,
+    "emit": [30.0, 27.0, 22.0]
+   }
+  }
+ ],
+ "camera": {
+  "x": [0.0, -3.0, 0.3, 0.0],
+  "f": [0.0, 1.0, -0.05, 0.0],
+  "up": [0.0, 0.0, 1.0, 0.0],
+  "fov": 75.0
+ },
+ "speed": 1.5
+}
