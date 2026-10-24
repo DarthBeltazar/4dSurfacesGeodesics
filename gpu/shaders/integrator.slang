@@ -9,7 +9,12 @@
 #define JACOBI_JET 0
 #endif
 
-static const uint RUNNING = 0, DONE_SMAX = 1, DONE_ESCAPE = 2, DONE_NMAX = 3;
+static const uint RUNNING = 0, DONE_SMAX = 1, DONE_ESCAPE = 2, DONE_NMAX = 3, DONE_HIT = 4;
+
+#ifdef PT_OBJECTS
+// Режим B (DD-005): предел шага по объектам M26 и остановка при попадании; функции pt_gmin, pt_eps_hit,
+// pt_escape — в pathtrace.slang. Предыдущее принятое состояние — для эрмитова уточнения M27.
+#endif
 
 struct Params
 {
@@ -138,6 +143,9 @@ bool escaped(float4 x, float4 v, Params p)
 {
     if (p.escape_mode == 1) { float r2 = p.escape_param * p.escape_param + SCALE * SCALE; return dot(x.xyz, x.xyz) >= r2; }
     if (p.escape_mode == 2) return dot(x.xyz, x.xyz) >= p.escape_param * p.escape_param && dot(x.xyz, v.xyz) > 0;
+#ifdef PT_OBJECTS
+    if (p.escape_mode == 3) return pt_escape(x, v);
+#endif
     return false;
 }
 
@@ -149,6 +157,10 @@ struct RayState
     Fields E;
     float s, h;
     uint nacc, nrej, npass, status;
+#ifdef PT_OBJECTS
+    float4 xp, vp;      // предыдущее принятое состояние (M27)
+    float sp;
+#endif
 };
 
 // Начальный шаг луча
@@ -156,6 +168,10 @@ void init_step(inout RayState st, Params p)
 {
     float hc = p.h_max > 0 ? p.h_max : hcap(st.x);
     st.h = min(min(p.h0, hc), p.s_max - st.s);
+#ifdef PT_OBJECTS
+    st.h = min(st.h, max(pt_gmin(st.x), 0.0) + pt_eps_hit(st.s, st.x));      // M26
+    st.xp = st.x; st.vp = st.v; st.sp = st.s;
+#endif
 }
 
 void trace_ray(inout RayState st, Params p)
@@ -210,6 +226,9 @@ void trace_k(inout RayState st, Params p, uint K)
 #if NJ > 0
             [ForceUnroll] for (int k = 0; k < NJ; k++) { st.E.J[k] = En.J[k] - dot(En.J[k], n) * n; st.E.Jp[k] = En.Jp[k] - dot(En.Jp[k], n) * n; }
 #endif
+#ifdef PT_OBJECTS
+            st.xp = x; st.vp = v; st.sp = st.s;
+#endif
             k1 = k4;                                                // FSAL «stale» (DD-001)
             st.s += h;
             st.nacc++;
@@ -218,10 +237,17 @@ void trace_k(inout RayState st, Params p, uint K)
             st.nrej++;
         float hn = p.fixed != 0 ? p.h0 : h * clamp(0.9 * pow(p.tol / max(err, 1e-30), 1.0 / 3.0), 0.2, 5.0);
         hn = min(hn, p.h_max > 0 ? p.h_max : hcap(st.x));
+#ifdef PT_OBJECTS
+        float gx = pt_gmin(st.x), eh = pt_eps_hit(st.s, st.x);
+        hn = min(hn, max(gx, 0.0) + eh);                            // M26: h ≤ g + ε_hit
+#endif
         float remaining = p.s_max - st.s;
         st.h = max(min(hn, remaining), 0.0);
         if (remaining <= 1e-6 * p.s_max) st.status = DONE_SMAX;
         if (accept && escaped(st.x, st.v, p)) st.status = DONE_ESCAPE;
+#ifdef PT_OBJECTS
+        if (accept && gx < pt_hit_floor(st.x)) st.status = DONE_HIT;    // смена знака g (или |g| у пола округления)
+#endif
         if (st.status == RUNNING && st.nacc + st.nrej >= p.n_max) st.status = DONE_NMAX;
     }
 }

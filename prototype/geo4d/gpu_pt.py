@@ -13,6 +13,7 @@ from .pathtrace import Scene, env_table
 
 KIND = {"diffuse": 0, "metal": 1, "emit": 2}
 GEN = gpu.GPU / "build" / "gen"
+MAX_REPEAT = 256
 
 
 def _f(x):
@@ -106,7 +107,7 @@ class GPUPT:
     seed: int = 1
 
 
-def render(scene: Scene, cam, spp, p: GPUPT = GPUPT(), fmt="rgba32f", repeat_split=1):
+def render(scene: Scene, cam, spp, p: GPUPT = GPUPT(), fmt="rgba32f"):
     """Средний цвет (H·W, 3), дисперсия среднего (H·W, 3), статистика по пикселям, отчёт стенда."""
     from .gpu import cube_for_gpu
     inc = write_header(scene)
@@ -119,10 +120,18 @@ def render(scene: Scene, cam, spp, p: GPUPT = GPUPT(), fmt="rgba32f", repeat_spl
             ("f32", p.k_cone), ("u32", p.max_depth), ("u32", p.rr_depth), ("u32", p.nee), ("u32", p.mis),
             ("f32", p.s_max), ("u32", p.n_max), ("f32", scene.meta.get("ell_max", 0.0)), ("u32", env_n),
             ("f32", p.env_scale * scene.env_scale)]
-    bufs = [("in", camera_buffer(cam, cube_n=cube.shape[2])), ("out", ("f4", (npix,))), ("out", ("f4", (npix,))),
-            ("in", envb), ("cube", (cube, fmt, 16)), ("out", ("f4", (npix,)))]
-    out, rep = gpu.run(spv, "pt_sample", bufs, push=push, groups=gpu.groups_for(npix), repeat=spp)
-    acc, acc2, stats = out[1], out[2], out[5]
+    acc = np.zeros((npix, 4), np.float32)
+    acc2, stats = acc.copy(), acc.copy()
+    reps, done = [], 0
+    while done < spp:                    # порциями: у хоста ограничен пул меток времени
+        r = min(spp - done, MAX_REPEAT)
+        bufs = [("in", camera_buffer(cam, cube_n=cube.shape[2])), ("inout", acc), ("inout", acc2), ("in", envb),
+                ("cube", (cube, fmt, 16)), ("inout", stats)]
+        out, rep = gpu.run(spv, "pt_sample", bufs, push=push, groups=gpu.groups_for(npix), repeat=r)
+        acc, acc2, stats = out[1], out[2], out[5]
+        reps.append(rep)
+        done += r
+    rep = reps
     cnt = acc[:, 3:4]
     mean = acc[:, :3] / cnt
     var = np.maximum(acc2[:, :3] / cnt - mean ** 2, 0) * cnt / np.maximum(cnt - 1, 1) / cnt
