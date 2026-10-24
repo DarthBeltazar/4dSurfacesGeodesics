@@ -30,6 +30,26 @@ from geo4d import gpu, gpu_pt as G, pathtrace as PT, scenefile as SF
 from geo4d.camera import make_camera
 
 
+def procedural_env_cached(n):
+    """Фон окна: тот же при каждой перегенерации графа (новое разрешение, структура объектов, многообразие), а его
+    построение в JAX — ~8 с из ~10 (профиль, DD-009). Кэш на диске; ключ — исходники фона и размер грани."""
+    import hashlib
+    import inspect
+    import jax.numpy as jnp
+    from geo4d import cubemap, render
+    src = inspect.getsource(cubemap) + inspect.getsource(render) + inspect.getsource(PT.procedural_env) + str(n)
+    f = gpu.GPU / "build" / "cache" / f"procedural_env_{n}_{hashlib.sha256(src.encode()).hexdigest()[:16]}.npz"
+    if f.exists():
+        z = np.load(f)
+        return [jnp.asarray(z[f"m{i}"]) for i in range(len(z.files))]
+    mips = PT.procedural_env(n)
+    f.parent.mkdir(parents=True, exist_ok=True)
+    tmp = f.with_name(f.stem + f".{__import__('os').getpid()}.npz")        # параллельные запуски не портят файл
+    np.savez(tmp, **{f"m{i}": np.asarray(m) for i, m in enumerate(mips)})
+    tmp.replace(f)
+    return mips
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--scene", default="two_wormholes", help="имя сцены из scenes/ или путь к JSON (DD-008)")
@@ -50,7 +70,7 @@ def main():
                     help="записать граф и его входные данные в DIR и выйти (запуск/отладка `geo4d_gpu app DIR/app_graph.txt` из IDE)")
     a = ap.parse_args()
     W, H = (int(v) for v in a.res.split("x"))
-    mips = PT.procedural_env(a.cube)
+    mips = procedural_env_cached(a.cube)
     sc, c0, speed = SF.load(SF.resolve(a.scene), mips)
     name = SF.resolve(a.scene).stem
     cam_fov = a.fov or c0["fov"]
