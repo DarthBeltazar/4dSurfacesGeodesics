@@ -64,6 +64,19 @@ gpu\build\geo4d_gpu.exe info                                # устройств
 Шейдеры компилирует Python (`geo4d.gpu.compile_shader`, кэш в `gpu/build/spv/`); хост исполняет job-файлы
 (`run`) и графы диспетчеризаций (`graph`), данные — через `.npy`.
 
+## Этап 5: интерактивное окно и ролик (`results/stage-5/`)
+
+```sh
+.venv/Scripts/python prototype/scripts/app.py --scene two_wormholes --res 1280x720   # окно; сцены: two_wormholes,
+                                                                                     # ellis, S3, spheritorus, torisphere
+.venv/Scripts/python prototype/scripts/app.py --bench --scene two_wormholes --res 1920x1080   # замер (скрытое окно)
+.venv/Scripts/python prototype/scripts/video.py --res 1920x1080 --spp 64            # ролик (нужен ffmpeg в PATH)
+```
+
+Управление: W/S, A/D — вперёд/вбок; Q/E — вниз/вверх; ЛКМ — захват мыши (взгляд); стрелки; Z/C — крен;
+Shift — ×4; R — денойзер вкл/выкл; Esc — выход. Камера движется по геодезическим многообразия (M33): через горловину
+червоточины — на другой лист.
+
 ## Обзор архитектуры
 
 `prototype/geo4d/`:

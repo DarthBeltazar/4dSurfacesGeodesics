@@ -1,24 +1,24 @@
 {
  "moving": {
-  "total_ms": 15.8637,
-  "graph_ms": 11.8868,
-  "denoise_ms": 3.14781,
-  "post_present_ms": 0.6107,
-  "camera": 0.018368,
-  "lists": 0.11664,
-  "pt": 11.4234,
-  "fallback": 0.01456,
-  "compose": 0.122944,
+  "total_ms": 15.7224,
+  "graph_ms": 11.8656,
+  "denoise_ms": 3.14368,
+  "post_present_ms": 0.5722,
+  "camera": 0.018432,
+  "lists": 0.112992,
+  "pt": 11.3927,
+  "fallback": 0.014464,
+  "compose": 0.121408,
   "frames": 75
  },
  "static": {
-  "total_ms": 15.76935,
-  "graph_ms": 11.82875,
-  "denoise_ms": 3.1473,
-  "post_present_ms": 0.6131,
-  "pt": 11.5738,
-  "fallback": 0.002016,
-  "compose": 0.123552,
+  "total_ms": 15.5076,
+  "graph_ms": 11.685,
+  "denoise_ms": 3.14163,
+  "post_present_ms": 0.5660499999999999,
+  "pt": 11.4353,
+  "fallback": 0.001888,
+  "compose": 0.121168,
   "frames": 74
  }
 }
