@@ -5,7 +5,7 @@
     python prototype/scripts/app.py --bench --scene two_wormholes --res 1920x1080   # замер: сценарий, скрытое окно
 
 Управление: W/S, A/D — вперёд/вбок; Q/E — вниз/вверх; ЛКМ — захват мыши (взгляд); стрелки; Z/C — крен; Shift — ×4;
-R — денойзер вкл/выкл; Esc — выход. Сцены: two_wormholes, ellis, S3, spheritorus, torisphere.
+R — денойзер вкл/выкл; Esc — выход. Сцены: two_wormholes, ellis, S3, spheritorus, torisphere, tiger (T³).
 
 Замер (--bench): 60 кадров покоя на стартовом виде (накопление), затем 60 кадров полёта (у сцены 3 — сквозь
 горловину c₁ на нижний лист); журнал времени — results/stage-5/<дата>_app_bench_<сцена>_<разрешение>/frames.json."""
@@ -32,6 +32,7 @@ def main():
     ap.add_argument("--cube", type=int, default=512)
     ap.add_argument("--vsync", action="store_true")
     ap.add_argument("--bench", action="store_true")
+    ap.add_argument("--visible", action="store_true", help="замер в видимом окне (проверка пути на экран)")
     ap.add_argument("--frames", type=int, default=60)
     ap.add_argument("--dump", default="", help="кадры для сохранения через запятую (в каталог результатов замера)")
     a = ap.parse_args()
@@ -45,7 +46,7 @@ def main():
         bench = None
         if a.bench:
             from geo4d.results import new_run
-            out = new_run(5, f"app_bench_{a.scene}_{W}x{H}", dict(vars(a), gpupt=G.GPUPT().__dict__,
+            out = new_run(5, f"app_bench_{a.scene}_{W}x{H}" + ("_visible" if a.visible else ""), dict(vars(a), gpupt=G.GPUPT().__dict__,
                                                                   slangc=gpu.slangc_version()))
             # сначала покой на стартовом виде (накопление), затем полёт
             script = [[0, 0, 0, 0, 0, 0]] * a.frames
@@ -56,7 +57,8 @@ def main():
             np.savetxt(td / "script.txt", np.array(script), fmt="%.6f")
             bench = (td / "script.txt", out / "frames.json")
         dumps = [(int(f), (out or td).as_posix()) for f in a.dump.split(",") if f] if a.bench else ()
-        graph = G.app_graph(sc, cam, td, speed=speed, hidden=a.bench, vsync=a.vsync, bench=bench, dumps=dumps)
+        graph = G.app_graph(sc, cam, td, speed=speed, hidden=a.bench and not a.visible, vsync=a.vsync, bench=bench,
+                            dumps=dumps)
         r = subprocess.run([str(gpu.EXE), "app", str(graph)], capture_output=a.bench, text=True)
         if r.returncode != 0:
             raise RuntimeError(f"geo4d_gpu app: {r.stdout}\n{r.stderr}")
@@ -69,6 +71,14 @@ def main():
         for name, rows in [("moving", mv), ("static", st)]:
             summ[name] = {k: float(np.median([r[k] for r in rows if k in r])) for k in keys if any(k in r for r in rows)}
             summ[name]["frames"] = len(rows)
+        (out / "summary.json").write_text(json.dumps(summ, indent=1, ensure_ascii=False), encoding="utf-8")
+        summ["swapchain"] = dict(extent=fr[0]["extent"], format=fr[0]["format"])
+        for f in sorted(out.glob("swapchain_*.npy")):          # путь на экран: образ swapchain = буфер вывода
+            sw = np.load(f)
+            pr = np.load(out / f.name.replace("swapchain_", "Present_"))
+            h, w = min(sw.shape[0], pr.shape[0]), min(sw.shape[1], pr.shape[1])
+            summ["swapchain"][f.stem] = dict(same_size=sw.shape == pr.shape, max_abs_diff=int(np.max(np.abs(
+                sw[:h, :w].astype(np.int64) - pr[:h, :w].astype(np.int64)))))
         (out / "summary.json").write_text(json.dumps(summ, indent=1, ensure_ascii=False), encoding="utf-8")
         print(json.dumps(summ, indent=1, ensure_ascii=False))
         import matplotlib.pyplot as plt

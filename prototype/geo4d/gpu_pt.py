@@ -372,7 +372,7 @@ def app_graph(scene: Scene, cam, td, p: GPUPT = GPUPT(), nfb_move=8, speed=1.0, 
 
 
 def app_scene(name, mips=None):
-    """Сцена и стартовая камера приложения по имени: two_wormholes, ellis, S3, spheritorus, torisphere."""
+    """Сцена и стартовая камера приложения по имени: two_wormholes, ellis, S3, spheritorus, torisphere, tiger."""
     from .camera import make_camera
     from .wormholes import ellis_point
     up = np.array([0, 0, 1.0, 0])
@@ -385,7 +385,8 @@ def app_scene(name, mips=None):
         return sc, dict(x=x, f=-e, up=up), 2.0
     sc = PT.scene_compact_space(name)
     # S³: не в антиподе объекта (иначе все геодезические сходятся на нём и он закрывает весь фон)
-    x0 = {"S3": [0.8, -0.35, 0.3, 0.38], "spheritorus": [1.0, 0, 0, 0.4], "torisphere": [1.4, 0, 0, 0]}[name]
+    x0 = {"S3": [0.8, -0.35, 0.3, 0.38], "spheritorus": [1.0, 0, 0, 0.4], "torisphere": [1.4, 0, 0, 0],
+          "tiger": [1.5, 0, 0.8, 0]}[name]
     from .shapes import project_points
     x = np.asarray(project_points(sc.shape, np.array([x0], float)))[0]
     return sc, dict(x=x, f=np.array([0, 1.0, 0, 0]), up=up), 0.5

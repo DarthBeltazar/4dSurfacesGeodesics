@@ -557,7 +557,7 @@ def _on_surface(shape, guesses):
 
 
 def scene_compact_space(name="S3", mips=None):
-    """Компактные пространства этапа 5 (свободный полёт): S³, «сферитор», «ториосфера». Фона нет (лучи замыкаются),
+    """Компактные пространства этапа 5 (свободный полёт): S³, «сферитор», «ториосфера», «тигр» (T³). Фона нет (лучи замыкаются),
     плоских зон нет — свет только от излучающих шаров через сэмплирование BSDF. Объекты — 4D-шары с центрами на M."""
     from . import shapes as S
     from .objects import ball4, Material
@@ -567,6 +567,12 @@ def scene_compact_space(name="S3", mips=None):
         pts = _on_surface(sh, [[0, 0, 0, 1], [0, 0, 0, -1], [0, 1, 0, 0], [0, -1, 0, 0], [0, 0, 1, 0], [-1, 0, 0, 0],
                                [0.6, 0.6, -0.5, 0.2]])
         rad = 0.22
+    elif name == "tiger":      # T³: (|(x,y)| − R₁)² + (|(z,w)| − R₂)² = r², R₁ = 1.2, R₂ = 0.8, r = 0.3
+        a = np.linspace(0, 2 * np.pi, 7, endpoint=False)
+        g = [[(1.2 + 0.3 * np.cos(2 * t)) * np.cos(t), (1.2 + 0.3 * np.cos(2 * t)) * np.sin(t),
+              (0.8 + 0.3 * np.sin(2 * t)) * np.cos(3 * t), (0.8 + 0.3 * np.sin(2 * t)) * np.sin(3 * t)] for t in a]
+        pts = _on_surface(sh, g)
+        rad = 0.12
     else:
         a = np.linspace(0, 2 * np.pi, 7, endpoint=False)
         g = [[1.4 * np.cos(t), 1.4 * np.sin(t), 0.25 * np.cos(3 * t), 0.25 * np.sin(2 * t)] for t in a]
@@ -577,7 +583,7 @@ def scene_compact_space(name="S3", mips=None):
             Material("emit", emit=(4.0, 7.0, 14.0)), Material("diffuse", (0.85, 0.85, 0.85)),
             Material("metal", (0.95, 0.7, 0.35), 0.3)]
     objs = [ball4(p, rad * (1.4 if m.kind == "emit" else 1.0), m) for p, m in zip(pts, mats)]
-    sid = {"S3": 1, "spheritorus": 5, "torisphere": 6}[name]
+    sid = {"S3": 1, "spheritorus": 5, "torisphere": 6, "tiger": 7}[name]
     return Scene(sh, objs, mips or constant_env(0.0), compact_exit, None, escape=None,
                  meta=dict(scene_id=sid, exit=2, ell_max=1e9, s_max=8 * np.pi))     # непопавшие лучи — чёрные
 

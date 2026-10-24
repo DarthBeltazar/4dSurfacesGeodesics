@@ -73,7 +73,7 @@ Swapchain make_swapchain(VkContext& ctx, VkSurfaceKHR surf, uint32_t W, uint32_t
     ci.imageColorSpace = fmt.colorSpace;
     ci.imageExtent = s.extent;
     ci.imageArrayLayers = 1;
-    ci.imageUsage = VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+    ci.imageUsage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | (caps.supportedUsageFlags & VK_IMAGE_USAGE_TRANSFER_SRC_BIT);
     ci.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
     ci.preTransform = caps.currentTransform;
     ci.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
@@ -126,6 +126,11 @@ int run_app(const std::string& graph_path) {
         vkGetPhysicalDeviceSurfaceSupportKHR(ctx.physical(), ctx.queue_family(), surf, &present_ok);
         if (!present_ok) throw std::runtime_error("очередь compute не умеет present");
         Swapchain sc = make_swapchain(ctx, surf, W, H, vsync);
+        auto recreate = [&]() {
+            vkDeviceWaitIdle(ctx.device());
+            vkDestroySwapchainKHR(ctx.device(), sc.sc, nullptr);
+            sc = make_swapchain(ctx, surf, W, H, vsync);
+        };
 
         GraphProgram prog(ctx, graph_path);
         std::string present_buf, campipe, presentpipe, bench_in, bench_out;
@@ -193,7 +198,7 @@ int run_app(const std::string& graph_path) {
         }
         std::ofstream log;
         if (!bench_out.empty()) { log.open(bench_out); log << "[\n"; }
-        bool quit = false, grab = false;
+        bool quit = false, grab = false, minimized = false;
         uint32_t frame = 0, accum = 0;
         auto t_prev = std::chrono::steady_clock::now();
         double fps_acc = 0;
@@ -213,7 +218,10 @@ int run_app(const std::string& graph_path) {
                     grab = !grab;
                     SDL_SetWindowRelativeMouseMode(win, grab);
                 } else if (e.type == SDL_EVENT_MOUSE_MOTION && grab) { mdx += e.motion.xrel; mdy += e.motion.yrel; }
+                else if (e.type == SDL_EVENT_WINDOW_MINIMIZED) minimized = true;
+                else if (e.type == SDL_EVENT_WINDOW_RESTORED) { minimized = false; recreate(); }
             }
+            if (minimized && script.empty()) { SDL_Delay(20); continue; }   // свёрнуто: extent 0×0 — не рисуем
             if (!script.empty()) {
                 if (frame >= script.size()) break;
                 auto& s = script[frame];
@@ -243,7 +251,13 @@ int run_app(const std::string& graph_path) {
             // копия в образ swapchain и present
             uint32_t idx;
             VkResult ar = vkAcquireNextImageKHR(ctx.device(), sc.sc, UINT64_MAX, acquired, VK_NULL_HANDLE, &idx);
+            if (ar == VK_ERROR_OUT_OF_DATE_KHR) { recreate(); ++frame; continue; }      // кадр не показан
             if (ar != VK_SUCCESS && ar != VK_SUBOPTIMAL_KHR) check(ar, "vkAcquireNextImageKHR");
+            bool readback = false;
+            for (auto& d : dumps) readback |= d.first == frame;
+            readback &= !dumps.empty();
+            Buffer rb{};
+            if (readback) rb = ctx.create_buffer(size_t(sc.extent.width) * sc.extent.height * 4, true);
             vkResetCommandBuffer(cb, 0);
             VkCommandBufferBeginInfo bi{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
             bi.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
@@ -262,9 +276,23 @@ int run_app(const std::string& graph_path) {
             reg.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
             reg.imageExtent = {std::min(W, sc.extent.width), std::min(H, sc.extent.height), 1};
             vkCmdCopyBufferToImage(cb, prog.buffer(present_buf).buf, sc.images[idx], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &reg);
-            ib.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+            if (readback) {        // проверка пути вывода: образ swapchain обратно в буфер (формат, копия, размер)
+                ib.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+                ib.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+                ib.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+                ib.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+                vkCmdPipelineBarrier(cb, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &ib);
+                VkBufferImageCopy back{};
+                back.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+                back.imageExtent = {sc.extent.width, sc.extent.height, 1};
+                vkCmdCopyImageToBuffer(cb, sc.images[idx], VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, rb.buf, 1, &back);
+                ib.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+                ib.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+            } else {
+                ib.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+                ib.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+            }
             ib.newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
-            ib.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
             ib.dstAccessMask = 0;
             vkCmdPipelineBarrier(cb, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 0, 0, nullptr, 0, nullptr, 1, &ib);
             vkEndCommandBuffer(cb);
@@ -284,9 +312,17 @@ int run_app(const std::string& graph_path) {
             pi.swapchainCount = 1;
             pi.pSwapchains = &sc.sc;
             pi.pImageIndices = &idx;
-            vkQueuePresentKHR(ctx.queue(), &pi);
+            VkResult pr = vkQueuePresentKHR(ctx.queue(), &pi);
             check(vkWaitForFences(ctx.device(), 1, &fence, VK_TRUE, UINT64_MAX), "vkWaitForFences");
             vkResetFences(ctx.device(), 1, &fence);
+            if (pr == VK_ERROR_OUT_OF_DATE_KHR || pr == VK_SUBOPTIMAL_KHR) recreate();
+            if (readback) {
+                for (auto& [fi, dir] : dumps)
+                    if (fi == frame)
+                        npy_write(dir + "/swapchain_" + std::to_string(frame) + ".npy", "<u4",
+                                  {sc.extent.height, sc.extent.width}, rb.mapped, rb.size);
+                ctx.destroy_buffer(rb);
+            }
             double post_ms = ms_since(tp), total_ms = ms_since(t0);
             if (rec.is_open() && frame % record_period == record_period - 1) {
                 ctx.copy_buffer(prog.buffer(present_buf), rec_host, size_t(W) * H * 4);
@@ -309,6 +345,7 @@ int run_app(const std::string& graph_path) {
             }
             if (log.is_open()) {
                 log << (frame ? ",\n" : "") << "{\"frame\": " << frame << ", \"moving\": " << moving << ", \"accum\": " << accum
+                    << ", \"extent\": [" << sc.extent.width << ", " << sc.extent.height << "], \"format\": " << int(sc.format)
                     << ", \"total_ms\": " << total_ms << ", \"graph_ms\": " << gpu_ms << ", \"denoise_ms\": " << den_ms
                     << ", \"post_present_ms\": " << post_ms;
                 for (auto& [k, v] : marks) if (k != "start") log << ", \"" << k << "\": " << v / 1e6;
