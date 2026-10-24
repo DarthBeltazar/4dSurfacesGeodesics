@@ -758,7 +758,7 @@ UiActions Editor::draw(const FrameInfo& fi, const CameraState& cam, bool edit_mo
             if (ImGui::Checkbox("полноэкранный режим (F11)", &fs)) act.toggle_fullscreen = true;
             ImGui::TextDisabled("окно %u×%u", fi.ww, fi.wh);
         }
-        ImGui::TextDisabled("WASD, Q/E — полёт; ЛКМ — взгляд мышью; Z/C — крен");
+        ImGui::TextDisabled("WASD, Q/E — полёт; ЛКМ — взгляд мышью; C/Z — крен");
     }
 
     const bool busy = rebuilding();

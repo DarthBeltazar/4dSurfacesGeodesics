@@ -30,7 +30,7 @@
 //   editmode <кадр> on|off           в сценарии: войти в режим редактирования / выйти (ждёт перегенерацию)
 //   record <файл.raw> <период>       дописывать вывод (BGRA8/RGBA8, W·H·4 байт) каждого период-го кадра — для ролика
 //   dump <кадр> <каталог>            сохранить вывод (u32 RGBA8), кадр, выход денойзера и камеру этого кадра (.npy)
-// Управление: W/S, A/D — вперёд/вбок; Q/E — вниз/вверх; мышь (ЛКМ — захват) и стрелки — взгляд; Z/C — крен;
+// Управление: W/S, A/D — вперёд/вбок; Q/E — вниз/вверх; мышь (ЛКМ — захват) и стрелки — взгляд; C/Z — крен;
 //             Shift — ×4; R — денойзер вкл/выкл; F1 — панели редактора; Tab — режим редактирования;
 //             F11 — полноэкранный режим; Esc — выход. Разрешение рендера — в панели «Рендер» (перегенерация графа).
 // Оверлей ImGui — только в интерактивном режиме (не hidden/bench/dump: там вывод сверяется с образом swapchain),
@@ -655,7 +655,7 @@ int run_app(const std::string& graph_path) {
                 mv[2] = v * (float(k[SDL_SCANCODE_E]) - float(k[SDL_SCANCODE_Q]));
                 rot[0] = av * (float(k[SDL_SCANCODE_RIGHT]) - float(k[SDL_SCANCODE_LEFT])) + 0.003f * mdx;
                 rot[1] = av * (float(k[SDL_SCANCODE_UP]) - float(k[SDL_SCANCODE_DOWN])) - 0.003f * mdy;
-                rot[2] = av * (float(k[SDL_SCANCODE_C]) - float(k[SDL_SCANCODE_Z]));
+                rot[2] = av * (float(k[SDL_SCANCODE_Z]) - float(k[SDL_SCANCODE_C]));
             } else {
                 rot[0] = 0.003f * mdx;
                 rot[1] = -0.003f * mdy;
