@@ -1,0 +1,133 @@
+{
+ "manifold": {
+  "kind": "two_compact_wh",
+  "params": {
+   "c1": [-4.0, 0.0, 0.0],
+   "c2": [4.0, 0.0, 0.0],
+   "b": 1.0,
+   "rho0": 3.0,
+   "W": 1.5
+  }
+ },
+ "env": "procedural",
+ "objects": [
+  {
+   "name": "floor",
+   "kind": "plane",
+   "axis": 2,
+   "offset": -3.5,
+   "sign": 1.0,
+   "on_M": false,
+   "material": {
+    "kind": "diffuse",
+    "albedo": [0.55, 0.55, 0.55],
+    "rough": 0.3,
+    "emit": [0.0, 0.0, 0.0]
+   }
+  },
+  {
+   "name": "ball",
+   "kind": "ball4",
+   "center": [0.0, -4.5, -2.7, 1.5],
+   "r": 0.8,
+   "on_M": false,
+   "material": {
+    "kind": "diffuse",
+    "albedo": [0.8, 0.3, 0.2],
+    "rough": 0.3,
+    "emit": [0.0, 0.0, 0.0]
+   }
+  },
+  {
+   "name": "torus",
+   "kind": "torus",
+   "center": [0.0, 4.5, -3.2, 1.5],
+   "R": 1.2,
+   "r": 0.3,
+   "on_M": false,
+   "material": {
+    "kind": "metal",
+    "albedo": [0.95, 0.75, 0.4],
+    "rough": 0.2,
+    "emit": [0.0, 0.0, 0.0]
+   }
+  },
+  {
+   "name": "ball",
+   "kind": "ball4",
+   "center": [0.0, 4.5, -2.7, -1.5],
+   "r": 0.8,
+   "on_M": false,
+   "material": {
+    "kind": "diffuse",
+    "albedo": [0.2, 0.7, 0.3],
+    "rough": 0.3,
+    "emit": [0.0, 0.0, 0.0]
+   }
+  },
+  {
+   "name": "ball",
+   "kind": "ball4",
+   "center": [-4.0, 0.0, 2.0, 1.1925901464309752],
+   "r": 0.35,
+   "on_M": false,
+   "material": {
+    "kind": "metal",
+    "albedo": [0.9, 0.9, 0.9],
+    "rough": 0.1,
+    "emit": [0.0, 0.0, 0.0]
+   }
+  },
+  {
+   "name": "light_up",
+   "kind": "ball4",
+   "center": [0.0, 0.0, 4.0, 1.5],
+   "r": 0.5,
+   "on_M": false,
+   "material": {
+    "kind": "emit",
+    "albedo": [0.8, 0.8, 0.8],
+    "rough": 0.3,
+    "emit": [40.0, 34.0, 26.0]
+   }
+  },
+  {
+   "name": "light_down",
+   "kind": "ball4",
+   "center": [0.0, 0.0, 4.0, -1.5],
+   "r": 0.5,
+   "on_M": false,
+   "material": {
+    "kind": "emit",
+    "albedo": [0.8, 0.8, 0.8],
+    "rough": 0.3,
+    "emit": [15.0, 25.0, 45.0]
+   }
+  },
+  {
+   "name": "x0",
+   "kind": "ball4",
+   "center": [1.0, 2.0, 0.0, 1.5],
+   "r": 0.3
+  },
+  {
+   "name": "x1",
+   "kind": "ball4",
+   "center": [1.0, 3.0, 0.0, 1.5],
+   "r": 0.3
+  },
+  {
+   "name": "x2",
+   "kind": "ball4",
+   "center": [1.0, 4.0, 0.0, 1.5],
+   "r": 0.3
+  }
+ ],
+ "camera": {
+  "x": [0.0, -11.0, 0.5, 1.5],
+  "f": [0.0, 1.0, -0.12, 0.0],
+  "up": [0.0, 0.0, 1.0, 0.0],
+  "fov": 75.0
+ },
+ "speed": 2.0
+}
