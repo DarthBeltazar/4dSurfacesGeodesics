@@ -26,8 +26,10 @@ struct PTParams
     uint env_n;         // текселей на грань в таблице фона
     float env_scale;
     float k_lod;        // M31: множитель раствора отскоков для мипа фона (0 — мип 0)
-    uint use_list;      // 1 — потоки по списку пикселей gPix (n — длина списка)
+    uint use_list;      // 1 — потоки по списку gPix (n — длина), 2 — длина из gCnt[list_id], список с gPix[list_off]
     float c_mix;        // проход камеры: «смешанный», если g < c_mix·след (след — 3σ полей пикселя и апертуры)
+    uint list_id;
+    uint list_off;
 };
 
 [[vk::push_constant]] ConstantBuffer<PTParams> pp;
@@ -45,6 +47,10 @@ struct PTParams
 [[vk::binding(10, 0)]] RWStructuredBuffer<float4> gDd;
 [[vk::binding(11, 0)]] RWStructuredBuffer<uint> gStatus;
 [[vk::binding(12, 0)]] RWStructuredBuffer<uint> gClass;    // 0 — фон (режим A), 1 — объект, 2 — смешанный
+// кадр одним командным буфером: флаги детектора, счётчики списков, косвенные аргументы
+[[vk::binding(13, 0)]] RWStructuredBuffer<uint> gFlag;
+[[vk::binding(14, 0)]] RWStructuredBuffer<uint> gCnt;      // [0] — пиксели объектов/смешанные, [1] — фолбэк фона
+[[vk::binding(15, 0)]] RWStructuredBuffer<uint> gArgs;     // [0..2], [3..5] — группы для списков 0 и 1
 
 static const float PI = 3.14159265;
 
@@ -472,8 +478,9 @@ float light_pdf(float4 p, int k)
 [shader("compute")] [numthreads(64, 1, 1)]
 void pt_sample(uint3 id : SV_DispatchThreadID)
 {
-    if (id.x >= pp.n) return;
-    uint i = pp.use_list != 0 ? gPix[id.x] : id.x;
+    uint n = pp.use_list == 2 ? gCnt[pp.list_id] : pp.n;
+    if (id.x >= n) return;
+    uint i = pp.use_list == 2 ? gPix[pp.list_off + id.x] : (pp.use_list != 0 ? gPix[id.x] : id.x);
     Cam c = load_cam(gCam);
     float4 acc = gAcc[i];
     uint smp = uint(acc.w);
@@ -617,6 +624,28 @@ void pt_sample(uint3 id : SV_DispatchThreadID)
     gStats[i] = gStats[i] + stats;
     gAlb[i] = gAlb[i] + float4(aov_alb, 0);
     gNrm[i] = gNrm[i] + float4(aov_nrm, 0);
+}
+
+// ---- списки пикселей на GPU (кадр графом) ----------------------------------------------------------
+[shader("compute")] [numthreads(1, 1, 1)]
+void pt_clear(uint3 id : SV_DispatchThreadID) { gCnt[0] = 0; gCnt[1] = 0; }
+
+// список 0 — объект/смешанный (с gPix[0]), список 1 — фон, помеченный детектором (с gPix[list_off])
+[shader("compute")] [numthreads(64, 1, 1)]
+void pt_lists(uint3 id : SV_DispatchThreadID)
+{
+    uint i = id.x;
+    if (i >= pp.n) return;
+    uint slot;
+    if (gClass[i] != 0) { InterlockedAdd(gCnt[0], 1, slot); gPix[slot] = i; }
+    else if (gFlag[i] != 0) { InterlockedAdd(gCnt[1], 1, slot); gPix[pp.list_off + slot] = i; }
+}
+
+[shader("compute")] [numthreads(1, 1, 1)]
+void pt_args(uint3 id : SV_DispatchThreadID)
+{
+    gArgs[0] = (gCnt[0] + 63) / 64; gArgs[1] = 1; gArgs[2] = 1;
+    gArgs[3] = (gCnt[1] + 63) / 64; gArgs[4] = 1; gArgs[5] = 1;
 }
 #endif
 

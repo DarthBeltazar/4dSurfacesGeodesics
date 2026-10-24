@@ -108,11 +108,12 @@ class GPUPT:
     seed: int = 1
 
 
-def _push(scene, p: GPUPT, n, env_n, use_list=0, c_mix=1.0):
+def _push(scene, p: GPUPT, n, env_n, use_list=0, c_mix=1.0, list_id=0, list_off=0):
     return [("u32", n), ("u32", p.seed), ("f32", p.tol_kappa), ("f32", p.tol_max), ("f32", p.c_hit),
             ("f32", p.k_cone), ("u32", p.max_depth), ("u32", p.rr_depth), ("u32", p.nee), ("u32", p.mis),
             ("f32", p.s_max), ("u32", p.n_max), ("f32", scene.meta.get("ell_max", 0.0)), ("u32", env_n),
-            ("f32", p.env_scale * scene.env_scale), ("f32", p.k_lod), ("u32", use_list), ("f32", c_mix)]
+            ("f32", p.env_scale * scene.env_scale), ("f32", p.k_lod), ("u32", use_list), ("f32", c_mix),
+            ("u32", list_id), ("u32", list_off)]
 
 
 def _defs(scene, nj=0):
@@ -207,3 +208,76 @@ def render_frame(scene: Scene, cam, spp, p: GPUPT = GPUPT(), nfb=64, c_mix=1.0, 
         res["times"]["fallback"] = ms(rep)
     res["color"] = col
     return res
+
+
+def _push_line(pipe, items):
+    return " ".join([f"push {pipe}"] + [f"{t} {float(v):.9g}" if t == "f32" else f"{t} {int(v)}" for t, v in items])
+
+
+def render_frame_graph(scene: Scene, cam, spp, p: GPUPT = GPUPT(), nfb=64, c_mix=1.0, det=None, k_grad=2.0, fmt="bc6h",
+                       repeat=1):
+    """Кадр режима B одним командным буфером (geo4d_gpu graph): проход камеры → оттенение и детектор режима A →
+    списки пикселей на GPU → spp косвенных диспетчеризаций трассировщика по списку объектов и nfb — по фолбэку.
+    Время — между метками (по прогонам, repeat); накопление трассировщика суммируется по прогонам.
+    Возвращает цвет (H·W, 3), классы, флаги, AOV, отчёт."""
+    import json
+    import subprocess
+    import tempfile
+    from pathlib import Path
+    from .gpu import cube_for_gpu
+    from .gpu_modea import Detector
+    det = det or Detector()
+    cube = cube_for_gpu(np.asarray(scene.mips[0]))
+    N = cam.width * cam.height
+    inc = write_header(scene)
+    envb, env_n = env_buffer(scene)
+    ptc = gpu.compile_shader("pathtrace.slang", "pt_camera", _defs(scene, 4), include=inc)
+    pts = lambda e: gpu.compile_shader("pathtrace.slang", e, _defs(scene, 0), include=inc)
+    md = lambda k, e: gpu.compile_shader("modea.slang", e, {"SCENE": scene.meta["scene_id"], "NJ": 0,
+                                                            "EXIT": scene.meta["exit"], "KERNEL": k})
+    bind = "cam Acc Acc2 Env Cube Stats Pix Alb Nrm Dir Dd Status Class Flag Cnt Args"
+    g = gpu.groups_for(N)[0]
+    pfb = GPUPT(**{**p.__dict__, "seed": p.seed + 7919})
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        np.save(td / "cam.npy", camera_buffer(cam, k_grad, 0.0, det, 0, cube.shape[2]))
+        np.save(td / "env.npy", envb)
+        np.save(td / "cube.npy", gpu.f32(cube))
+        enc = f" {gpu.compile_shader('bc6h_encode.slang', 'bc6h_encode')}" if fmt == "bc6h" else ""
+        L = [f"buffer cam in {td / 'cam.npy'}", f"buffer Env in {td / 'env.npy'}", f"cube Cube {td / 'cube.npy'} {fmt} 16{enc}"]
+        for name, b in [("Acc", 16 * N), ("Acc2", 16 * N), ("Stats", 16 * N), ("Pix", 8 * N), ("Alb", 16 * N), ("Nrm", 16 * N),
+                        ("Dir", 16 * N), ("Dd", 64 * N), ("Status", 4 * N), ("Class", 4 * N), ("Flag", 4 * N), ("Cnt", 16),
+                        ("Args", 32), ("Color", 16 * N)]:
+            L.append(f"buffer {name} zero {b}")
+        L += [f"pipeline camera {ptc} pt_camera {bind}",
+              f"pipeline shade {md(2, 'modea_shade')} modea_shade cam Dir Dd Status Color Cube",
+              f"pipeline detect {md(3, 'modea_detect')} modea_detect cam Dir Dd Status Flag",
+              f"pipeline clear {pts('pt_clear')} pt_clear {bind}", f"pipeline lists {pts('pt_lists')} pt_lists {bind}",
+              f"pipeline args {pts('pt_args')} pt_args {bind}",
+              f"pipeline ptA {pts('pt_sample')} pt_sample {bind}", f"pipeline ptB {pts('pt_sample')} pt_sample {bind}",
+              _push_line("camera", _push(scene, p, N, env_n, c_mix=c_mix)),
+              _push_line("clear", _push(scene, p, N, env_n)), _push_line("lists", _push(scene, p, N, env_n, list_off=N)),
+              _push_line("args", _push(scene, p, N, env_n)),
+              _push_line("ptA", _push(scene, p, N, env_n, use_list=2, list_id=0, list_off=0)),
+              _push_line("ptB", _push(scene, pfb, N, env_n, use_list=2, list_id=1, list_off=N)),
+              "mark start", f"dispatch camera {g} 1 1", "mark camera", f"dispatch shade {g} 1 1", f"dispatch detect {g} 1 1",
+              "mark modea", "dispatch clear 1 1 1", f"dispatch lists {g} 1 1", "dispatch args 1 1 1", "mark lists",
+              f"loop {spp}", "indirect ptA Args 0", "endloop", "mark pt"]
+        if nfb > 0:
+            L += [f"loop {nfb}", "indirect ptB Args 12", "endloop", "mark fallback"]
+        L += [f"repeat {repeat}", f"output Acc {td / 'acc.npy'} f4 {N} 4", f"output Color {td / 'col.npy'} f4 {N} 4",
+              f"output Class {td / 'cls.npy'} u4 {N}", f"output Flag {td / 'flag.npy'} u4 {N}",
+              f"output Alb {td / 'alb.npy'} f4 {N} 4", f"output Nrm {td / 'nrm.npy'} f4 {N} 4",
+              f"output Stats {td / 'st.npy'} f4 {N} 4", f"output Cnt {td / 'cnt.npy'} u4 4", f"report {td / 'report.json'}"]
+        (td / "graph.txt").write_text("\n".join(L) + "\n", encoding="utf-8")
+        r = subprocess.run([str(gpu.EXE), "graph", str(td / "graph.txt")], capture_output=True, text=True)
+        if r.returncode != 0:
+            raise RuntimeError(f"geo4d_gpu graph: {r.stdout}\n{r.stderr}")
+        rep = json.loads((td / "report.json").read_text(encoding="utf-8"))
+        acc, col, cls = np.load(td / "acc.npy"), np.load(td / "col.npy")[:, :3].astype(np.float64), np.load(td / "cls.npy")
+        flag = np.load(td / "flag.npy").astype(bool) & (cls == 0)
+        alb, nrm, st, cnt = np.load(td / "alb.npy"), np.load(td / "nrm.npy"), np.load(td / "st.npy"), np.load(td / "cnt.npy")
+    c = np.maximum(acc[:, 3:4], 1)
+    traced = (cls != 0) | flag
+    col[traced] = (acc[:, :3] / c)[traced]
+    return dict(color=col, cls=cls, flags=flag, aov=(alb[:, :3] / c, nrm[:, :3] / c), stats=st, cnt=cnt, report=rep)
