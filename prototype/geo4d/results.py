@@ -38,7 +38,8 @@ def meta():
     import jax
     return dict(
         git_commit=_git("rev-parse", "HEAD"),
-        git_dirty=bool(_git("status", "--porcelain", "--untracked-files=no")),
+        # изменения в results/ — выходные данные других запусков, не код
+        git_dirty=bool(_git("status", "--porcelain", "--untracked-files=no", "--", ".", ":(exclude)results")),
         date=datetime.datetime.now().isoformat(timespec="seconds"),
         os=platform.platform(), cpu=platform.processor(), python=sys.version.split()[0],
         gpu=_gpu(), jax_backend=jax.default_backend(), jax_x64=bool(jax.config.read("jax_enable_x64")),
