@@ -38,6 +38,9 @@ def main():
     ap.add_argument("--visible", action="store_true", help="замер в видимом окне (проверка пути на экран)")
     ap.add_argument("--frames", type=int, default=60)
     ap.add_argument("--tag", default="", help="суффикс имени каталога результатов замера")
+    ap.add_argument("--edit-mode", action="store_true",
+                    help="замер в режиме редактирования (DD-008): вход на кадре 1, выход за 3 кадра до конца; "
+                         "в summary — время кадров переключения графа")
     ap.add_argument("--dump", default="", help="кадры для сохранения через запятую (в каталог результатов замера)")
     ap.add_argument("--graph-only", metavar="DIR", default="",
                     help="записать граф и его входные данные в DIR и выйти (запуск/отладка `geo4d_gpu app DIR/app_graph.txt` из IDE)")
@@ -67,7 +70,7 @@ def main():
             bench = (td / "script.txt", out / "frames.json")
         dumps = [(int(f), (out or td).as_posix()) for f in a.dump.split(",") if f] if a.bench else ()
         editor = None
-        if not a.bench:          # редактор сцен (DD-008): окно перегенерирует граф этим же скриптом
+        if not a.bench or a.edit_mode:          # редактор сцен (DD-008): окно перегенерирует граф этим же скриптом
             scene_path = SF.resolve(a.scene).resolve()
             editor = dict(scene=scene_path.as_posix(), work_dir=td.as_posix(), fov=cam_fov,
                           env=json.loads(scene_path.read_text(encoding="utf-8")).get("env"),
@@ -75,6 +78,11 @@ def main():
                           args=["--res", a.res, "--cube", str(a.cube)] + (["--vsync"] if a.vsync else []))
         graph = G.app_graph(sc, cam, td, speed=speed, hidden=a.bench and not a.visible, vsync=a.vsync, bench=bench,
                             dumps=dumps, editor=editor)
+        switch = ()
+        if a.bench and a.edit_mode:
+            switch = (1, len(script) - 3)
+            graph.write_text(graph.read_text(encoding="utf-8") + f"editmode {switch[0]} on\neditmode {switch[1]} off\n",
+                             encoding="utf-8")
         if a.graph_only:
             print(f"граф: {graph}\nзапуск: {gpu.EXE} app {graph}")
             return
@@ -83,13 +91,15 @@ def main():
             raise RuntimeError(f"geo4d_gpu app: {r.stdout}\n{r.stderr}")
     if out is not None:
         fr = json.loads((out / "frames.json").read_text(encoding="utf-8"))
-        mv = [f for f in fr[1:] if f["moving"]][5:]
-        st = [f for f in fr if not f["moving"]][5:]
+        mv = [f for f in fr[1:] if f["moving"] and f["frame"] not in switch][5:]
+        st = [f for f in fr if not f["moving"] and f["frame"] not in switch][5:]
         keys = ["total_ms", "graph_ms", "denoise_ms", "post_present_ms", "camera", "lists", "pt", "fallback", "compose"]
         summ = {}
         for name, rows in [("moving", mv), ("static", st)]:
             summ[name] = {k: float(np.median([r[k] for r in rows if k in r])) for k in keys if any(k in r for r in rows)}
             summ[name]["frames"] = len(rows)
+        if switch:               # кадры смены графа: вход в режим редактирования и выход (структура прежняя)
+            summ["switch_ms"] = {"enter": fr[switch[0]]["total_ms"], "exit": fr[switch[1]]["total_ms"]}
         (out / "summary.json").write_text(json.dumps(summ, indent=1, ensure_ascii=False), encoding="utf-8")
         summ["swapchain"] = dict(extent=fr[0]["extent"], format=fr[0]["format"])
         for f in sorted(out.glob("swapchain_*.npy")):          # путь на экран: образ swapchain = буфер вывода
