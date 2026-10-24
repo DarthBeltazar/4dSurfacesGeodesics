@@ -1,0 +1,1 @@
+.venv/Scripts/python.exe prototype/scripts/video.py --res 1920x1080 --spp 64
