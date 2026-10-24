@@ -73,13 +73,14 @@ class Config:
 
 
 def make_integrator(shape, cfg: Config, escape: Callable = None, aux: Callable = None, naux: int = 0,
-                    gcap: Callable = None, f: Callable = None):
+                    gcap: Callable = None, f: Callable = None, prev: bool = False):
     """Возвращает jit-функцию run(x0, v0[, E0]) для батча (N, 4) лучей; E0: (N, 2, k, 4) при cfg.jacobi = k.
 
     escape(x, v) -> bool    — луч покинул область интегрирования (проверяется после принятого шага);
     aux(x_old, x_new) -> (naux,) — накапливаемая величина вдоль пути (например, развёрнутый угол);
     gcap(x) -> float        — ограничение шага SDF объектов (sphere tracing);
-    f — переопределение f фигуры (для обёрток U5/U6).
+    f — переопределение f фигуры (для обёрток U5/U6);
+    prev — вернуть предыдущее принятое состояние (xprev, vprev, sprev) — для эрмитова уточнения M27.
     """
     f = f or shape.f
     alpha = shape.alpha if cfg.alpha is None else cfg.alpha
@@ -160,7 +161,8 @@ def make_integrator(shape, cfg: Config, escape: Callable = None, aux: Callable =
             h0 = jnp.minimum(h0, gcap(x0))
         rec = jnp.zeros((max(cfg.record, 1), 9)).at[0].set(jnp.concatenate([x0, v0, jnp.zeros(1)]))
         st = dict(x=x0, v=v0, E=E0, acc=acc0, dE=dE0, h=h0, s=jnp.asarray(0.0), nacc=jnp.asarray(0), nrej=jnp.asarray(0),
-                  nsdf=jnp.asarray(1), status=jnp.asarray(RUNNING), aux=jnp.zeros(naux), rec=rec)
+                  nsdf=jnp.asarray(1), status=jnp.asarray(RUNNING), aux=jnp.zeros(naux), rec=rec,
+                  xprev=x0, vprev=v0, sprev=jnp.asarray(0.0))
 
         def cond(st):
             return st["status"] == RUNNING
@@ -198,13 +200,18 @@ def make_integrator(shape, cfg: Config, escape: Callable = None, aux: Callable =
                 idx = jnp.where(accept & (nacc < cfg.record), nacc, cfg.record)  # вне диапазона — отбрасывается
                 rec = rec.at[idx].set(row, mode="drop")
             return dict(x=x_new, v=v_new, E=E_new, acc=a_new, dE=dE_new, h=h_new, s=s_new, nacc=nacc, nrej=nrej,
-                        nsdf=st["nsdf"] + ncalls, status=status, aux=new_aux, rec=rec)
+                        nsdf=st["nsdf"] + ncalls, status=status, aux=new_aux, rec=rec,
+                        xprev=jnp.where(accept, x, st["xprev"]), vprev=jnp.where(accept, v, st["vprev"]),
+                        sprev=jnp.where(accept, st["s"], st["sprev"]))
 
         out = lax.while_loop(cond, body, st)
         out.pop("acc")
         out.pop("dE")
         if not cfg.record:
             out.pop("rec")
+        if not prev:
+            for k in ("xprev", "vprev", "sprev"):
+                out.pop(k)
         if nj and cfg.jacobi_jet == "hvp":
             out["nsdf_hvp"] = out.pop("nsdf") * (1 + nj)               # проходы HVP-jet
             out["nsdf"] = jnp.asarray(0)

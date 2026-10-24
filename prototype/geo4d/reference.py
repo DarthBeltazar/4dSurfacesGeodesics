@@ -96,3 +96,23 @@ def compact_phi_total(L, rho_c, b=1.0, rho0=3.0, W=1.5):
         return head + seg(L, r_in) + seg(L, rho0) + tail, +1
     # L < b: проход сквозь горловину; около ρ = b √(1 + w′²) ~ 1/√(ρ − b), замена ρ = b + σ²
     return head + seg(b, r_in) + seg(b, rho0) + tail, -1
+
+
+def dop853_hit(shape, g_vec, x0, v0, L, alpha=None, rtol=1e-12, atol=1e-12, max_step=0.05):
+    """Эталон попадания в объект (DD-005, M27): DOP853 с событием g(x) = 0 (корень по плотному выводу).
+    max_step — иначе на прямых шаг больше объекта и событие (смена знака на концах шага) пропускается.
+    Возвращает (hit (N,), x (N, 4), v (N, 4), s (N,))."""
+    F = reference_rhs(shape.f_vec, shape.alpha if alpha is None else alpha)
+    fun = lambda t, y: np.asarray(F(jnp.asarray(y)))
+    gj = jax.jit(g_vec)
+    ev = lambda t, y: float(gj(jnp.asarray(y[:4])))
+    ev.terminal, ev.direction = True, -1
+    H, X, Vv, S = [], [], [], []
+    for x, v in zip(np.atleast_2d(x0), np.atleast_2d(v0)):
+        sol = solve_ivp(fun, (0.0, L), np.r_[x, v], method="DOP853", rtol=rtol, atol=atol, events=ev,
+                        max_step=max_step)
+        assert sol.success, sol.message
+        hit = len(sol.t_events[0]) > 0
+        y = sol.y_events[0][0] if hit else sol.y[:, -1]
+        H.append(hit), X.append(y[:4]), Vv.append(y[4:]), S.append(sol.t_events[0][0] if hit else L)
+    return np.array(H), np.array(X), np.array(Vv), np.array(S)
