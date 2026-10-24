@@ -299,7 +299,7 @@ I_SEED, I_USE_DEN, I_BGRA = 1, 20, 21          # индексы push-конст�
 
 
 def app_graph(scene: Scene, cam, td, p: GPUPT = GPUPT(), nfb_move=8, speed=1.0, fmt="bc6h", hidden=False, vsync=False,
-              bench=None, margin=0.05, det=None, k_grad=2.0, dumps=()):
+              bench=None, margin=0.05, det=None, k_grad=2.0, dumps=(), record=None):
     """Граф интерактивного приложения (DD-007): секции move / static / post и директивы app. td — каталог для файлов.
     bench = (файл сценария, json журнала) — режим замера. Возвращает путь к графу."""
     from pathlib import Path
@@ -360,6 +360,8 @@ def app_graph(scene: Scene, cam, td, p: GPUPT = GPUPT(), nfb_move=8, speed=1.0, 
         L.append(f"bench {bench[0]} {bench[1]}")
     for fi, d in dumps:
         L.append(f"dump {fi} {d}")
+    if record:
+        L.append(f"record {record[0]} {record[1]}")
     path = td / "app_graph.txt"
     path.write_text("\n".join(L) + "\n", encoding="utf-8")
     return path
@@ -378,7 +380,8 @@ def app_scene(name, mips=None):
         x, e = ellis_point(6.0)
         return sc, dict(x=x, f=-e, up=up), 2.0
     sc = PT.scene_compact_space(name)
-    x0 = {"S3": [1.0, 0, 0, 0], "spheritorus": [1.0, 0, 0, 0.4], "torisphere": [1.4, 0, 0, 0]}[name]
+    # S³: не в антиподе объекта (иначе все геодезические сходятся на нём и он закрывает весь фон)
+    x0 = {"S3": [0.8, -0.35, 0.3, 0.38], "spheritorus": [1.0, 0, 0, 0.4], "torisphere": [1.4, 0, 0, 0]}[name]
     from .shapes import project_points
     x = np.asarray(project_points(sc.shape, np.array([x0], float)))[0]
     return sc, dict(x=x, f=np.array([0, 1.0, 0, 0]), up=up), 0.5

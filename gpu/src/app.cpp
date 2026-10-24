@@ -9,6 +9,7 @@
 //   speed <ед./с>                    скорость полёта
 //   hidden | vsync                   скрытое окно (замеры) / вертикальная синхронизация
 //   bench <сценарий> <json>          движение из файла (строка на кадр: a b c ψ θ φ за кадр), журнал времени, выход
+//   record <файл.raw> <период>       дописывать вывод (BGRA8/RGBA8, W·H·4 байт) каждого период-го кадра — для ролика
 //   dump <кадр> <каталог>            сохранить вывод (u32 RGBA8), кадр, выход денойзера и камеру этого кадра (.npy)
 // Управление: W/S, A/D — вперёд/вбок; Q/E — вниз/вверх; мышь (ЛКМ — захват) и стрелки — взгляд; Z/C — крен;
 //             Shift — ×4; R — денойзер вкл/выкл; Esc — выход.
@@ -130,6 +131,8 @@ int run_app(const std::string& graph_path) {
         std::string present_buf, campipe, presentpipe, bench_in, bench_out;
         std::vector<std::string> den_bufs, seedpipes;
         std::vector<std::pair<uint32_t, std::string>> dumps;
+        std::string record_path;
+        uint32_t record_period = 1;
         size_t i_use_den = 0, i_bgra = 0, i_seed = 1;
         float speed = 1.0f;
         for (auto& w : prog.extra()) {
@@ -141,6 +144,7 @@ int run_app(const std::string& graph_path) {
             else if (w[0] == "speed") speed = std::stof(w.at(1));
             else if (w[0] == "bench") { bench_in = w.at(1); bench_out = w.at(2); }
             else if (w[0] == "dump") dumps.emplace_back(uint32_t(std::stoul(w.at(1))), w.at(2));
+            else if (w[0] == "record") { record_path = w.at(1); record_period = uint32_t(std::stoul(w.at(2))); }
         }
         prog.set_push_u32(presentpipe, i_bgra, sc.format == VK_FORMAT_B8G8R8A8_UNORM ? 1u : 0u);
 
@@ -181,6 +185,12 @@ int run_app(const std::string& graph_path) {
         VkCommandBuffer cb;
         check(vkAllocateCommandBuffers(ctx.device(), &cai, &cb), "vkAllocateCommandBuffers");
 
+        std::ofstream rec;
+        Buffer rec_host{};
+        if (!record_path.empty()) {
+            rec.open(record_path, std::ios::binary);
+            rec_host = ctx.create_buffer(size_t(W) * H * 4, true);
+        }
         std::ofstream log;
         if (!bench_out.empty()) { log.open(bench_out); log << "[\n"; }
         bool quit = false, grab = false;
@@ -278,6 +288,10 @@ int run_app(const std::string& graph_path) {
             check(vkWaitForFences(ctx.device(), 1, &fence, VK_TRUE, UINT64_MAX), "vkWaitForFences");
             vkResetFences(ctx.device(), 1, &fence);
             double post_ms = ms_since(tp), total_ms = ms_since(t0);
+            if (rec.is_open() && frame % record_period == record_period - 1) {
+                ctx.copy_buffer(prog.buffer(present_buf), rec_host, size_t(W) * H * 4);
+                rec.write(static_cast<const char*>(rec_host.mapped), std::streamsize(size_t(W) * H * 4));
+            }
             for (auto& [fi, dir] : dumps) {
                 if (fi != frame) continue;
                 auto save = [&](const std::string& name, const std::string& dtype, std::vector<size_t> shape) {
@@ -312,6 +326,7 @@ int run_app(const std::string& graph_path) {
             ++frame;
         }
         if (log.is_open()) log << "\n]\n";
+        if (rec.is_open()) { rec.close(); ctx.destroy_buffer(rec_host); }
         vkDeviceWaitIdle(ctx.device());
         vkFreeCommandBuffers(ctx.device(), ctx.command_pool(), 1, &cb);
         vkDestroyFence(ctx.device(), fence, nullptr);

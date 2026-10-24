@@ -4,3 +4,4 @@ __pycache__/
 *.pyc
 .venv/
 gpu/build/
+results/**/*.mp4
