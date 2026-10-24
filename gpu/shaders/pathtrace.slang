@@ -89,6 +89,30 @@ float gmin_k(float4 p, out int k)
 
 float pt_gmin(float4 p) { int k; return gmin_k(p, k); }
 
+// минимум по ограниченным объектам (полупространства на прямой — аналитически)
+float gmin_bounded_k(float4 p, out int k)
+{
+    float g = 1e30;
+    k = -1;
+    for (int i = 0; i < PT_NOBJ; i++) if (OBJ_PL[i].x == 0) { float v = obj_val(i, p); if (v < g) { g = v; k = i; } }
+    return g;
+}
+
+// ближайшее пересечение прямой x + t v (t ≥ 0) с полупространствами (иначе 1e30)
+float plane_hit(float4 x, float4 v, out int kp)
+{
+    float tp = 1e30;
+    kp = -1;
+    for (int k = 0; k < PT_NOBJ; k++)
+    {
+        float4 pl = OBJ_PL[k];
+        if (pl.x == 0) continue;
+        int ax = int(pl.y);
+        if (pl.w * v[ax] < 0) { float t = (pl.z - x[ax]) / v[ax]; if (t >= 0 && t < tp) { tp = t; kp = k; } }
+    }
+    return tp;
+}
+
 float ulp_floor(float4 x) { float m = max(max(abs(x.x), abs(x.y)), max(abs(x.z), abs(x.w))); return 32 * 1.2e-7 * max(m, 1.0); }
 
 // ε_hit = max(c_hit·w(s), 32 ulp(|x|)), w(s) = w₀ + γ (s_base + s): допуск перескока шага (h ≤ g + ε_hit).
@@ -98,9 +122,13 @@ float pt_hit_floor(float4 x) { return ulp_floor(x); }
 
 // ---- плоские зоны (M29) ---------------------------------------------------------------------------
 
+// радиус шара кривизны с допуском float32 — один и тот же во всех проверках (иначе луч, отданный интегратором на
+// границе ρ ≈ ρ₀(1 − 1e-6), считался задевающим шар и летел до s_max)
+static const float RHO_IN = PT_RHO0 * (1 - 1e-5);
+
 bool in_flat(float4 x)
 {
-    for (int i = 0; i < PT_NBALL; i++) if (length(x.xyz - PT_BALL_C[i]) < PT_RHO0 * (1 - 1e-5)) return false;
+    for (int i = 0; i < PT_NBALL; i++) if (length(x.xyz - PT_BALL_C[i]) < RHO_IN) return false;
     return PT_HAS_FLAT != 0;
 }
 
@@ -110,7 +138,7 @@ bool ray_clear_balls(float4 x, float4 d)
     {
         float3 q = x.xyz - PT_BALL_C[i];
         float t = max(-dot(q, d.xyz) / dot(d.xyz, d.xyz), 0.0);
-        if (length(q + t * d.xyz) < PT_RHO0) return false;
+        if (length(q + t * d.xyz) < RHO_IN) return false;
     }
     return true;
 }
@@ -122,7 +150,7 @@ bool seg_clear_balls(float4 x, float4 y)
     {
         float3 q = x.xyz - PT_BALL_C[i];
         float t = clamp(-dot(q, d) / max(dot(d, d), 1e-30), 0.0, 1.0);
-        if (length(q + t * d) < PT_RHO0) return false;
+        if (length(q + t * d) < RHO_IN) return false;
     }
     return true;
 }
@@ -134,20 +162,21 @@ float ball_entry(float4 x, float4 d)
     for (int i = 0; i < PT_NBALL; i++)
     {
         float3 q = x.xyz - PT_BALL_C[i];
-        float b = dot(q, d.xyz), c = dot(q, q) - PT_RHO0 * PT_RHO0;
+        float b = dot(q, d.xyz), c = dot(q, q) - RHO_IN * RHO_IN;
         float disc = b * b - c;
         if (disc > 0) { float t = -b - sqrt(disc); if (t >= 0) tb = min(tb, t); }
     }
     return tb;
 }
 
-// луч x + t v (прямая) не может задеть ни один объект (мимо ограничивающих сфер, от полупространств)
-bool ahead_clear(float4 x, float4 v)
+// луч x + t v (прямая) не может задеть ни один объект (мимо ограничивающих сфер, от полупространств);
+// planes = false — только ограниченные объекты
+bool ahead_clear(float4 x, float4 v, bool planes = true)
 {
     for (int k = 0; k < PT_NOBJ; k++)
     {
         float4 pl = OBJ_PL[k];
-        if (pl.x > 0) { if (pl.w * v[int(pl.y)] < 0) return false; continue; }
+        if (pl.x > 0) { if (planes && pl.w * v[int(pl.y)] < 0) return false; continue; }
         float4 oc = OBJ_C[k] - x;
         float tca = dot(oc, v), r = OBJ_R[k];
         if (dot(oc, oc) < r * r) return false;
@@ -275,11 +304,13 @@ uint flat_flight(inout float4 x, float4 v, inout float s, out int k, inout uint 
     g_sbase = 0;
     k = -1;
     float step = 0;
+    int kp;
+    float tp = plane_hit(x, v, kp);                  // полупространства — точно, без sphere tracing
     for (int it = 0; it < 1024; it++)
     {
         nsteps++;
         float eps = pt_eps_hit(s, x);
-        float g = gmin_k(x, k);
+        float g = gmin_bounded_k(x, k);
         if (g < pt_hit_floor(x))
         {
             // корень на прямой между x − step·v (g_k > 0) и x (g_k < 0): Иллинойс по t ∈ [−step, 0]
@@ -300,12 +331,19 @@ uint flat_flight(inout float4 x, float4 v, inout float s, out int k, inout uint 
             }
             return 1;
         }
-        if (ray_clear_balls(x, v) && ahead_clear(x, v)) return 0;
+        if (ray_clear_balls(x, v) && ahead_clear(x, v, false))
+        {
+            // впереди только полупространства: попадание в ближайшее — точно, иначе уход
+            if (tp < 1e30) { x += tp * v; s += tp; k = kp; return 1; }
+            return 0;
+        }
         float tb = ball_entry(x, v);
         step = g + 0.5 * eps;
+        if (tp <= min(step, tb)) { x += tp * v; s += tp; k = kp; return 1; }
         if (tb <= step) { x += tb * v; s += tb; return 2; }
         x += step * v;
         s += step;
+        tp -= step;
         if (s > pp.s_max) return 3;
     }
     return 3;
@@ -465,12 +503,13 @@ float3 env_radiance(float3 d, float4 x, float gb)
 
 bool is_light(int k) { for (int i = 0; i < PT_NLIGHT; i++) if (LIGHT_OBJ[i] == k) return true; return false; }
 
+// 1 − cos θ_max конуса сферы без потери знаков: x/(1 + √(1 − x)), x = r²/d² (у далёких точек 1 − cos → 0 во float32)
+float one_minus_cmax(float r, float d2) { float x = min(r * r / d2, 1.0); return x / (1 + sqrt(1 - x)); }
+
 float light_pdf(float4 p, int k)
 {
     float3 dc = OBJ_C[k].xyz - p.xyz;
-    float r = OBJ_R[k];
-    float cmax = sqrt(max(1 - r * r / dot(dc, dc), 0.0));
-    return 1.0 / (2 * PI * (1 - cmax)) / float(PT_NLIGHT);
+    return 1.0 / (2 * PI * one_minus_cmax(OBJ_R[k], dot(dc, dc))) / float(PT_NLIGHT);
 }
 
 // ---- ядро -----------------------------------------------------------------------------------------
@@ -557,11 +596,13 @@ void pt_sample(uint3 id : SV_DispatchThreadID)
         float3 alb = MAT_A[k].rgb;
         float rough = MAT_E[k].w;
         bool flat_here = PT_HAS_FLAT != 0 && in_flat(x);
-        // смещение от поверхности: g(x₀) > 2 ε_hit
+        // смещение от поверхности: попадание — только по смене знака g (M26), поэтому достаточно g(x₀) выше пола
+        // округления; смещение порядка ε_hit (как было сначала) на крупных пикселях уводило точку за соседнюю
+        // поверхность в щелях (шар на полу) — пути обрывались попаданием с обратной стороны
         float eh = max(pp.c_hit * w, ulp_floor(x));
-        float off = max(1e-4 * SCALE, 2 * eh);
+        float off = max(1e-4 * SCALE, 4 * ulp_floor(x));
         float4 xo = proj_M(x + off * ng);
-        for (int it = 0; it < 3 && obj_val(k, xo) < 1.5 * eh; it++) { off *= 2; xo = proj_M(x + off * ng); }
+        for (int it = 0; it < 3 && obj_val(k, xo) < 2 * ulp_floor(xo); it++) { off *= 2; xo = proj_M(x + off * ng); }
         if (pp.nee != 0 && flat_here)
         {
             // NEE: сферический источник
@@ -573,8 +614,8 @@ void pt_sample(uint3 id : SV_DispatchThreadID)
                 float3 ax3 = cc - p3;
                 float dist = length(ax3);
                 ax3 /= dist;
-                float cmax = sqrt(max(1 - r * r / (dist * dist), 0.0));
-                float ct = 1 - urand(seed) * (1 - cmax), stt = sqrt(max(1 - ct * ct, 0.0)), ph = 2 * PI * urand(seed);
+                float omc = one_minus_cmax(r, dist * dist);
+                float ct = 1 - urand(seed) * omc, stt = sqrt(max(1 - ct * ct, 0.0)), ph = 2 * PI * urand(seed);
                 float3 aa = abs(ax3.x) < 0.9 ? float3(1, 0, 0) : float3(0, 1, 0);
                 float3 b1 = normalize(cross(ax3, aa)), b2 = cross(ax3, b1);
                 float3 d3 = ct * ax3 + stt * cos(ph) * b1 + stt * sin(ph) * b2;
@@ -582,7 +623,7 @@ void pt_sample(uint3 id : SV_DispatchThreadID)
                 float bq = dot(oc, d3);
                 float tl = -bq - sqrt(max(bq * bq - (dot(oc, oc) - r * r), 0.0));
                 float4 wi4 = float4(d3, 0);
-                float pl = 1.0 / (2 * PI * (1 - cmax)) / float(PT_NLIGHT), pb;
+                float pl = 1.0 / (2 * PI * omc) / float(PT_NLIGHT), pb;
                 float3 f = bsdf_eval(kind, alb, rough, wo, float3(dot(wi4, t1), dot(wi4, t2), dot(wi4, ng)), pb);
                 bool vis = abs(OBJ_C[lk].w - x.w) < 1e-4 && any(f > 0) && seg_clear_balls(xo, xo + tl * wi4) &&
                            !line_blocked(xo, wi4, tl * (1 - 1e-4), lk, eh);
@@ -739,7 +780,6 @@ void pt_camera(uint3 id : SV_DispatchThreadID)
     if (cls == 0 && mix < 0) cls = 2;
     gClass[i] = cls;
     gStatus[i] = cls == 0 ? DONE_ESCAPE : DONE_HIT;
-    gStats[i] = float4(s, mix, stats.y, 0);
     if (cls != 0) { gDir[i] = float4(0, 0, 1, x.w >= 0 ? 1.0 : -1.0); [ForceUnroll] for (int k = 0; k < 4; k++) gDd[4 * i + k] = float4(0); return; }
     // ∂v = J′ − ⟨SJ, v⟩n (M17); d∞ и ∂d∞ дуальными числами (M24) — как modea_central
     Jet15 s15[4];
