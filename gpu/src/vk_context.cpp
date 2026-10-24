@@ -22,7 +22,7 @@ constexpr uint32_t kMaxTimestamps = 512;
 
 }  // namespace
 
-VkContext::VkContext() {
+VkContext::VkContext(const std::vector<const char*>& instance_exts, bool swapchain) {
     check(volkInitialize(), "volkInitialize");
 
     VkApplicationInfo app{VK_STRUCTURE_TYPE_APPLICATION_INFO};
@@ -30,6 +30,8 @@ VkContext::VkContext() {
     app.apiVersion = VK_API_VERSION_1_3;
     VkInstanceCreateInfo ici{VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO};
     ici.pApplicationInfo = &app;
+    ici.enabledExtensionCount = static_cast<uint32_t>(instance_exts.size());
+    ici.ppEnabledExtensionNames = instance_exts.data();
     check(vkCreateInstance(&ici, nullptr, &instance_), "vkCreateInstance");
     volkLoadInstance(instance_);
 
@@ -59,8 +61,10 @@ VkContext::VkContext() {
     vkEnumerateDeviceExtensionProperties(phys_, nullptr, &ne, nullptr);
     std::vector<VkExtensionProperties> exts(ne);
     vkEnumerateDeviceExtensionProperties(phys_, nullptr, &ne, exts.data());
-    for (auto& e : exts)
+    for (auto& e : exts) {
         if (std::strcmp(e.extensionName, VK_KHR_PIPELINE_EXECUTABLE_PROPERTIES_EXTENSION_NAME) == 0) exec_props_ = true;
+        if (std::strcmp(e.extensionName, VK_KHR_EXTERNAL_MEMORY_WIN32_EXTENSION_NAME) == 0) ext_mem_ = true;
+    }
 
     float prio = 1.0f;
     VkDeviceQueueCreateInfo qci{VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO};
@@ -88,6 +92,8 @@ VkContext::VkContext() {
 
     std::vector<const char*> dexts;
     if (exec_props_) dexts.push_back(VK_KHR_PIPELINE_EXECUTABLE_PROPERTIES_EXTENSION_NAME);
+    if (ext_mem_) dexts.push_back(VK_KHR_EXTERNAL_MEMORY_WIN32_EXTENSION_NAME);
+    if (swapchain) dexts.push_back(VK_KHR_SWAPCHAIN_EXTENSION_NAME);
     VkDeviceCreateInfo dci{VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO};
     dci.pNext = &f2;
     dci.queueCreateInfoCount = 1;
@@ -172,8 +178,52 @@ Buffer VkContext::create_buffer(size_t bytes, bool host_visible) {
 }
 
 void VkContext::destroy_buffer(Buffer& b) {
-    if (b.buf) vmaDestroyBuffer(vma_, b.buf, b.alloc);
+    if (b.memory) {
+        if (b.win32) CloseHandle(b.win32);
+        vkDestroyBuffer(device_, b.buf, nullptr);
+        vkFreeMemory(device_, b.memory, nullptr);
+    } else if (b.buf) vmaDestroyBuffer(vma_, b.buf, b.alloc);
     b = Buffer{};
+}
+
+Buffer VkContext::create_exportable_buffer(size_t bytes) {
+    if (!ext_mem_) throw std::runtime_error("нет VK_KHR_external_memory_win32");
+    Buffer b;
+    b.size = bytes;
+    VkExternalMemoryBufferCreateInfo ebi{VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_BUFFER_CREATE_INFO};
+    ebi.handleTypes = VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_WIN32_BIT;
+    VkBufferCreateInfo bi{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
+    bi.pNext = &ebi;
+    bi.size = bytes > 0 ? bytes : 4;
+    bi.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+    check(vkCreateBuffer(device_, &bi, nullptr, &b.buf), "vkCreateBuffer (export)");
+    VkMemoryRequirements req;
+    vkGetBufferMemoryRequirements(device_, b.buf, &req);
+    VkPhysicalDeviceMemoryProperties mp;
+    vkGetPhysicalDeviceMemoryProperties(phys_, &mp);
+    uint32_t type = UINT32_MAX;
+    for (uint32_t i = 0; i < mp.memoryTypeCount; ++i)
+        if ((req.memoryTypeBits & (1u << i)) && (mp.memoryTypes[i].propertyFlags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)) { type = i; break; }
+    if (type == UINT32_MAX) throw std::runtime_error("нет типа памяти для экспорта");
+    VkMemoryDedicatedAllocateInfo ded{VK_STRUCTURE_TYPE_MEMORY_DEDICATED_ALLOCATE_INFO};
+    ded.buffer = b.buf;
+    VkExportMemoryAllocateInfo exi{VK_STRUCTURE_TYPE_EXPORT_MEMORY_ALLOCATE_INFO};
+    exi.pNext = &ded;
+    exi.handleTypes = VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_WIN32_BIT;
+    VkMemoryAllocateInfo mai{VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO};
+    mai.pNext = &exi;
+    mai.allocationSize = req.size;
+    mai.memoryTypeIndex = type;
+    check(vkAllocateMemory(device_, &mai, nullptr, &b.memory), "vkAllocateMemory (export)");
+    check(vkBindBufferMemory(device_, b.buf, b.memory, 0), "vkBindBufferMemory");
+    VkMemoryGetWin32HandleInfoKHR hi{VK_STRUCTURE_TYPE_MEMORY_GET_WIN32_HANDLE_INFO_KHR};
+    hi.memory = b.memory;
+    hi.handleType = VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_WIN32_BIT;
+    HANDLE h = nullptr;
+    check(vkGetMemoryWin32HandleKHR(device_, &hi, &h), "vkGetMemoryWin32HandleKHR");
+    b.win32 = h;
+    b.alloc_size = req.size;
+    return b;
 }
 
 VkCommandBuffer VkContext::begin_cmd() {

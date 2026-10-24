@@ -9,6 +9,7 @@ import numpy as np
 
 from . import gpu
 from .gpu_modea import camera_buffer
+from . import pathtrace as PT
 from .pathtrace import Scene, env_table
 
 KIND = {"diffuse": 0, "metal": 1, "emit": 2}
@@ -108,12 +109,12 @@ class GPUPT:
     seed: int = 1
 
 
-def _push(scene, p: GPUPT, n, env_n, use_list=0, c_mix=1.0, list_id=0, list_off=0):
+def _push(scene, p: GPUPT, n, env_n, use_list=0, c_mix=1.0, list_id=0, list_off=0, use_den=0, bgra=1, exposure=1.0):
     return [("u32", n), ("u32", p.seed), ("f32", p.tol_kappa), ("f32", p.tol_max), ("f32", p.c_hit),
             ("f32", p.k_cone), ("u32", p.max_depth), ("u32", p.rr_depth), ("u32", p.nee), ("u32", p.mis),
             ("f32", min(p.s_max, scene.meta.get("s_max", p.s_max))), ("u32", p.n_max), ("f32", scene.meta.get("ell_max", 0.0)), ("u32", env_n),
             ("f32", p.env_scale * scene.env_scale), ("f32", p.k_lod), ("u32", use_list), ("f32", c_mix),
-            ("u32", list_id), ("u32", list_off)]
+            ("u32", list_id), ("u32", list_off), ("u32", use_den), ("u32", bgra), ("f32", exposure)]
 
 
 def _defs(scene, nj=0):
@@ -291,3 +292,93 @@ def cam_step(scene: Scene, cam, move, rot, frames=1, substeps=16, margin=0.05):
             ("f32", rot[0]), ("f32", rot[1]), ("f32", rot[2]), ("f32", margin), ("u32", substeps)]
     out, _ = gpu.run(spv, "cam_step", [("inout", camera_buffer(cam))], push=push, repeat=frames)
     return out[0][:4]
+
+
+PT_BIND = ("cam Acc Acc2 Env Cube Stats Pix Alb Nrm Dir Dd Status Class Flag Cnt Args Frame AlbF NrmF Den Present Color")
+I_SEED, I_USE_DEN, I_BGRA = 1, 20, 21          # индексы push-констант PTParams (см. _push)
+
+
+def app_graph(scene: Scene, cam, td, p: GPUPT = GPUPT(), nfb_move=8, speed=1.0, fmt="bc6h", hidden=False, vsync=False,
+              bench=None, margin=0.05, det=None, k_grad=2.0, dumps=()):
+    """Граф интерактивного приложения (DD-007): секции move / static / post и директивы app. td — каталог для файлов.
+    bench = (файл сценария, json журнала) — режим замера. Возвращает путь к графу."""
+    from pathlib import Path
+    from .gpu import cube_for_gpu
+    from .gpu_modea import Detector
+    td = Path(td)
+    det = det or Detector()
+    cube = cube_for_gpu(np.asarray(scene.mips[0]))
+    N = cam.width * cam.height
+    inc = write_header(scene)
+    envb, env_n = env_buffer(scene)
+    ptc = gpu.compile_shader("pathtrace.slang", "pt_camera", _defs(scene, 4), include=inc)
+    pts = lambda e: gpu.compile_shader("pathtrace.slang", e, _defs(scene, 0), include=inc)
+    cst = gpu.compile_shader("pathtrace.slang", "cam_step", {**_defs(scene), "CAM_STEP": 1}, include=inc)
+    md = lambda k, e: gpu.compile_shader("modea.slang", e, {"SCENE": scene.meta["scene_id"], "NJ": 0,
+                                                            "EXIT": scene.meta["exit"], "KERNEL": k})
+    g = gpu.groups_for(N)[0]
+    pfb = GPUPT(**{**p.__dict__, "seed": p.seed + 7919})
+    np.save(td / "cam.npy", camera_buffer(cam, k_grad, 0.0, det, 0, cube.shape[2]))
+    np.save(td / "env.npy", envb)
+    np.save(td / "cube.npy", gpu.f32(cube))
+    enc = f" {gpu.compile_shader('bc6h_encode.slang', 'bc6h_encode')}" if fmt == "bc6h" else ""
+    L = [f"buffer cam in {td / 'cam.npy'}", f"buffer Env in {td / 'env.npy'}", f"cube Cube {td / 'cube.npy'} {fmt} 16{enc}"]
+    for name, b in [("Acc", 16 * N), ("Acc2", 16 * N), ("Stats", 16 * N), ("Pix", 8 * N), ("Alb", 16 * N), ("Nrm", 16 * N),
+                    ("Dir", 16 * N), ("Dd", 64 * N), ("Status", 4 * N), ("Class", 4 * N), ("Flag", 4 * N), ("Cnt", 16),
+                    ("Args", 32), ("Color", 16 * N), ("Present", 4 * N)]:
+        L.append(f"buffer {name} zero {b}")
+    for name in ["Frame", "AlbF", "NrmF", "Den"]:
+        L.append(f"buffer {name} export {16 * N}")
+    L += [f"pipeline camstep {cst} cam_step cam",
+          f"pipeline camera {ptc} pt_camera {PT_BIND}",
+          f"pipeline shade {md(2, 'modea_shade')} modea_shade cam Dir Dd Status Color Cube",
+          f"pipeline detect {md(3, 'modea_detect')} modea_detect cam Dir Dd Status Flag"]
+    for name, entry in [("clear", "pt_clear"), ("lists", "pt_lists"), ("args", "pt_args"), ("ptA", "pt_sample"),
+                        ("ptB", "pt_sample"), ("reset", "pt_reset"), ("compose", "pt_compose"), ("present", "pt_present")]:
+        L.append(f"pipeline {name} {pts(entry)} {entry} {PT_BIND}")
+    L += [_push_line("camstep", [("f32", 0)] * 4 + [("f32", 0)] * 3 + [("f32", margin), ("u32", 16)]),
+          _push_line("camera", _push(scene, p, N, env_n)), _push_line("clear", _push(scene, p, N, env_n)),
+          _push_line("lists", _push(scene, p, N, env_n, list_off=N)), _push_line("args", _push(scene, p, N, env_n)),
+          _push_line("ptA", _push(scene, p, N, env_n, use_list=2, list_id=0, list_off=0)),
+          _push_line("ptB", _push(scene, pfb, N, env_n, use_list=2, list_id=1, list_off=N)),
+          _push_line("reset", _push(scene, p, N, env_n)), _push_line("compose", _push(scene, p, N, env_n)),
+          _push_line("present", _push(scene, p, N, env_n, use_den=1, bgra=1)),
+          "section move", "mark start", "dispatch camstep 1 1 1", f"dispatch camera {g} 1 1", "mark camera",
+          f"dispatch shade {g} 1 1", f"dispatch detect {g} 1 1", "dispatch clear 1 1 1", f"dispatch lists {g} 1 1",
+          "dispatch args 1 1 1", f"dispatch reset {g} 1 1", "mark lists", "indirect ptA Args 0", "mark pt",
+          f"loop {nfb_move}", "indirect ptB Args 12", "endloop", "mark fallback", f"dispatch compose {g} 1 1", "mark compose",
+          "section static", "mark start", "indirect ptA Args 0", "mark pt", "indirect ptB Args 12", "mark fallback",
+          f"dispatch compose {g} 1 1", "mark compose",
+          "section post", f"dispatch present {g} 1 1",
+          f"app {cam.width} {cam.height} Present", "denoise Frame AlbF NrmF Den", "campipe camstep",
+          f"presentpipe present {I_USE_DEN} {I_BGRA}", f"seedpipes {I_SEED} ptA ptB", f"speed {speed}"]
+    if hidden:
+        L.append("hidden")
+    if vsync:
+        L.append("vsync")
+    if bench:
+        L.append(f"bench {bench[0]} {bench[1]}")
+    for fi, d in dumps:
+        L.append(f"dump {fi} {d}")
+    path = td / "app_graph.txt"
+    path.write_text("\n".join(L) + "\n", encoding="utf-8")
+    return path
+
+
+def app_scene(name, mips=None):
+    """Сцена и стартовая камера приложения по имени: two_wormholes, ellis, S3, spheritorus, torisphere."""
+    from .camera import make_camera
+    from .wormholes import ellis_point
+    up = np.array([0, 0, 1.0, 0])
+    if name == "two_wormholes":
+        sc = PT.scene_two_wormholes(mips=mips)
+        return sc, dict(x=np.array([0, -11.0, 0.5, 1.5]), f=np.array([0, 1.0, -0.12, 0]), up=up), 2.0
+    if name == "ellis":
+        sc = PT.scene_ellis(mips=mips)
+        x, e = ellis_point(6.0)
+        return sc, dict(x=x, f=-e, up=up), 2.0
+    sc = PT.scene_compact_space(name)
+    x0 = {"S3": [1.0, 0, 0, 0], "spheritorus": [1.0, 0, 0, 0.4], "torisphere": [1.4, 0, 0, 0]}[name]
+    from .shapes import project_points
+    x = np.asarray(project_points(sc.shape, np.array([x0], float)))[0]
+    return sc, dict(x=x, f=np.array([0, 1.0, 0, 0]), up=up), 0.5

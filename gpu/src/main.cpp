@@ -3,6 +3,7 @@
 //   geo4d_gpu run <job.txt>   — одна compute-диспетчеризация по job-файлу (см. job.cpp)
 //   geo4d_gpu graph <файл>    — граф диспетчеризаций одним командным буфером (см. graph.cpp)
 //   geo4d_gpu denoise <job>   — денойзер OptiX (см. denoise.cpp)
+//   geo4d_gpu app <graph>     — интерактивное окно (см. app.cpp, DD-007)
 #include <cstdio>
 #include <exception>
 #include <iostream>
@@ -10,6 +11,7 @@
 
 #include "graph.hpp"
 #ifdef GEO4D_OPTIX
+#include "app.hpp"
 #include "denoise.hpp"
 #endif
 #include "job.hpp"
@@ -18,12 +20,13 @@
 int main(int argc, char** argv) {
     try {
         if (argc < 2) {
-            std::fprintf(stderr, "использование: geo4d_gpu info | run <job.txt> | graph <graph.txt> | denoise <job.txt>\n");
+            std::fprintf(stderr, "использование: geo4d_gpu info | run <job.txt> | graph <graph.txt> | denoise <job.txt> | app <graph.txt>\n");
             return 2;
         }
         std::string cmd = argv[1];
 #ifdef GEO4D_OPTIX
         if (cmd == "denoise" && argc >= 3) return run_denoise(argv[2]);     // без Vulkan
+        if (cmd == "app" && argc >= 3) return run_app(argv[2]);             // свой контекст с окном
 #endif
         VkContext ctx;
         if (cmd == "info") {

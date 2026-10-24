@@ -31,6 +31,9 @@ struct PTParams
     float c_mix;        // проход камеры: «смешанный», если g < c_mix·след (след — 3σ полей пикселя и апертуры)
     uint list_id;
     uint list_off;
+    uint use_den;       // приложение (DD-007): 1 — вывод денойзера в pt_present
+    uint bgra;          // 1 — упаковка BGRA8 (формат swapchain)
+    float exposure;
 };
 
 #ifndef CAM_STEP
@@ -56,6 +59,13 @@ static PTParams pp;                 // cam_step не использует пар
 [[vk::binding(13, 0)]] RWStructuredBuffer<uint> gFlag;
 [[vk::binding(14, 0)]] RWStructuredBuffer<uint> gCnt;      // [0] — пиксели объектов/смешанные, [1] — фолбэк фона
 [[vk::binding(15, 0)]] RWStructuredBuffer<uint> gArgs;     // [0..2], [3..5] — группы для списков 0 и 1
+// приложение (DD-007): кадр и AOV для денойзера (экспортируемая память), выход денойзера, RGBA8, цвет режима A
+[[vk::binding(16, 0)]] RWStructuredBuffer<float4> gFrame;
+[[vk::binding(17, 0)]] RWStructuredBuffer<float4> gAlbF;
+[[vk::binding(18, 0)]] RWStructuredBuffer<float4> gNrmF;
+[[vk::binding(19, 0)]] RWStructuredBuffer<float4> gDen;
+[[vk::binding(20, 0)]] RWStructuredBuffer<uint> gPresent;
+[[vk::binding(21, 0)]] RWStructuredBuffer<float4> gColor;
 
 static const float PI = 3.14159265;
 
@@ -685,6 +695,45 @@ void pt_lists(uint3 id : SV_DispatchThreadID)
     uint slot;
     if (gClass[i] != 0) { InterlockedAdd(gCnt[0], 1, slot); gPix[slot] = i; }
     else if (gFlag[i] != 0) { InterlockedAdd(gCnt[1], 1, slot); gPix[pp.list_off + slot] = i; }
+}
+
+// ---- приложение (DD-007) --------------------------------------------------------------------------
+[shader("compute")] [numthreads(64, 1, 1)]
+void pt_reset(uint3 id : SV_DispatchThreadID)
+{
+    uint i = id.x;
+    if (i >= pp.n) return;
+    gAcc[i] = float4(0); gAcc2[i] = float4(0); gAlb[i] = float4(0); gNrm[i] = float4(0); gStats[i] = float4(0);
+}
+
+bool modea_pixel(uint i) { return gClass[i] == 0 && gFlag[i] == 0; }
+
+// кадр для денойзера: фон — режим A, остальное — среднее трассировщика; AOV — средние (у фона — цвет фона, нормаль 0)
+[shader("compute")] [numthreads(64, 1, 1)]
+void pt_compose(uint3 id : SV_DispatchThreadID)
+{
+    uint i = id.x;
+    if (i >= pp.n) return;
+    float4 a = gAcc[i];
+    float c = max(a.w, 1.0);
+    bool mA = modea_pixel(i);
+    float3 col = mA ? gColor[i].rgb : a.rgb / c;
+    gFrame[i] = float4(col, 1);
+    gAlbF[i] = float4(mA ? saturate(col) : gAlb[i].rgb / c, 1);
+    gNrmF[i] = float4(mA ? float3(0) : gNrm[i].rgb / c, 1);
+}
+
+// вывод: фон режима A — точный, остальное — денойзер или шумный кадр; тонмаппинг x/(1+x), γ 2.2; RGBA8/BGRA8
+[shader("compute")] [numthreads(64, 1, 1)]
+void pt_present(uint3 id : SV_DispatchThreadID)
+{
+    uint i = id.x;
+    if (i >= pp.n) return;
+    float3 col = modea_pixel(i) ? gColor[i].rgb : (pp.use_den != 0 ? gDen[i].rgb : gFrame[i].rgb);
+    col = max(col * pp.exposure, 0.0);
+    col = pow(col / (1 + col), 1.0 / 2.2);
+    uint3 q = uint3(saturate(col) * 255 + 0.5);
+    gPresent[i] = pp.bgra != 0 ? (q.b | (q.g << 8) | (q.r << 16) | (255u << 24)) : (q.r | (q.g << 8) | (q.b << 16) | (255u << 24));
 }
 
 [shader("compute")] [numthreads(1, 1, 1)]
