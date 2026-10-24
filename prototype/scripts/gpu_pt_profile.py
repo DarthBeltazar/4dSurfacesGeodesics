@@ -1,6 +1,6 @@
 """Этап 4 (DD-005, план проверки п. 11): профиль кадра режима B на GPU — 1080p и 4K, «интерактив» (1 spp, фолбэк 8)
 и «финал» (64 spp, фолбэк 64) + денойзер OptiX. Время — метки GPU по проходам (медиана; у трассировщика — сумма
-медиан сэмплов), без пересылок хост↔GPU стенда. Доли классов пикселей, проходов Jet7 на путь, регистры."""
+медиан сэмплов), без пересылок хост↔GPU стенда; перед замером — прогревочный кадр, одиночные проходы — 5 повторов. Доли классов пикселей, проходов Jet7 на путь, регистры."""
 import argparse
 import json
 import sys
@@ -54,7 +54,8 @@ def main():
         for W, H in [(1920, 1080), (3840, 2160)]:
             sc, cam = setup(name, W, H, mips)
             for mode, spp, nfb in [("interactive", 1, 8), ("final", 64, 64)]:
-                fr = G.render_frame(sc, cam, spp, p, nfb=nfb, fmt=a.fmt)
+                G.render_frame(sc, cam, min(spp, 4), p, nfb=min(nfb, 4), fmt=a.fmt)       # прогрев (частоты GPU)
+                fr = G.render_frame(sc, cam, spp, p, nfb=nfb, fmt=a.fmt, repeat=5)
                 t = fr["times"]
                 pt_ms = float(np.median(t["pt"])) * spp if t["pt"] else 0.0
                 fb_ms = float(np.median(t["fallback"])) * nfb if t["fallback"] else 0.0

@@ -63,6 +63,19 @@ hash and a dirty flag).
 - GPU correctness criterion: error vs DOP853 ≤ 4× that of the float32 prototype (`GEO4D_X64=0`) on the same inputs.
 - Float32 defaults: κ = 3e-3 (ADR-0004); background SampleGrad k = 2 + BC6H, M19 optional (ADR-0005).
 
+## Mode B (stage 4, DD-005)
+
+- Scenes are defined once in `pathtrace.py` (objects carry a `spec` for codegen); `gpu_pt.scene_header` generates
+  `pt_scene.slang` into `gpu/build/gen/<hash>/` (passed via `-I`). Add a new object kind in both `objects.py` and `_expr`.
+- Hits are detected only by a sign change of g (or g below the rounding floor) — never by `g < ε_hit`: near misses
+  within ε are not hits (this bug cost 8 % energy at silhouettes). Same rule in shadow rays.
+- NEE/MIS only from flat zones over straight segments on the same sheet (M29); weights must use exactly the same
+  domain test on the BSDF side. Verify any change with the furnace and MIS-vs-NEE-only tests.
+- Statistical comparisons against the prototype: per-pixel z is unreliable at a few hundred spp (heavy tails of
+  small lights / BSDF-only Ellis); use the image-mean z plus a loose outlier fraction.
+- Host accumulation: `pt_sample` adds one path per pixel per dispatch (`repeat`), state lives in inout buffers;
+  `geo4d_gpu denoise` runs OptiX via `nvcuda.dll` + a `cuda.h` shim (ADR-0007).
+
 ## Planned stages (gate: don't start stage N+1 until stage N acceptance criteria pass)
 
 1. **Python + JAX prototype**: jet numbers, SDFs for all scenes/test shapes, geodesic RHS, Bogacki–Shampine 3(2)

@@ -49,6 +49,18 @@ gpu\build\geo4d_gpu.exe info                                # устройств
 .venv/Scripts/python prototype/scripts/gpu_modea_quality.py # качество режима A против эталона этапа 2
 ```
 
+## Этап 4: режим B — трассировка путей (`results/stage-4/`)
+
+Денойзер OptiX: при первом конфигурировании CMake скачивает заголовки `NVIDIA/optix-dev` (нужна сеть); CUDA Toolkit
+не нужен (ADR-0007). Без OptiX: `cmake -DGEO4D_OPTIX=OFF`.
+
+```sh
+.venv/Scripts/python -m pytest tests/test_objects.py tests/test_pathtrace.py -q   # прототип: попадания, печь, MIS
+.venv/Scripts/python -m pytest tests/test_gpu_pt.py -q                            # GPU против прототипа, денойзер
+.venv/Scripts/python prototype/scripts/gpu_pt_quality.py   # смещение конусов/допуска, денойзер, кадр против эталона
+.venv/Scripts/python prototype/scripts/gpu_pt_profile.py   # 1080p/4K: 1 spp и 64 spp + денойзер
+```
+
 Шейдеры компилирует Python (`geo4d.gpu.compile_shader`, кэш в `gpu/build/spv/`); хост исполняет job-файлы
 (`run`) и графы диспетчеризаций (`graph`), данные — через `.npy`.
 
@@ -69,6 +81,9 @@ gpu\build\geo4d_gpu.exe info                                # устройств
 - `modea.py` — режим A, детектор, фолбэк, эталонный стохастический рендерер.
 - `results.py` — каталоги воспроизводимых результатов.
 - `gpu.py`, `gpu_modea.py` — стенд GPU: компиляция шейдеров, запуск `geo4d_gpu`, трассировка и режим A на GPU.
+- `objects.py` — объекты 4D SDF ∩ M: предел шага, эрмитово уточнение попадания, кадр оттенения (M26–M28).
+- `pathtrace.py` — трассировщик путей прототипа (плоские зоны, BSDF, NEE/MIS — M29), сцены режима B;
+  `euclid_pt.py` — независимый евклидов эталон; `gpu_pt.py` — генерация сцены для GPU, кадр режима B, денойзер.
 
 `gpu/`: `src/` — хост (Vulkan-контекст, `run`/`graph`, .npy); `shaders/` — `jet.slang` (jet-числа за `IReal`),
 `scenes.slang` (SDF), `integrator.slang`, `trace.slang`, `modea.slang`, `wavefront.slang`, `bc6h_*.slang`.

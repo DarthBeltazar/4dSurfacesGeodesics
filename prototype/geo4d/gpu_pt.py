@@ -150,7 +150,7 @@ def render(scene: Scene, cam, spp, p: GPUPT = GPUPT(), fmt="rgba32f", pix=None, 
     return mean, var, stats, reps
 
 
-def camera_pass(scene: Scene, cam, p: GPUPT = GPUPT(), c_mix=1.0):
+def camera_pass(scene: Scene, cam, p: GPUPT = GPUPT(), c_mix=1.0, repeat=1):
     """Центральные лучи с полями Якоби и объектами: класс пикселя (0 — фон, 1 — объект, 2 — смешанный), d∞, ∂d∞."""
     inc = write_header(scene)
     spv = gpu.compile_shader("pathtrace.slang", "pt_camera", _defs(scene, nj=4), include=inc)
@@ -160,30 +160,33 @@ def camera_pass(scene: Scene, cam, p: GPUPT = GPUPT(), c_mix=1.0):
     bufs = [("in", camera_buffer(cam)), ("in", d1), ("in", d1), ("in", envb), ("in", d1), ("out", ("f4", (N, 4))),
             ("in", np.zeros(1, np.uint32)), ("in", d1), ("in", d1), ("out", ("f4", (N, 4))), ("out", ("f4", (4 * N, 4))),
             ("out", ("u4", (N,))), ("out", ("u4", (N,)))]
-    out, rep = gpu.run(spv, "pt_camera", bufs, push=_push(scene, p, N, env_n, c_mix=c_mix), groups=gpu.groups_for(N))
+    out, rep = gpu.run(spv, "pt_camera", bufs, push=_push(scene, p, N, env_n, c_mix=c_mix), groups=gpu.groups_for(N),
+                       repeat=repeat)
     return dict(cls=out[12], d=out[9], dd=out[10].reshape(N, 4, 4), status=out[11], stats=out[5], report=rep)
 
 
-def render_frame(scene: Scene, cam, spp, p: GPUPT = GPUPT(), nfb=64, c_mix=1.0, det=None, k_grad=2.0, fmt="rgba32f"):
+def render_frame(scene: Scene, cam, spp, p: GPUPT = GPUPT(), nfb=64, c_mix=1.0, det=None, k_grad=2.0, fmt="rgba32f",
+                 repeat=1):
     """Кадр режима B (DD-005 п. 2): проход камеры → фон режимом A (SampleGrad, детектор M20) → пиксели объектов,
-    смешанные и помеченные детектором — трассировщиком (spp и nfb сэмплов). Возвращает цвет (H·W, 3) и данные."""
+    смешанные и помеченные детектором — трассировщиком (spp и nfb сэмплов). Возвращает цвет (H·W, 3) и данные.
+    repeat — повторы одиночных проходов (камера, оттенение, детектор) для замера времени (медиана)."""
     from .gpu import cube_for_gpu
     from .gpu_modea import Detector
     det = det or Detector()
     cube = cube_for_gpu(np.asarray(scene.mips[0]))
     N = cam.width * cam.height
-    cp = camera_pass(scene, cam, p, c_mix)
+    cp = camera_pass(scene, cam, p, c_mix, repeat)
     camb = camera_buffer(cam, k_grad, 0.0, det, 0, cube.shape[2])
     defs = lambda k: {"SCENE": scene.meta["scene_id"], "NJ": 0, "EXIT": scene.meta["exit"], "KERNEL": k}
     dd = gpu.f32(cp["dd"].reshape(4 * N, 4))
     st = cp["status"].astype(np.uint32)
     out, rep_s = gpu.run(gpu.compile_shader("modea.slang", "modea_shade", defs(2)), "modea_shade",
                          [("in", camb), ("in", cp["d"]), ("in", dd), ("in", st), ("out", ("f4", (N, 4))),
-                          ("cube", (cube, fmt, 16))], groups=gpu.groups_for(N))
+                          ("cube", (cube, fmt, 16))], groups=gpu.groups_for(N), repeat=repeat)
     col = out[4][:, :3].astype(np.float64)
     out, rep_d = gpu.run(gpu.compile_shader("modea.slang", "modea_detect", defs(3)), "modea_detect",
                          [("in", camb), ("in", cp["d"]), ("in", dd), ("in", st), ("out", ("u4", (N,)))],
-                         groups=gpu.groups_for(N))
+                         groups=gpu.groups_for(N), repeat=repeat)
     flags = out[4].astype(bool) & (cp["cls"] == 0)
     obj = np.nonzero(cp["cls"] != 0)[0]
     fb = np.nonzero(flags)[0]
