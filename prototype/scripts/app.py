@@ -3,6 +3,7 @@
     python prototype/scripts/app.py --scene two_wormholes --res 1280x720
     python prototype/scripts/app.py --scene S3 --res 960x540
     python prototype/scripts/app.py --bench --scene two_wormholes --res 1920x1080   # замер: сценарий, скрытое окно
+    python prototype/scripts/app.py --graph-only gpu/build-debug/app/two_wormholes  # только граф — запуск хоста из IDE
 
 Управление: W/S, A/D — вперёд/вбок; Q/E — вниз/вверх; ЛКМ — захват мыши (взгляд); стрелки; Z/C — крен; Shift — ×4;
 R — денойзер вкл/выкл; Esc — выход. Сцены: two_wormholes, ellis, S3, spheritorus, torisphere, tiger (T³).
@@ -35,14 +36,17 @@ def main():
     ap.add_argument("--visible", action="store_true", help="замер в видимом окне (проверка пути на экран)")
     ap.add_argument("--frames", type=int, default=60)
     ap.add_argument("--dump", default="", help="кадры для сохранения через запятую (в каталог результатов замера)")
+    ap.add_argument("--graph-only", metavar="DIR", default="",
+                    help="записать граф и его входные данные в DIR и выйти (запуск/отладка `geo4d_gpu app DIR/app_graph.txt` из IDE)")
     a = ap.parse_args()
     W, H = (int(v) for v in a.res.split("x"))
     mips = PT.procedural_env(a.cube)
     sc, c0, speed = G.app_scene(a.scene, mips)
     cam = make_camera(sc.shape, c0["x"], c0["f"], c0["up"], fov=a.fov, width=W, height=H)
     out = None
-    with tempfile.TemporaryDirectory() as td:
-        td = Path(td)
+    with tempfile.TemporaryDirectory() as tmp:
+        td = Path(a.graph_only).resolve() if a.graph_only else Path(tmp)
+        td.mkdir(parents=True, exist_ok=True)
         bench = None
         if a.bench:
             from geo4d.results import new_run
@@ -59,6 +63,9 @@ def main():
         dumps = [(int(f), (out or td).as_posix()) for f in a.dump.split(",") if f] if a.bench else ()
         graph = G.app_graph(sc, cam, td, speed=speed, hidden=a.bench and not a.visible, vsync=a.vsync, bench=bench,
                             dumps=dumps)
+        if a.graph_only:
+            print(f"граф: {graph}\nзапуск: {gpu.EXE} app {graph}")
+            return
         r = subprocess.run([str(gpu.EXE), "app", str(graph)], capture_output=a.bench, text=True)
         if r.returncode != 0:
             raise RuntimeError(f"geo4d_gpu app: {r.stdout}\n{r.stderr}")
