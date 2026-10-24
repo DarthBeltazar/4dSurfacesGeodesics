@@ -16,3 +16,5 @@ results/**/AlbF_*.npy
 results/**/NrmF_*.npy
 results/**/Present_*.npy
 results/**/swapchain_*.npy
+# релизные архивы (prototype/scripts/package_windows.py)
+dist/

@@ -7,6 +7,7 @@
 //   dispatch <конвейер> <gx> <gy> <gz> | indirect <конвейер> <буфер> <смещение байт>
 //   loop <n> ... endloop (без вложенности) | mark <метка>
 //   остальное (repeat, output, report, app, denoise, ...) — в extra() для вызывающего
+// Пути с пробелами — в кавычках (words.hpp).
 #include "graph_program.hpp"
 
 #include <cstring>
@@ -15,6 +16,7 @@
 #include <stdexcept>
 
 #include "npy.hpp"
+#include "words.hpp"
 
 namespace {
 
@@ -37,7 +39,7 @@ GraphProgram::GraphProgram(VkContext& ctx, const std::string& path) : ctx_(ctx) 
     std::string section, line;
     while (std::getline(jf, line)) {
         if (line.empty() || line[0] == '#') continue;
-        std::istringstream ss(line);
+        std::istringstream ss(protect_quotes(line));
         std::string cmd;
         ss >> cmd;
         if (cmd == "buffer") {
@@ -56,6 +58,7 @@ GraphProgram::GraphProgram(VkContext& ctx, const std::string& path) : ctx_(ctx) 
             } else if (mode == "in") {
                 std::string p;
                 ss >> p;
+                p = unprotect(p);
                 NpyArray a = npy_read(p);
                 if (a.dtype == "<f8") throw std::runtime_error("float64 на вход GPU не подаётся: " + p);
                 bufs_[name] = ctx.create_buffer(a.data.size(), false);
@@ -69,6 +72,8 @@ GraphProgram::GraphProgram(VkContext& ctx, const std::string& path) : ctx_(ctx) 
             float aniso;
             ss >> name >> p >> fmt >> aniso;
             if (fmt == "bc6h") ss >> enc;
+            p = unprotect(p);
+            enc = unprotect(enc);
             NpyArray a = npy_read(p);
             size_t C = a.shape[4], n = a.count() / C;
             std::vector<float> rgba(n * 4, 1.0f);
@@ -84,7 +89,7 @@ GraphProgram::GraphProgram(VkContext& ctx, const std::string& path) : ctx_(ctx) 
             std::vector<std::string> names;
             while (ss >> b) names.push_back(b);
             binds_[name] = names;
-            pipe_src[name] = {spv, entry};
+            pipe_src[name] = {unprotect(spv), entry};
         } else if (cmd == "push") {
             std::string name, t;
             ss >> name;
@@ -124,7 +129,7 @@ GraphProgram::GraphProgram(VkContext& ctx, const std::string& path) : ctx_(ctx) 
             ss >> repeat_;
         } else {
             std::vector<std::string> words{cmd};
-            for (std::string w; ss >> w;) words.push_back(w);
+            for (std::string w; ss >> w;) words.push_back(unprotect(w));
             extra_.push_back(words);
         }
     }

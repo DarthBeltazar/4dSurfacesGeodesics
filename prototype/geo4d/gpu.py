@@ -20,6 +20,20 @@ EXE = Path(os.environ.get("GEO4D_GPU_EXE", GPU / "build" / f"geo4d_gpu{_EXE_SUFF
 SPV_DIR = GPU / "build" / "spv"
 
 
+def qpath(p):
+    """Путь для директивы графа/job-файла: в кавычках, если в нём есть пробелы (разбор — gpu/src/words.hpp)."""
+    s = str(p)
+    return f'"{s}"' if any(c.isspace() for c in s) else s
+
+
+class QPath(type(Path())):
+    """Путь, который в f-строке директив сам берётся в кавычки при пробелах (str() — как у Path): каталоги графов и
+    SPIR-V — например, архив редактора распакован в «C:\\My Programs\\…» или имя пользователя с пробелом в %TEMP%."""
+
+    def __format__(self, spec):
+        return qpath(self)
+
+
 def _find_slangc():
     """slangc: GEO4D_SLANGC, затем $VULKAN_SDK/Bin|bin, затем PATH; по умолчанию — SDK 1.4.328.1 (Windows)."""
     if "GEO4D_SLANGC" in os.environ:
@@ -69,15 +83,15 @@ def compile_shader(source, entry, defines=None, include=None):
         r = subprocess.run(cmd, capture_output=True, text=True)
         if r.returncode != 0 or not out.exists():
             raise RuntimeError(f"slangc: {r.stdout}\n{r.stderr}")
-    return out
+    return QPath(out)
 
 
 def run(spv, entry, buffers, push=(), groups=(1, 1, 1), repeat=1):
     """buffers — список по binding: ("in", массив) | ("out", (dtype, shape)) | ("inout", массив).
     push — список (тип, значение), тип ∈ f32 | u32 | i32. Возвращает (выходы по binding, отчёт)."""
     with tempfile.TemporaryDirectory() as td:
-        td = Path(td)
-        lines = [f"spv {spv}", f"entry {entry}", f"groups {groups[0]} {groups[1]} {groups[2]}", f"repeat {repeat}",
+        td = QPath(td)
+        lines = [f"spv {QPath(spv)}", f"entry {entry}", f"groups {groups[0]} {groups[1]} {groups[2]}", f"repeat {repeat}",
                  f"report {td / 'report.json'}"]
         for t, v in push:
             lines.append(f"push {t} {float(v):.9g}" if t == "f32" else f"push {t} {int(v)}")   # не repr: np.float64(...)
@@ -148,7 +162,7 @@ def denoise(color, albedo=None, normal=None, repeat=1):
         a = np.asarray(a, np.float32)
         return np.ascontiguousarray(np.concatenate([a[..., :3], np.ones(a.shape[:-1] + (1,), np.float32)], -1))
     with tempfile.TemporaryDirectory() as td:
-        td = Path(td)
+        td = QPath(td)
         lines = [f"color {td / 'c.npy'}", f"output {td / 'o.npy'}", f"repeat {repeat}", f"report {td / 'r.json'}"]
         np.save(td / "c.npy", rgba(color))
         if albedo is not None:

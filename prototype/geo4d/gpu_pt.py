@@ -323,7 +323,7 @@ def render_frame_graph(scene: Scene, cam, spp, p: GPUPT = GPUPT(), nfb=64, c_mix
     g = gpu.groups_for(N)[0]
     pfb = GPUPT(**{**p.__dict__, "seed": p.seed + 7919})
     with tempfile.TemporaryDirectory() as td:
-        td = Path(td)
+        td = gpu.QPath(td)
         np.save(td / "cam.npy", pt_camera_buffer(scene, cam, k_grad, 0.0, det, 0, cube.shape[2]))
         np.save(td / "env.npy", envb)
         np.save(td / "cube.npy", gpu.f32(cube))
@@ -404,7 +404,7 @@ def app_graph(scene: Scene, cam, td, p: GPUPT = GPUPT(), nfb_move=8, speed=1.0, 
     from pathlib import Path
     from .gpu import cube_for_gpu
     from .gpu_modea import Detector
-    td = Path(td)
+    td = gpu.QPath(td)                           # пути с пробелами — в кавычках (gpu.qpath)
     det = det or Detector()
     env = editor.get("env") if editor else None
     gsc = dataclasses.replace(scene, mips=dyn_mips) if dynamic and dyn_mips is not None else scene   # фон графа
@@ -484,11 +484,11 @@ def app_graph(scene: Scene, cam, td, p: GPUPT = GPUPT(), nfb_move=8, speed=1.0, 
     if fullscreen:
         L.append("fullscreen")
     if bench:
-        L.append(f"bench {bench[0]} {bench[1]}")
+        L.append(f"bench {gpu.qpath(bench[0])} {gpu.qpath(bench[1])}")
     for fi, d in dumps:
-        L.append(f"dump {fi} {d}")
+        L.append(f"dump {fi} {gpu.qpath(d)}")
     if record:
-        L.append(f"record {record[0]} {record[1]}")
+        L.append(f"record {gpu.qpath(record[0])} {record[1]}")
     path = td / ("app_graph_dyn.txt" if dynamic else "app_graph.txt")
     path.write_text("\n".join(L) + "\n", encoding="utf-8")
     return path
@@ -509,10 +509,11 @@ def editor_directives(scene: Scene, ed):
     from .scenefile import manifold_of
     kind, params = manifold_of(scene.shape)
     pv = lambda v: ",".join(_f(a) for a in np.atleast_1d(v))
-    L = [f"editor {ed['scene']} {ed['work_dir']} {_f(ed['fov'])}",
+    q = gpu.qpath
+    L = [f"editor {q(ed['scene'])} {q(ed['work_dir'])} {_f(ed['fov'])}",
          " ".join(["manifold", kind, ed.get("env") or "-"] + [f"{k}={pv(v)}" for k, v in params.items()])]
     if ed.get("python"):
-        L.append(" ".join(["rebuild", ed["python"], ed["script"]] + list(ed.get("args", ()))))
+        L.append(" ".join(["rebuild", q(ed["python"]), q(ed["script"])] + list(ed.get("args", ()))))
     return L
 
 

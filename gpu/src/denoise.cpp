@@ -17,6 +17,7 @@
 
 #include "denoiser.hpp"
 #include "npy.hpp"
+#include "words.hpp"
 
 namespace {
 
@@ -36,7 +37,7 @@ int run_denoise(const std::string& job_path) {
     std::string color, albedo, normal, output, report;
     int repeat = 1;
     for (std::string line; std::getline(jf, line);) {
-        std::istringstream ss(line);
+        std::istringstream ss(protect_quotes(line));      // пути с пробелами — в кавычках (words.hpp)
         std::string cmd;
         ss >> cmd;
         if (cmd == "color") ss >> color;
@@ -46,6 +47,7 @@ int run_denoise(const std::string& job_path) {
         else if (cmd == "repeat") ss >> repeat;
         else if (cmd == "report") ss >> report;
     }
+    for (auto* p : {&color, &albedo, &normal, &output, &report}) *p = unprotect(*p);
     if (color.empty() || output.empty()) throw std::runtime_error("denoise: нужны color и output");
     if (!normal.empty() && albedo.empty()) throw std::runtime_error("denoise: normal только вместе с albedo");
     size_t H = 0, W = 0;

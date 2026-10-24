@@ -21,6 +21,7 @@
 #include <stdexcept>
 
 #include "npy.hpp"
+#include "words.hpp"
 
 namespace {
 
@@ -63,7 +64,7 @@ int run_job(VkContext& ctx, const std::string& job_path) {
     std::string line;
     while (std::getline(jf, line)) {
         if (line.empty() || line[0] == '#') continue;
-        std::istringstream ss(line);
+        std::istringstream ss(protect_quotes(line));      // пути с пробелами — в кавычках (words.hpp)
         std::string cmd;
         ss >> cmd;
         if (cmd == "spv") ss >> spv;
@@ -100,6 +101,9 @@ int run_job(VkContext& ctx, const std::string& job_path) {
             bufs.push_back(b);
         } else throw std::runtime_error("неизвестная директива: " + cmd);
     }
+    spv = unprotect(spv);
+    report = unprotect(report);
+    for (auto& b : bufs) { b.in = unprotect(b.in); b.out = unprotect(b.out); }
     std::sort(bufs.begin(), bufs.end(), [](auto& a, auto& b) { return a.binding < b.binding; });
 
     std::vector<Buffer> dev(bufs.size()), host(bufs.size());

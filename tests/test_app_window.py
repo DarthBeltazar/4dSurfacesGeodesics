@@ -89,3 +89,11 @@ def test_click_on_panel_is_not_camera_grab(tmp_path):
     assert st[3]["grab"] == 0 and st[4]["grab"] == 0 and st[4]["imgui"] == 1     # заголовок панели «Сцена»
     assert st[8]["grab"] == 1                                                    # сцена — взгляд мышью
     assert st[11]["grab"] == 0                                                   # повторный щелчок — отпустить
+
+
+def test_paths_with_spaces(tmp_path):
+    """Каталог графа с пробелом (архив редактора в «C:\My Programs», пользователь с пробелом в имени): пути в
+    директивах — в кавычках (gpu.qpath, words.hpp); перегенерация (resize → Python с --graph-only) тоже проходит."""
+    td = tmp_path / "dir with space"
+    _run(td, 96, 54, 8, 7, extra="resize 3 128 72\n", editor=True)
+    assert np.load(td / "Present_7.npy").shape == (72, 128)

@@ -92,7 +92,7 @@ def render_wavefront(scene, cam, cube, tol, escape_param, K=16, iters=None, k_gr
     wbind = "cam X V E SH St Q0 Q1 Cnt Args Dir Dd Status Flag FbHdr FbList"
     g = gpu.groups_for(N)[0]
     with tempfile.TemporaryDirectory() as td:
-        td = Path(td)
+        td = gpu.QPath(td)
         np.save(td / "cam.npy", camera_buffer(cam, k_grad, flight_r, det, filter_mode, cube.shape[2]))
         np.save(td / "cube.npy", gpu.f32(cube))
         enc = f" {gpu.compile_shader('bc6h_encode.slang', 'bc6h_encode')}" if fmt == "bc6h" else ""
