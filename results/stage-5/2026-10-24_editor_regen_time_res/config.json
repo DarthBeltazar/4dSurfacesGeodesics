@@ -1,0 +1,9 @@
+{
+  "scene": "two_wormholes",
+  "res": "1280x720",
+  "cube": 512,
+  "runs": 4,
+  "what": "res",
+  "salt": 0,
+  "tag": ""
+}

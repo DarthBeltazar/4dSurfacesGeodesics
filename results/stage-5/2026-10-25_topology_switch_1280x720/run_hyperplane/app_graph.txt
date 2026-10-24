@@ -1,0 +1,123 @@
+buffer cam in C:\Users\AlexandrGeorgiev\CLionProjects\4dSurfacesHeodesics\results\stage-5\2026-10-25_topology_switch_1280x720\run_hyperplane\cam.npy
+buffer Env in C:\Users\AlexandrGeorgiev\CLionProjects\4dSurfacesHeodesics\results\stage-5\2026-10-25_topology_switch_1280x720\run_hyperplane\env.npy
+cube Cube C:\Users\AlexandrGeorgiev\CLionProjects\4dSurfacesHeodesics\results\stage-5\2026-10-25_topology_switch_1280x720\run_hyperplane\cube.npy bc6h 16 C:\Users\AlexandrGeorgiev\CLionProjects\4dSurfacesHeodesics\gpu\build\spv\bc6h_encode_bc6h_encode_38b2d3cf42a3dc49.spv
+buffer Acc zero 14745600
+buffer Acc2 zero 14745600
+buffer Stats zero 14745600
+buffer Pix zero 7372800
+buffer Alb zero 14745600
+buffer Nrm zero 14745600
+buffer Dir zero 14745600
+buffer Dd zero 58982400
+buffer Status zero 3686400
+buffer Class zero 3686400
+buffer Flag zero 3686400
+buffer Cnt zero 16
+buffer Args zero 32
+buffer Color zero 14745600
+buffer Present zero 3686400
+buffer Frame export 14745600
+buffer AlbF export 14745600
+buffer NrmF export 14745600
+buffer Den export 14745600
+pipeline camstep C:\Users\AlexandrGeorgiev\CLionProjects\4dSurfacesHeodesics\gpu\build\spv\pathtrace_cam_step_662b47e11ef03038.spv cam_step cam
+pipeline snap C:\Users\AlexandrGeorgiev\CLionProjects\4dSurfacesHeodesics\gpu\build\spv\pathtrace_pt_snap_eb4e45b2d390878e.spv pt_snap cam
+pipeline camera C:\Users\AlexandrGeorgiev\CLionProjects\4dSurfacesHeodesics\gpu\build\spv\pathtrace_pt_camera_001a2dbc2fba0bfb.spv pt_camera cam Acc Acc2 Env Cube Stats Pix Alb Nrm Dir Dd Status Class Flag Cnt Args Frame AlbF NrmF Den Present Color
+pipeline shade C:\Users\AlexandrGeorgiev\CLionProjects\4dSurfacesHeodesics\gpu\build\spv\modea_modea_shade_1bd18fb36a20fc13.spv modea_shade cam Dir Dd Status Color Cube
+pipeline detect C:\Users\AlexandrGeorgiev\CLionProjects\4dSurfacesHeodesics\gpu\build\spv\modea_modea_detect_805fa0310fe0baea.spv modea_detect cam Dir Dd Status Flag
+pipeline classall C:\Users\AlexandrGeorgiev\CLionProjects\4dSurfacesHeodesics\gpu\build\spv\pathtrace_pt_classall_82ab60c8f258dcef.spv pt_classall cam Acc Acc2 Env Cube Stats Pix Alb Nrm Dir Dd Status Class Flag Cnt Args Frame AlbF NrmF Den Present Color
+pipeline clear C:\Users\AlexandrGeorgiev\CLionProjects\4dSurfacesHeodesics\gpu\build\spv\pathtrace_pt_clear_dabf90dabeb2a159.spv pt_clear cam Acc Acc2 Env Cube Stats Pix Alb Nrm Dir Dd Status Class Flag Cnt Args Frame AlbF NrmF Den Present Color
+pipeline lists C:\Users\AlexandrGeorgiev\CLionProjects\4dSurfacesHeodesics\gpu\build\spv\pathtrace_pt_lists_8280158fd451f543.spv pt_lists cam Acc Acc2 Env Cube Stats Pix Alb Nrm Dir Dd Status Class Flag Cnt Args Frame AlbF NrmF Den Present Color
+pipeline args C:\Users\AlexandrGeorgiev\CLionProjects\4dSurfacesHeodesics\gpu\build\spv\pathtrace_pt_args_1e5009c5ef68a433.spv pt_args cam Acc Acc2 Env Cube Stats Pix Alb Nrm Dir Dd Status Class Flag Cnt Args Frame AlbF NrmF Den Present Color
+pipeline ptA C:\Users\AlexandrGeorgiev\CLionProjects\4dSurfacesHeodesics\gpu\build\spv\pathtrace_pt_sample_a3f047cef8998da9.spv pt_sample cam Acc Acc2 Env Cube Stats Pix Alb Nrm Dir Dd Status Class Flag Cnt Args Frame AlbF NrmF Den Present Color
+pipeline ptB C:\Users\AlexandrGeorgiev\CLionProjects\4dSurfacesHeodesics\gpu\build\spv\pathtrace_pt_sample_a3f047cef8998da9.spv pt_sample cam Acc Acc2 Env Cube Stats Pix Alb Nrm Dir Dd Status Class Flag Cnt Args Frame AlbF NrmF Den Present Color
+pipeline reset C:\Users\AlexandrGeorgiev\CLionProjects\4dSurfacesHeodesics\gpu\build\spv\pathtrace_pt_reset_30bc38cc9b00b87b.spv pt_reset cam Acc Acc2 Env Cube Stats Pix Alb Nrm Dir Dd Status Class Flag Cnt Args Frame AlbF NrmF Den Present Color
+pipeline compose C:\Users\AlexandrGeorgiev\CLionProjects\4dSurfacesHeodesics\gpu\build\spv\pathtrace_pt_compose_cae316d6360c271e.spv pt_compose cam Acc Acc2 Env Cube Stats Pix Alb Nrm Dir Dd Status Class Flag Cnt Args Frame AlbF NrmF Den Present Color
+pipeline present C:\Users\AlexandrGeorgiev\CLionProjects\4dSurfacesHeodesics\gpu\build\spv\pathtrace_pt_present_d3b87e67a9417d6e.spv pt_present cam Acc Acc2 Env Cube Stats Pix Alb Nrm Dir Dd Status Class Flag Cnt Args Frame AlbF NrmF Den Present Color
+push camstep f32 0 f32 0 f32 0 f32 0 f32 0 f32 0 f32 0 f32 0.05 u32 16
+push snap f32 0 f32 0 f32 0 f32 0 f32 0 f32 0 f32 0 f32 0.05 u32 16
+push camera u32 921600 u32 1 f32 0.003 f32 0.01 f32 0.05 f32 0.25 u32 16 u32 3 u32 1 u32 0 f32 1000 u32 4000 f32 0 u32 32 f32 1 f32 0 u32 0 f32 1 u32 0 u32 0 u32 0 u32 1 f32 1
+push clear u32 921600 u32 1 f32 0.003 f32 0.01 f32 0.05 f32 0.25 u32 16 u32 3 u32 1 u32 0 f32 1000 u32 4000 f32 0 u32 32 f32 1 f32 0 u32 0 f32 1 u32 0 u32 0 u32 0 u32 1 f32 1
+push lists u32 921600 u32 1 f32 0.003 f32 0.01 f32 0.05 f32 0.25 u32 16 u32 3 u32 1 u32 0 f32 1000 u32 4000 f32 0 u32 32 f32 1 f32 0 u32 0 f32 1 u32 0 u32 921600 u32 0 u32 1 f32 1
+push args u32 921600 u32 1 f32 0.003 f32 0.01 f32 0.05 f32 0.25 u32 16 u32 3 u32 1 u32 0 f32 1000 u32 4000 f32 0 u32 32 f32 1 f32 0 u32 0 f32 1 u32 0 u32 0 u32 0 u32 1 f32 1
+push ptA u32 921600 u32 1 f32 0.003 f32 0.01 f32 0.05 f32 0.25 u32 16 u32 3 u32 1 u32 0 f32 1000 u32 4000 f32 0 u32 32 f32 1 f32 0 u32 2 f32 1 u32 0 u32 0 u32 0 u32 1 f32 1
+push ptB u32 921600 u32 7920 f32 0.003 f32 0.01 f32 0.05 f32 0.25 u32 16 u32 3 u32 1 u32 0 f32 1000 u32 4000 f32 0 u32 32 f32 1 f32 0 u32 2 f32 1 u32 1 u32 921600 u32 0 u32 1 f32 1
+push reset u32 921600 u32 1 f32 0.003 f32 0.01 f32 0.05 f32 0.25 u32 16 u32 3 u32 1 u32 0 f32 1000 u32 4000 f32 0 u32 32 f32 1 f32 0 u32 0 f32 1 u32 0 u32 0 u32 0 u32 1 f32 1
+push compose u32 921600 u32 1 f32 0.003 f32 0.01 f32 0.05 f32 0.25 u32 16 u32 3 u32 1 u32 0 f32 1000 u32 4000 f32 0 u32 32 f32 1 f32 0 u32 0 f32 1 u32 0 u32 0 u32 0 u32 1 f32 1
+push classall u32 921600 u32 1 f32 0.003 f32 0.01 f32 0.05 f32 0.25 u32 16 u32 3 u32 1 u32 0 f32 1000 u32 4000 f32 0 u32 32 f32 1 f32 0 u32 0 f32 1 u32 0 u32 0 u32 0 u32 1 f32 1
+push present u32 921600 u32 1 f32 0.003 f32 0.01 f32 0.05 f32 0.25 u32 16 u32 3 u32 1 u32 0 f32 1000 u32 4000 f32 0 u32 32 f32 1 f32 0 u32 0 f32 1 u32 0 u32 0 u32 1 u32 1 f32 1
+section move
+mark start
+dispatch camstep 1 1 1
+dispatch camera 14400 1 1
+mark camera
+dispatch shade 14400 1 1
+dispatch detect 14400 1 1
+dispatch clear 1 1 1
+dispatch lists 14400 1 1
+dispatch args 1 1 1
+dispatch reset 14400 1 1
+mark lists
+indirect ptA Args 0
+mark pt
+loop 8
+indirect ptB Args 12
+endloop
+mark fallback
+dispatch compose 14400 1 1
+mark compose
+section edit
+mark start
+dispatch camera 14400 1 1
+mark camera
+dispatch shade 14400 1 1
+dispatch detect 14400 1 1
+dispatch clear 1 1 1
+dispatch lists 14400 1 1
+dispatch args 1 1 1
+dispatch reset 14400 1 1
+mark lists
+indirect ptA Args 0
+mark pt
+loop 8
+indirect ptB Args 12
+endloop
+mark fallback
+dispatch compose 14400 1 1
+mark compose
+section snap
+dispatch snap 1 1 1
+section static
+mark start
+indirect ptA Args 0
+mark pt
+indirect ptB Args 12
+mark fallback
+dispatch compose 14400 1 1
+mark compose
+section post
+dispatch present 14400 1 1
+app 1280 720 Present
+denoise Frame AlbF NrmF Den
+campipe camstep
+presentpipe present 20 21 22
+seedpipes 1 ptA ptB
+speed 2.0
+objrows cam 8
+mfrows cam 209
+flat 2 1.5 -1.5 2 3 -4 0 0 4 0 0
+objname 0 floor
+objname 1 ball
+objname 2 torus
+objname 3 ball
+objname 4 ball
+objname 5 light_up
+objname 6 light_down
+editor C:/Users/AlexandrGeorgiev/CLionProjects/4dSurfacesHeodesics/scenes/two_wormholes.json C:/Users/AlexandrGeorgiev/CLionProjects/4dSurfacesHeodesics/results/stage-5/2026-10-25_topology_switch_1280x720/run_hyperplane 75
+manifold two_compact_wh - c1=-4,0,0 c2=4,0,0 b=1 rho0=3 W=1.5
+rebuild C:/Users/AlexandrGeorgiev/CLionProjects/4dSurfacesHeodesics/.venv/Scripts/python.exe C:/Users/AlexandrGeorgiev/CLionProjects/4dSurfacesHeodesics/prototype/scripts/app.py --res 1280x720 --cube 512
+editgraph C:\Users\AlexandrGeorgiev\CLionProjects\4dSurfacesHeodesics\results\stage-5\2026-10-25_topology_switch_1280x720\run_hyperplane\app_graph_dyn.txt
+hidden
+bench C:\Users\AlexandrGeorgiev\CLionProjects\4dSurfacesHeodesics\results\stage-5\2026-10-25_topology_switch_1280x720\run_hyperplane\script.txt C:\Users\AlexandrGeorgiev\CLionProjects\4dSurfacesHeodesics\results\stage-5\2026-10-25_topology_switch_1280x720\run_hyperplane\frames.json
+loadscene 5 C:/Users/AlexandrGeorgiev/CLionProjects/4dSurfacesHeodesics/scenes/hyperplane.json
+editmode 180 off

@@ -1,0 +1,1 @@
+.venv/Scripts/python.exe prototype/scripts/app.py --bench --edit-mode --res 1920x1080 --tag dynmf_gs

@@ -1,0 +1,7 @@
+{
+  "res": "1920x1080",
+  "frames": 90,
+  "targets": "S3,ellis,tiger,hyperplane",
+  "cube": 512,
+  "tag": ""
+}

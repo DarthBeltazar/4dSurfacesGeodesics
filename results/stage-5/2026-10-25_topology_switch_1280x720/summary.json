@@ -1,0 +1,26 @@
+{
+ "S3": {
+  "apply_scene_ms": 155.2,
+  "edit_mode_static_ms": 20.3884,
+  "exit_frame_ms": 3788.72,
+  "baked_static_ms": 22.3939
+ },
+ "ellis": {
+  "apply_scene_ms": 156.2,
+  "edit_mode_static_ms": 5.2345,
+  "exit_frame_ms": 1723.17,
+  "baked_static_ms": 4.8493
+ },
+ "tiger": {
+  "apply_scene_ms": 147.6,
+  "edit_mode_static_ms": 29.9598,
+  "exit_frame_ms": 3769.16,
+  "baked_static_ms": 29.6143
+ },
+ "hyperplane": {
+  "apply_scene_ms": 152.5,
+  "edit_mode_static_ms": 5.0549,
+  "exit_frame_ms": 978.056,
+  "baked_static_ms": 4.5353
+ }
+}

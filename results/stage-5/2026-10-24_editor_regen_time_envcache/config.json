@@ -1,0 +1,9 @@
+{
+  "scene": "two_wormholes",
+  "res": "1280x720",
+  "cube": 512,
+  "runs": 3,
+  "what": "structure",
+  "salt": 9,
+  "tag": "envcache"
+}

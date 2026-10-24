@@ -1,0 +1,114 @@
+buffer cam in C:\Users\AlexandrGeorgiev\CLionProjects\4dSurfacesHeodesics\results\stage-5\2026-10-25_topology_switch_1920x1080\run_tiger\edit_1\cam.npy
+buffer Env in C:\Users\AlexandrGeorgiev\CLionProjects\4dSurfacesHeodesics\results\stage-5\2026-10-25_topology_switch_1920x1080\run_tiger\edit_1\env.npy
+cube Cube C:\Users\AlexandrGeorgiev\CLionProjects\4dSurfacesHeodesics\results\stage-5\2026-10-25_topology_switch_1920x1080\run_tiger\edit_1\cube.npy bc6h 16 C:\Users\AlexandrGeorgiev\CLionProjects\4dSurfacesHeodesics\gpu\build\spv\bc6h_encode_bc6h_encode_38b2d3cf42a3dc49.spv
+buffer Acc zero 33177600
+buffer Acc2 zero 33177600
+buffer Stats zero 33177600
+buffer Pix zero 16588800
+buffer Alb zero 33177600
+buffer Nrm zero 33177600
+buffer Dir zero 33177600
+buffer Dd zero 132710400
+buffer Status zero 8294400
+buffer Class zero 8294400
+buffer Flag zero 8294400
+buffer Cnt zero 16
+buffer Args zero 32
+buffer Color zero 33177600
+buffer Present zero 8294400
+buffer Frame export 33177600
+buffer AlbF export 33177600
+buffer NrmF export 33177600
+buffer Den export 33177600
+pipeline camstep C:\Users\AlexandrGeorgiev\CLionProjects\4dSurfacesHeodesics\gpu\build\spv\pathtrace_cam_step_c4cd55aabf07d7f5.spv cam_step cam
+pipeline snap C:\Users\AlexandrGeorgiev\CLionProjects\4dSurfacesHeodesics\gpu\build\spv\pathtrace_pt_snap_489929dfb7c9603a.spv pt_snap cam
+pipeline camera C:\Users\AlexandrGeorgiev\CLionProjects\4dSurfacesHeodesics\gpu\build\spv\pathtrace_pt_camera_2c0f9acf0d7a7d7b.spv pt_camera cam Acc Acc2 Env Cube Stats Pix Alb Nrm Dir Dd Status Class Flag Cnt Args Frame AlbF NrmF Den Present Color
+pipeline shade C:\Users\AlexandrGeorgiev\CLionProjects\4dSurfacesHeodesics\gpu\build\spv\modea_modea_shade_1448b11a8813087c.spv modea_shade cam Dir Dd Status Color Cube
+pipeline detect C:\Users\AlexandrGeorgiev\CLionProjects\4dSurfacesHeodesics\gpu\build\spv\modea_modea_detect_c26e03fcb1443b8a.spv modea_detect cam Dir Dd Status Flag
+pipeline classall C:\Users\AlexandrGeorgiev\CLionProjects\4dSurfacesHeodesics\gpu\build\spv\pathtrace_pt_classall_22c7b739b1723354.spv pt_classall cam Acc Acc2 Env Cube Stats Pix Alb Nrm Dir Dd Status Class Flag Cnt Args Frame AlbF NrmF Den Present Color
+pipeline clear C:\Users\AlexandrGeorgiev\CLionProjects\4dSurfacesHeodesics\gpu\build\spv\pathtrace_pt_clear_2fb8c3383dcadd3b.spv pt_clear cam Acc Acc2 Env Cube Stats Pix Alb Nrm Dir Dd Status Class Flag Cnt Args Frame AlbF NrmF Den Present Color
+pipeline lists C:\Users\AlexandrGeorgiev\CLionProjects\4dSurfacesHeodesics\gpu\build\spv\pathtrace_pt_lists_def3ae204b582df9.spv pt_lists cam Acc Acc2 Env Cube Stats Pix Alb Nrm Dir Dd Status Class Flag Cnt Args Frame AlbF NrmF Den Present Color
+pipeline args C:\Users\AlexandrGeorgiev\CLionProjects\4dSurfacesHeodesics\gpu\build\spv\pathtrace_pt_args_9f615deef1b6d9a9.spv pt_args cam Acc Acc2 Env Cube Stats Pix Alb Nrm Dir Dd Status Class Flag Cnt Args Frame AlbF NrmF Den Present Color
+pipeline ptA C:\Users\AlexandrGeorgiev\CLionProjects\4dSurfacesHeodesics\gpu\build\spv\pathtrace_pt_sample_283765d0996a7636.spv pt_sample cam Acc Acc2 Env Cube Stats Pix Alb Nrm Dir Dd Status Class Flag Cnt Args Frame AlbF NrmF Den Present Color
+pipeline ptB C:\Users\AlexandrGeorgiev\CLionProjects\4dSurfacesHeodesics\gpu\build\spv\pathtrace_pt_sample_283765d0996a7636.spv pt_sample cam Acc Acc2 Env Cube Stats Pix Alb Nrm Dir Dd Status Class Flag Cnt Args Frame AlbF NrmF Den Present Color
+pipeline reset C:\Users\AlexandrGeorgiev\CLionProjects\4dSurfacesHeodesics\gpu\build\spv\pathtrace_pt_reset_dfe784a80484f359.spv pt_reset cam Acc Acc2 Env Cube Stats Pix Alb Nrm Dir Dd Status Class Flag Cnt Args Frame AlbF NrmF Den Present Color
+pipeline compose C:\Users\AlexandrGeorgiev\CLionProjects\4dSurfacesHeodesics\gpu\build\spv\pathtrace_pt_compose_9294381c3d39646c.spv pt_compose cam Acc Acc2 Env Cube Stats Pix Alb Nrm Dir Dd Status Class Flag Cnt Args Frame AlbF NrmF Den Present Color
+pipeline present C:\Users\AlexandrGeorgiev\CLionProjects\4dSurfacesHeodesics\gpu\build\spv\pathtrace_pt_present_578ee0686fcd1b7a.spv pt_present cam Acc Acc2 Env Cube Stats Pix Alb Nrm Dir Dd Status Class Flag Cnt Args Frame AlbF NrmF Den Present Color
+push camstep f32 0 f32 0 f32 0 f32 0 f32 0 f32 0 f32 0 f32 0.05 u32 16
+push snap f32 0 f32 0 f32 0 f32 0 f32 0 f32 0 f32 0 f32 0.05 u32 16
+push camera u32 2073600 u32 1 f32 0.003 f32 0.01 f32 0.05 f32 0.25 u32 16 u32 3 u32 1 u32 0 f32 25.1327423 u32 4000 f32 1e+09 u32 8 f32 1 f32 0 u32 0 f32 1 u32 0 u32 0 u32 0 u32 1 f32 1
+push clear u32 2073600 u32 1 f32 0.003 f32 0.01 f32 0.05 f32 0.25 u32 16 u32 3 u32 1 u32 0 f32 25.1327423 u32 4000 f32 1e+09 u32 8 f32 1 f32 0 u32 0 f32 1 u32 0 u32 0 u32 0 u32 1 f32 1
+push lists u32 2073600 u32 1 f32 0.003 f32 0.01 f32 0.05 f32 0.25 u32 16 u32 3 u32 1 u32 0 f32 25.1327423 u32 4000 f32 1e+09 u32 8 f32 1 f32 0 u32 0 f32 1 u32 0 u32 2073600 u32 0 u32 1 f32 1
+push args u32 2073600 u32 1 f32 0.003 f32 0.01 f32 0.05 f32 0.25 u32 16 u32 3 u32 1 u32 0 f32 25.1327423 u32 4000 f32 1e+09 u32 8 f32 1 f32 0 u32 0 f32 1 u32 0 u32 0 u32 0 u32 1 f32 1
+push ptA u32 2073600 u32 1 f32 0.003 f32 0.01 f32 0.05 f32 0.25 u32 16 u32 3 u32 1 u32 0 f32 25.1327423 u32 4000 f32 1e+09 u32 8 f32 1 f32 0 u32 2 f32 1 u32 0 u32 0 u32 0 u32 1 f32 1
+push ptB u32 2073600 u32 7920 f32 0.003 f32 0.01 f32 0.05 f32 0.25 u32 16 u32 3 u32 1 u32 0 f32 25.1327423 u32 4000 f32 1e+09 u32 8 f32 1 f32 0 u32 2 f32 1 u32 1 u32 2073600 u32 0 u32 1 f32 1
+push reset u32 2073600 u32 1 f32 0.003 f32 0.01 f32 0.05 f32 0.25 u32 16 u32 3 u32 1 u32 0 f32 25.1327423 u32 4000 f32 1e+09 u32 8 f32 1 f32 0 u32 0 f32 1 u32 0 u32 0 u32 0 u32 1 f32 1
+push compose u32 2073600 u32 1 f32 0.003 f32 0.01 f32 0.05 f32 0.25 u32 16 u32 3 u32 1 u32 0 f32 25.1327423 u32 4000 f32 1e+09 u32 8 f32 1 f32 0 u32 0 f32 1 u32 0 u32 0 u32 0 u32 1 f32 1
+push classall u32 2073600 u32 1 f32 0.003 f32 0.01 f32 0.05 f32 0.25 u32 16 u32 3 u32 1 u32 0 f32 25.1327423 u32 4000 f32 1e+09 u32 8 f32 1 f32 0 u32 0 f32 1 u32 0 u32 0 u32 0 u32 1 f32 1
+push present u32 2073600 u32 1 f32 0.003 f32 0.01 f32 0.05 f32 0.25 u32 16 u32 3 u32 1 u32 0 f32 25.1327423 u32 4000 f32 1e+09 u32 8 f32 1 f32 0 u32 0 f32 1 u32 0 u32 0 u32 1 u32 1 f32 1
+section move
+mark start
+dispatch camstep 1 1 1
+dispatch classall 32400 1 1
+mark camera
+dispatch clear 1 1 1
+dispatch lists 32400 1 1
+dispatch args 1 1 1
+dispatch reset 32400 1 1
+mark lists
+indirect ptA Args 0
+mark pt
+loop 8
+indirect ptB Args 12
+endloop
+mark fallback
+dispatch compose 32400 1 1
+mark compose
+section edit
+mark start
+dispatch classall 32400 1 1
+mark camera
+dispatch clear 1 1 1
+dispatch lists 32400 1 1
+dispatch args 1 1 1
+dispatch reset 32400 1 1
+mark lists
+indirect ptA Args 0
+mark pt
+loop 8
+indirect ptB Args 12
+endloop
+mark fallback
+dispatch compose 32400 1 1
+mark compose
+section snap
+dispatch snap 1 1 1
+section static
+mark start
+indirect ptA Args 0
+mark pt
+indirect ptB Args 12
+mark fallback
+dispatch compose 32400 1 1
+mark compose
+section post
+dispatch present 32400 1 1
+app 1920 1080 Present
+denoise Frame AlbF NrmF Den
+campipe camstep
+presentpipe present 20 21 22
+seedpipes 1 ptA ptB
+speed 0.5
+objrows cam 8
+mfrows cam 209
+objname 0 ball
+objname 1 ball
+objname 2 ball
+objname 3 ball
+objname 4 ball
+objname 5 ball
+objname 6 ball
+editor C:/Users/AlexandrGeorgiev/CLionProjects/4dSurfacesHeodesics/results/stage-5/2026-10-25_topology_switch_1920x1080/run_tiger/edit_1.json C:/Users/AlexandrGeorgiev/CLionProjects/4dSurfacesHeodesics/results/stage-5/2026-10-25_topology_switch_1920x1080/run_tiger/edit_1 75
+manifold tiger none R1=1.20000005 R2=0.800000012 r=0.300000012
+rebuild C:/Users/AlexandrGeorgiev/CLionProjects/4dSurfacesHeodesics/.venv/Scripts/python.exe C:/Users/AlexandrGeorgiev/CLionProjects/4dSurfacesHeodesics/prototype/scripts/app.py --res 1920x1080 --cube 512
+editgraph C:\Users\AlexandrGeorgiev\CLionProjects\4dSurfacesHeodesics\results\stage-5\2026-10-25_topology_switch_1920x1080\run_tiger\edit_1\app_graph_dyn.txt
