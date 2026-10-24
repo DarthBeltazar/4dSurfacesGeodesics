@@ -1,0 +1,1 @@
+.venv/Scripts/python.exe prototype/scripts/video.py --path orbit --res 1600x900 --seconds 8 --fps 25 --loop 800

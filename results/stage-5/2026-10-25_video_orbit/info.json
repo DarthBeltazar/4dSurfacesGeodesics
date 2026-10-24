@@ -1,0 +1,12 @@
+{
+ "video_frames": 200,
+ "duration_s": 8.0,
+ "wall_s": 140.5212323665619,
+ "s_per_video_frame": 0.7026061618328094,
+ "app_frames": 12800,
+ "median_frame_ms_moving": 29.157,
+ "median_frame_ms_static": 10.50135,
+ "sum_frame_ms": 139301.1398,
+ "mp4_bytes": 3397359,
+ "webp_bytes": 1995806
+}
