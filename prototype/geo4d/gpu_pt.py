@@ -187,14 +187,20 @@ def render_frame(scene: Scene, cam, spp, p: GPUPT = GPUPT(), nfb=64, c_mix=1.0, 
     flags = out[4].astype(bool) & (cp["cls"] == 0)
     obj = np.nonzero(cp["cls"] != 0)[0]
     fb = np.nonzero(flags)[0]
-    res = dict(cls=cp["cls"], flags=flags, color_modea=col.copy(), camera=cp)
+    ms = lambda reps: [t / 1e6 for rp in reps for t in rp["times_ns"]]
+    res = dict(cls=cp["cls"], flags=flags, color_modea=col.copy(), camera=cp,
+               times=dict(camera=ms([cp["report"]]), shade=ms([rep_s]), detect=ms([rep_d]), pt=[], fallback=[]),
+               reports=dict(camera=cp["report"], shade=rep_s, detect=rep_d))
     if len(obj):
-        m, v, _, rep = render(scene, cam, spp, p, fmt=fmt, pix=obj, cube=cube)
+        m, v, st, rep = render(scene, cam, spp, p, fmt=fmt, pix=obj, cube=cube)
         col[obj] = m[obj]
         res["aov"] = render.aov
-        res["var"] = v
+        res["var"], res["stats"] = v, st
+        res["times"]["pt"] = ms(rep)
+        res["reports"]["pt"] = rep[0]
     if len(fb) and nfb > 0:
-        m, _, _, _ = render(scene, cam, nfb, GPUPT(**{**p.__dict__, "seed": p.seed + 7919}), fmt=fmt, pix=fb, cube=cube)
+        m, _, _, rep = render(scene, cam, nfb, GPUPT(**{**p.__dict__, "seed": p.seed + 7919}), fmt=fmt, pix=fb, cube=cube)
         col[fb] = m[fb]
+        res["times"]["fallback"] = ms(rep)
     res["color"] = col
     return res
