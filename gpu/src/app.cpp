@@ -22,6 +22,8 @@
 //   edit <кадр> <строки.npy>         в сценарии замера: заменить строки объектов перед кадром (как правка в окне)
 //   remanifold <кадр> <вид> k=v…     в сценарии: смена многообразия как кнопкой «Применить» — сразу в режиме
 //                                    редактирования (DD-009); без графа режима редактирования — Python и перезагрузка
+//   mouse <кадр> <x> <y> [click]     в сценарии: события мыши SDL (движение в точку окна, щелчок ЛКМ) перед кадром;
+//                                    хост печатает «mouse <кадр> grab <0|1> imgui <WantCaptureMouse>» (проверка панелей)
 //   loadscene <кадр> <сцена.json>    в сценарии: открыть сцену, как кнопкой «Открыть» (сразу, режим редактирования)
 //   resize <кадр> <W> <H>            в сценарии: новое разрешение рендера, как в панели «Рендер» (ждёт перегенерацию)
 //   editgraph <граф>                 граф режима редактирования (шейдеры без зашитой структуры объектов, DD-008)
@@ -156,6 +158,7 @@ struct AppDirs {
     std::vector<std::pair<uint32_t, bool>> editmode;                            // кадр, вкл/выкл
     std::vector<std::array<uint32_t, 3>> resize;                                // кадр, W, H
     std::vector<std::pair<uint32_t, std::string>> loadscene;                     // кадр, файл сцены
+    std::vector<std::pair<uint32_t, std::vector<std::string>>> mouse;            // кадр, x, y [click]
     std::string editgraph;
     uint32_t record_period = 1, W = 0, H = 0;
     size_t i_use_den = 0, i_bgra = 0, i_seed = 1, i_exposure = SIZE_MAX;
@@ -186,6 +189,7 @@ AppDirs parse_dirs(const GraphProgram& prog) {
         else if (w[0] == "record") { d.record_path = w.at(1); d.record_period = uint32_t(std::stoul(w.at(2))); }
         else if (w[0] == "objrows") { d.objbuf = w.at(1); d.obj_base = std::stoi(w.at(2)); }
         else if (w[0] == "mfrows") d.mf_base = std::stoi(w.at(2));
+        else if (w[0] == "mouse") d.mouse.emplace_back(uint32_t(std::stoul(w.at(1))), std::vector<std::string>(w.begin() + 2, w.end()));
         else if (w[0] == "loadscene") d.loadscene.emplace_back(uint32_t(std::stoul(w.at(1))), w.at(2));
         else if (w[0] == "editgraph") d.editgraph = w.at(1);
         else if (w[0] == "resize")
@@ -290,7 +294,7 @@ int run_app(const std::string& graph_path) {
             if (!old.present_buf.empty()) {            // перезагрузка: сценарий, дампы и запись — из исходного графа
                 d.bench_in = old.bench_in; d.bench_out = old.bench_out;
                 d.dumps = old.dumps; d.edits = old.edits; d.remanifold = old.remanifold; d.editmode = old.editmode;
-                d.resize = old.resize; d.loadscene = old.loadscene;
+                d.resize = old.resize; d.loadscene = old.loadscene; d.mouse = old.mouse;
                 d.record_path = old.record_path; d.record_period = old.record_period;
             }
             prog->set_push_u32(d.presentpipe, d.i_bgra, sc.format == VK_FORMAT_B8G8R8A8_UNORM ? 1u : 0u);
@@ -573,6 +577,7 @@ int run_app(const std::string& graph_path) {
         std::ofstream log;
         if (!d.bench_out.empty()) { log.open(d.bench_out); log << "[\n"; }
         bool quit = false, grab = false, minimized = false, toggle_req = false;
+        bool click_pending = false;                    // ЛКМ при панелях: панель или сцена — решает ImGui этого кадра
         // разрешение рендера (DD-009): пресет из панели; доли окна пересчитываются после изменения размера окна
         int res_choice = -1;
         auto last_resize = std::chrono::steady_clock::now();
@@ -588,7 +593,28 @@ int run_app(const std::string& graph_path) {
             float mv[3] = {0, 0, 0}, rot[3] = {0, 0, 0};
             float mdx = 0, mdy = 0;
             const bool ui_kb = overlay && show_ui && ImGui::GetIO().WantCaptureKeyboard;
-            const bool ui_mouse = overlay && show_ui && ImGui::GetIO().WantCaptureMouse;
+            for (auto& [fi, w] : d.mouse)              // сценарий: события мыши как от SDL
+                if (fi == frame) {
+                    SDL_Event ev{};
+                    ev.type = SDL_EVENT_MOUSE_MOTION;
+                    ev.motion.windowID = SDL_GetWindowID(win);
+                    ev.motion.x = std::stof(w.at(0));
+                    ev.motion.y = std::stof(w.at(1));
+                    SDL_PushEvent(&ev);
+                    if (w.size() > 2) {
+                        for (bool down : {true, false}) {
+                            SDL_Event b{};
+                            b.type = down ? SDL_EVENT_MOUSE_BUTTON_DOWN : SDL_EVENT_MOUSE_BUTTON_UP;
+                            b.button.windowID = SDL_GetWindowID(win);
+                            b.button.button = SDL_BUTTON_LEFT;
+                            b.button.down = down;
+                            b.button.clicks = 1;
+                            b.button.x = ev.motion.x;
+                            b.button.y = ev.motion.y;
+                            SDL_PushEvent(&b);
+                        }
+                    }
+                }
             SDL_Event e;
             while (SDL_PollEvent(&e)) {
                 if (overlay && show_ui && !grab) ImGui_ImplSDL3_ProcessEvent(&e);
@@ -599,9 +625,13 @@ int run_app(const std::string& graph_path) {
                 } else if (e.type == SDL_EVENT_KEY_DOWN && e.key.key == SDLK_F1 && overlay) show_ui = !show_ui;
                 else if (e.type == SDL_EVENT_KEY_DOWN && e.key.key == SDLK_TAB && overlay && !ui_kb) toggle_req = true;
                 else if (e.type == SDL_EVENT_KEY_DOWN && e.key.key == SDLK_R && has_den && !ui_kb) { use_den = !use_den; accum = 0; }
-                else if (e.type == SDL_EVENT_MOUSE_BUTTON_DOWN && e.button.button == SDL_BUTTON_LEFT && (grab || !ui_mouse)) {
-                    grab = !grab;
-                    SDL_SetWindowRelativeMouseMode(win, grab);
+                else if (e.type == SDL_EVENT_MOUSE_BUTTON_DOWN && e.button.button == SDL_BUTTON_LEFT) {
+                    // захват взгляда: при панелях — после ImGui::NewFrame (он уже видит это нажатие и положение
+                    // мыши); WantCaptureMouse прошлого кадра устарел, если мышь только что пришла на панель
+                    if (grab || !(overlay && show_ui)) {
+                        grab = !grab;
+                        SDL_SetWindowRelativeMouseMode(win, grab);
+                    } else click_pending = true;
                 } else if (e.type == SDL_EVENT_MOUSE_MOTION && grab) { mdx += e.motion.xrel; mdy += e.motion.yrel; }
                 else if (e.type == SDL_EVENT_KEY_DOWN && e.key.key == SDLK_F11 && !e.key.repeat && interactive)
                     SDL_SetWindowFullscreen(win, !(SDL_GetWindowFlags(win) & SDL_WINDOW_FULLSCREEN));
@@ -632,6 +662,13 @@ int run_app(const std::string& graph_path) {
             }
             bool moved = frame == 0 || mv[0] != 0 || mv[1] != 0 || mv[2] != 0 || rot[0] != 0 || rot[1] != 0 || rot[2] != 0;
             if (editor)
+                for (auto& [fi, w] : d.mouse)
+                    if (fi + 1 == frame || fi == frame) {
+                        std::printf("mouse %u grab %d imgui %d pos %.0f %.0f edit %d\n", frame, int(grab),
+                                    int(overlay && ImGui::GetIO().WantCaptureMouse), ImGui::GetIO().MousePos.x,
+                                    ImGui::GetIO().MousePos.y, int(edit_mode));
+                        std::fflush(stdout);
+                    }
                 for (auto& [fi, on] : d.editmode)      // сценарий: режим редактирования
                     if (fi == frame) {
                         if (on) enter_edit();
@@ -654,7 +691,23 @@ int run_app(const std::string& graph_path) {
             if (overlay) {
                 ImGui_ImplVulkan_NewFrame();
                 ImGui_ImplSDL3_NewFrame();
+                // положение мыши — в координатах окна, как у событий SDL: бэкенд при фокусе берёт глобальное
+                // положение минус позицию окна, а при масштабе экрана ≠ 100 % и в полноэкранном режиме оно может
+                // не совпасть с окном — тогда панели не реагируют на клики
+                if (!grab && SDL_GetMouseFocus() == win) {
+                    float mx = 0, my = 0;
+                    SDL_GetMouseState(&mx, &my);
+                    ImGui::GetIO().AddMousePosEvent(mx, my);
+                }
                 ImGui::NewFrame();
+                if (click_pending) {
+                    click_pending = false;
+                    if (!ImGui::GetIO().WantCaptureMouse) {            // нажатие не над панелью — взгляд мышью
+                        ImGui::GetIO().AddMouseButtonEvent(ImGuiMouseButton_Left, false);
+                        grab = true;
+                        SDL_SetWindowRelativeMouseMode(win, true);
+                    }
+                }
                 if (show_ui) {
                     FrameInfo fi{last_ms, accum, has_den};
                     fi.rw = W;
