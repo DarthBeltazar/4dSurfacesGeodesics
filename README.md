@@ -9,7 +9,7 @@
 ```sh
 python -m venv .venv
 .venv/Scripts/python -m pip install -r requirements.txt     # Linux: .venv/bin/python
-.venv/Scripts/python -m pytest tests -q                    # все тесты (~8 мин)
+.venv/Scripts/python -m pytest tests -q                    # все тесты (~15 мин)
 .venv/Scripts/python -m pytest tests/test_u1_jet.py -q     # один файл
 .venv/Scripts/python -m pytest "tests/test_u2_reference.py::test_vs_dop853[ellis]"   # один случай
 ```
@@ -42,7 +42,7 @@ python -m venv .venv
 ```sh
 gpu\build.cmd                                               # Release → gpu/build/geo4d_gpu.exe
 gpu\build\geo4d_gpu.exe info                                # устройство и драйвер
-.venv/Scripts/python -m pytest tests -q -m gpu             # GPU-тесты (~30 с); без бинарника пропускаются
+.venv/Scripts/python -m pytest tests -q -m gpu             # GPU-тесты (~5 мин); без бинарника пропускаются
 .venv/Scripts/python prototype/scripts/gpu_vs_prototype.py  # таблица GPU / прототип-f32 / f64 по фигурам
 .venv/Scripts/python prototype/scripts/gpu_kappa_alpha.py   # выбор κ и α во float32
 .venv/Scripts/python prototype/scripts/gpu_profile.py       # профиль режима A 1080p/4K

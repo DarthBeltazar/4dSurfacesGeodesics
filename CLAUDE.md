@@ -13,7 +13,7 @@ hypersurfaces `M = {x ∈ R⁴ : f(x) = 0}`, with light rays as geodesics of the
 
 ```sh
 .venv/Scripts/python -m pip install -r requirements.txt
-.venv/Scripts/python -m pytest tests -q                                   # full suite, ~8 min
+.venv/Scripts/python -m pytest tests -q                                   # full suite, ~15 min
 .venv/Scripts/python -m pytest tests/test_u1_jet.py -q                    # one file
 .venv/Scripts/python -m pytest "tests/test_u2_reference.py::test_vs_dop853[ellis]"   # one case
 PYTHONIOENCODING=utf-8 .venv/Scripts/python prototype/scripts/<name>.py   # experiments → results/stage-1/
@@ -23,7 +23,7 @@ GPU (Vulkan SDK 1.4.328.1 with slangc/volk/VMA, MSVC 2022; CMake/Ninja are taken
 
 ```sh
 gpu\build.cmd                                         # → gpu/build/geo4d_gpu.exe (info | run <job> | graph <file>)
-.venv/Scripts/python -m pytest tests -q -m gpu       # GPU tests, ~30 s; skipped if the exe or slangc is missing
+.venv/Scripts/python -m pytest tests -q -m gpu       # GPU tests, ~5 min; skipped if the exe or slangc is missing
 ```
 
 `pyproject.toml` puts `prototype/` on the pytest path. Experiments write `results/stage-N/<date>_<name>/`
