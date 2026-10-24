@@ -2,7 +2,8 @@
 //
 // Граф (graph_program.cpp) с секциями move / static / post и директивами приложения:
 //   app <W> <H> <буфер RGBA8>       размер кадра и буфер вывода (uint на пиксель)
-//   denoise <кадр> <альбедо> <нормаль> <выход>   экспортируемые буферы (обмен с CUDA без копий)
+//   denoise <кадр> <альбедо> <нормаль> <выход>   экспортируемые буферы (обмен с CUDA без копий); без OptiX/CUDA
+//                                    (сборка без GEO4D_OPTIX, не-NVIDIA GPU, macOS) кадр идёт без денойзера (ADR-0008)
 //   campipe <конвейер>               cam_step: push 0..2 — перемещение (f, r, u), 4..6 — рыскание/тангаж/крен
 //   presentpipe <конвейер> <i_use_den> <i_bgra>   индексы push-констант pt_present
 //   seedpipes <i_seed> <конвейеры...>             зерно ГСЧ меняется каждый кадр
@@ -21,13 +22,16 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <cstdio>
 #include <fstream>
 #include <sstream>
 #include <stdexcept>
 #include <string>
 #include <vector>
 
+#ifdef GEO4D_OPTIX
 #include "denoiser.hpp"
+#endif
 #include "graph_program.hpp"
 #include "npy.hpp"
 
@@ -153,18 +157,32 @@ int run_app(const std::string& graph_path) {
         }
         prog.set_push_u32(presentpipe, i_bgra, sc.format == VK_FORMAT_B8G8R8A8_UNORM ? 1u : 0u);
 
-        // денойзер на памяти буферов Vulkan (импорт в CUDA)
+        // денойзер на памяти буферов Vulkan (импорт в CUDA); недоступен — работаем без него
+#ifdef GEO4D_OPTIX
         std::unique_ptr<OptixDenoiserCtx> den;
         uint64_t dptr[4] = {0, 0, 0, 0};
         if (!den_bufs.empty()) {
-            den = std::make_unique<OptixDenoiserCtx>();
-            den->setup(W, H, true, true);
-            for (int k = 0; k < 4; ++k) {
-                Buffer& b = prog.buffer(den_bufs[k]);
-                dptr[k] = den->import_win32(b.win32, b.alloc_size, b.size);
+            try {
+                den = std::make_unique<OptixDenoiserCtx>();
+                den->setup(W, H, true, true);
+                for (int k = 0; k < 4; ++k) {
+                    Buffer& b = prog.buffer(den_bufs[k]);
+                    if (b.ext_handle == -1) throw std::runtime_error("буфер " + den_bufs[k] + " без экспорта памяти");
+                    dptr[k] = den->import_external(b.ext_handle, b.alloc_size, b.size);
+#ifndef _WIN32
+                    b.ext_handle = -1;                 // fd теперь принадлежит CUDA
+#endif
+                }
+            } catch (const std::exception& e) {
+                std::fprintf(stderr, "денойзер недоступен (%s) — вывод без денойзера\n", e.what());
+                den.reset();
             }
         }
-        bool use_den = den != nullptr;
+        const bool has_den = den != nullptr;
+#else
+        const bool has_den = false;                    // сборка без OptiX
+#endif
+        bool use_den = has_den;
 
         std::vector<std::vector<float>> script;
         if (!bench_in.empty()) {
@@ -213,7 +231,7 @@ int run_app(const std::string& graph_path) {
             while (SDL_PollEvent(&e)) {
                 if (e.type == SDL_EVENT_QUIT) quit = true;
                 else if (e.type == SDL_EVENT_KEY_DOWN && e.key.key == SDLK_ESCAPE) quit = true;
-                else if (e.type == SDL_EVENT_KEY_DOWN && e.key.key == SDLK_R && den) { use_den = !use_den; accum = 0; }
+                else if (e.type == SDL_EVENT_KEY_DOWN && e.key.key == SDLK_R && has_den) { use_den = !use_den; accum = 0; }
                 else if (e.type == SDL_EVENT_MOUSE_BUTTON_DOWN && e.button.button == SDL_BUTTON_LEFT) {
                     grab = !grab;
                     SDL_SetWindowRelativeMouseMode(win, grab);
@@ -244,7 +262,9 @@ int run_app(const std::string& graph_path) {
             double gpu_ms = ms_since(tg);
             accum = moving ? 1 : accum + 1;
             double den_ms = 0;
+#ifdef GEO4D_OPTIX
             if (use_den) den_ms = den->invoke(dptr[0], dptr[1], dptr[2], dptr[3]);
+#endif
             prog.set_push_u32(presentpipe, i_use_den, use_den ? 1u : 0u);
             auto tp = std::chrono::steady_clock::now();
             prog.run("post");
@@ -369,7 +389,9 @@ int run_app(const std::string& graph_path) {
         vkDestroyFence(ctx.device(), fence, nullptr);
         vkDestroySemaphore(ctx.device(), acquired, nullptr);
         vkDestroySemaphore(ctx.device(), rendered, nullptr);
+#ifdef GEO4D_OPTIX
         den.reset();
+#endif
         vkDestroySwapchainKHR(ctx.device(), sc.sc, nullptr);
         SDL_Vulkan_DestroySurface(ctx.instance(), surf, nullptr);
     }

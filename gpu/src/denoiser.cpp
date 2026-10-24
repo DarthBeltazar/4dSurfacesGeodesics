@@ -1,5 +1,11 @@
-// Денойзер OptiX: см. denoiser.hpp. CUDA Driver API — подмножество из nvcuda.dll (ADR-0007).
+// Денойзер OptiX: см. denoiser.hpp. CUDA Driver API — подмножество из nvcuda.dll / libcuda.so.1 (ADR-0007, ADR-0008).
 #include "denoiser.hpp"
+
+#ifdef _WIN32
+#include <windows.h>
+#else
+#include <dlfcn.h>
+#endif
 
 #include <optix.h>
 #include <optix_function_table_definition.h>
@@ -12,8 +18,14 @@
 
 namespace {
 
+#ifdef _WIN32
+constexpr const char* kCudaLib = "nvcuda.dll";
+#else
+constexpr const char* kCudaLib = "libcuda.so.1";
+#endif
+
 struct Cuda {
-    HMODULE dll = nullptr;
+    void* dll = nullptr;
     CUresult (*Init)(unsigned) = nullptr;
     CUresult (*DeviceGet)(CUdevice*, int) = nullptr;
     CUresult (*DevicePrimaryCtxRetain)(CUcontext*, CUdevice) = nullptr;
@@ -36,12 +48,20 @@ struct Cuda {
     CUresult (*DestroyExternalMemory)(CUexternalMemory) = nullptr;
 
     template <class F> void get(F& f, const char* name) {
-        f = reinterpret_cast<F>(GetProcAddress(dll, name));
-        if (!f) throw std::runtime_error(std::string("nvcuda.dll: нет ") + name);
+#ifdef _WIN32
+        f = reinterpret_cast<F>(GetProcAddress(static_cast<HMODULE>(dll), name));
+#else
+        f = reinterpret_cast<F>(dlsym(dll, name));
+#endif
+        if (!f) throw std::runtime_error(std::string(kCudaLib) + ": нет " + name);
     }
     Cuda() {
-        dll = LoadLibraryA("nvcuda.dll");
-        if (!dll) throw std::runtime_error("нет nvcuda.dll (драйвер NVIDIA)");
+#ifdef _WIN32
+        dll = LoadLibraryA(kCudaLib);
+#else
+        dll = dlopen(kCudaLib, RTLD_NOW | RTLD_LOCAL);
+#endif
+        if (!dll) throw std::runtime_error(std::string("нет ") + kCudaLib + " (драйвер NVIDIA)");
         get(Init, "cuInit");
         get(DeviceGet, "cuDeviceGet");
         get(DevicePrimaryCtxRetain, "cuDevicePrimaryCtxRetain");
@@ -139,10 +159,15 @@ uint64_t OptixDenoiserCtx::alloc(size_t bytes) {
 void OptixDenoiserCtx::upload(uint64_t dst, const void* src, size_t bytes) { ck(d_->cu.MemcpyHtoD(dst, src, bytes), "HtoD"); }
 void OptixDenoiserCtx::download(void* dst, uint64_t src, size_t bytes) { ck(d_->cu.MemcpyDtoH(dst, src, bytes), "DtoH"); }
 
-uint64_t OptixDenoiserCtx::import_win32(void* handle, size_t alloc_size, size_t buffer_size) {
+uint64_t OptixDenoiserCtx::import_external(intptr_t handle, size_t alloc_size, size_t buffer_size) {
     CUDA_EXTERNAL_MEMORY_HANDLE_DESC hd{};
+#ifdef _WIN32
     hd.type = CU_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_WIN32;
-    hd.handle.win32.handle = handle;
+    hd.handle.win32.handle = reinterpret_cast<void*>(handle);
+#else
+    hd.type = CU_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD;
+    hd.handle.fd = int(handle);
+#endif
     hd.size = alloc_size;
     hd.flags = CUDA_EXTERNAL_MEMORY_DEDICATED;
     CUexternalMemory em;

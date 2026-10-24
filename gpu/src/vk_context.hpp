@@ -14,9 +14,9 @@ struct Buffer {
     VmaAllocation alloc = VK_NULL_HANDLE;
     size_t size = 0;
     void* mapped = nullptr;      // буферы хоста отображены постоянно
-    // экспортируемая память (обмен с CUDA, DD-007): выделена без VMA
+    // экспортируемая память (обмен с CUDA, DD-007, ADR-0008): выделена без VMA
     VkDeviceMemory memory = VK_NULL_HANDLE;
-    void* win32 = nullptr;       // HANDLE
+    intptr_t ext_handle = -1;    // HANDLE (Windows) или fd (Linux); -1 — нет или передан CUDA
     size_t alloc_size = 0;
 };
 
@@ -71,7 +71,7 @@ public:
     float timestamp_period_ns() const { return ts_period_; }
 
     Buffer create_buffer(size_t bytes, bool host_visible);
-    // буфер на устройстве с экспортом памяти (VK_KHR_external_memory_win32) — для импорта в CUDA
+    // буфер на устройстве с экспортом памяти (VK_KHR_external_memory_win32 / _fd) — для импорта в CUDA
     Buffer create_exportable_buffer(size_t bytes);
     bool external_memory() const { return ext_mem_; }
     VkInstance instance() const { return instance_; }

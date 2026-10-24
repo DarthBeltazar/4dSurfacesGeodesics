@@ -4,7 +4,9 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import shutil
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 
@@ -12,9 +14,25 @@ import numpy as np
 
 ROOT = Path(__file__).resolve().parents[2]
 GPU = ROOT / "gpu"
-EXE = GPU / "build" / "geo4d_gpu.exe"
+_EXE_SUFFIX = ".exe" if sys.platform == "win32" else ""
+# хост: GEO4D_GPU_EXE (например, отладочная сборка gpu/build-debug) или gpu/build (профиль release, CMakePresets.json)
+EXE = Path(os.environ.get("GEO4D_GPU_EXE", GPU / "build" / f"geo4d_gpu{_EXE_SUFFIX}"))
 SPV_DIR = GPU / "build" / "spv"
-SLANGC = Path(os.environ.get("VULKAN_SDK", r"C:\VulkanSDK\1.4.328.1")) / "Bin" / "slangc.exe"
+
+
+def _find_slangc():
+    """slangc: GEO4D_SLANGC, затем $VULKAN_SDK/Bin|bin, затем PATH; по умолчанию — SDK 1.4.328.1 (Windows)."""
+    if "GEO4D_SLANGC" in os.environ:
+        return Path(os.environ["GEO4D_SLANGC"])
+    sdk = os.environ.get("VULKAN_SDK")
+    for d in ([Path(sdk) / "Bin", Path(sdk) / "bin"] if sdk else []):
+        if (d / f"slangc{_EXE_SUFFIX}").exists():
+            return d / f"slangc{_EXE_SUFFIX}"
+    w = shutil.which("slangc")
+    return Path(w) if w else Path(r"C:\VulkanSDK\1.4.328.1") / "Bin" / "slangc.exe"
+
+
+SLANGC = _find_slangc()
 
 SCENE_IDS = {"hyperplane": 0, "S3": 1, "S2xR": 2, "S1xR2": 3, "ellipsoid": 4, "spheritorus": 5, "torisphere": 6,
              "tiger": 7, "ellis": 8, "compact_wh": 9, "two_compact_wh": 10}

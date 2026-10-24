@@ -7,6 +7,10 @@
 
 #include "vk_context.hpp"
 
+#ifndef _WIN32
+#include <unistd.h>
+#endif
+
 #include <cstring>
 #include <map>
 #include <stdexcept>
@@ -20,6 +24,24 @@ void check(VkResult r, const char* what) {
 
 constexpr uint32_t kMaxTimestamps = 512;
 
+// внешняя память для обмена с CUDA (ADR-0008): Win32 HANDLE или POSIX fd; на macOS — нет
+#if defined(_WIN32)
+constexpr const char* kExtMemExt = VK_KHR_EXTERNAL_MEMORY_WIN32_EXTENSION_NAME;
+constexpr VkExternalMemoryHandleTypeFlagBits kExtMemType = VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_WIN32_BIT;
+#elif defined(__linux__)
+constexpr const char* kExtMemExt = VK_KHR_EXTERNAL_MEMORY_FD_EXTENSION_NAME;
+constexpr VkExternalMemoryHandleTypeFlagBits kExtMemType = VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT;
+#else
+constexpr const char* kExtMemExt = nullptr;
+constexpr VkExternalMemoryHandleTypeFlagBits kExtMemType = VkExternalMemoryHandleTypeFlagBits(0);
+#endif
+
+bool has_ext(const std::vector<VkExtensionProperties>& exts, const char* name) {
+    for (auto& e : exts)
+        if (std::strcmp(e.extensionName, name) == 0) return true;
+    return false;
+}
+
 }  // namespace
 
 VkContext::VkContext(const std::vector<const char*>& instance_exts, bool swapchain) {
@@ -28,10 +50,20 @@ VkContext::VkContext(const std::vector<const char*>& instance_exts, bool swapcha
     VkApplicationInfo app{VK_STRUCTURE_TYPE_APPLICATION_INFO};
     app.pApplicationName = "geo4d_gpu";
     app.apiVersion = VK_API_VERSION_1_3;
+    // MoltenVK (macOS) виден только с VK_KHR_portability_enumeration
+    uint32_t nie = 0;
+    vkEnumerateInstanceExtensionProperties(nullptr, &nie, nullptr);
+    std::vector<VkExtensionProperties> iext(nie);
+    vkEnumerateInstanceExtensionProperties(nullptr, &nie, iext.data());
+    std::vector<const char*> iexts = instance_exts;
     VkInstanceCreateInfo ici{VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO};
+    if (has_ext(iext, VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME)) {
+        iexts.push_back(VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME);
+        ici.flags |= VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR;
+    }
     ici.pApplicationInfo = &app;
-    ici.enabledExtensionCount = static_cast<uint32_t>(instance_exts.size());
-    ici.ppEnabledExtensionNames = instance_exts.data();
+    ici.enabledExtensionCount = static_cast<uint32_t>(iexts.size());
+    ici.ppEnabledExtensionNames = iexts.data();
     check(vkCreateInstance(&ici, nullptr, &instance_), "vkCreateInstance");
     volkLoadInstance(instance_);
 
@@ -61,10 +93,26 @@ VkContext::VkContext(const std::vector<const char*>& instance_exts, bool swapcha
     vkEnumerateDeviceExtensionProperties(phys_, nullptr, &ne, nullptr);
     std::vector<VkExtensionProperties> exts(ne);
     vkEnumerateDeviceExtensionProperties(phys_, nullptr, &ne, exts.data());
-    for (auto& e : exts) {
-        if (std::strcmp(e.extensionName, VK_KHR_PIPELINE_EXECUTABLE_PROPERTIES_EXTENSION_NAME) == 0) exec_props_ = true;
-        if (std::strcmp(e.extensionName, VK_KHR_EXTERNAL_MEMORY_WIN32_EXTENSION_NAME) == 0) ext_mem_ = true;
-    }
+    exec_props_ = has_ext(exts, VK_KHR_PIPELINE_EXECUTABLE_PROPERTIES_EXTENSION_NAME);
+    ext_mem_ = kExtMemExt && has_ext(exts, kExtMemExt);
+    const bool portability = has_ext(exts, "VK_KHR_portability_subset");
+
+    // обязательные возможности — понятная ошибка вместо отказа vkCreateDevice (например, MoltenVK, lavapipe)
+    VkPhysicalDeviceVulkan12Features s12{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES};
+    VkPhysicalDeviceVulkan13Features s13{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES};
+    s13.pNext = &s12;
+    VkPhysicalDeviceFeatures2 s2{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2};
+    s2.pNext = &s13;
+    vkGetPhysicalDeviceFeatures2(phys_, &s2);
+    std::string missing;
+    if (!s2.features.shaderInt64) missing += " shaderInt64";
+    if (!s2.features.samplerAnisotropy) missing += " samplerAnisotropy";
+    if (!s2.features.imageCubeArray) missing += " imageCubeArray";
+    if (!s2.features.textureCompressionBC) missing += " textureCompressionBC";
+    if (!s12.scalarBlockLayout) missing += " scalarBlockLayout";
+    if (!s12.hostQueryReset) missing += " hostQueryReset";
+    if (!missing.empty())
+        throw std::runtime_error(std::string("устройство ") + props_.deviceName + " не поддерживает:" + missing);
 
     float prio = 1.0f;
     VkDeviceQueueCreateInfo qci{VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO};
@@ -81,8 +129,8 @@ VkContext::VkContext(const std::vector<const char*>& instance_exts, bool swapcha
     if (exec_props_) f12.pNext = &pexec;
     VkPhysicalDeviceVulkan13Features f13{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES};
     f13.pNext = &f12;
-    f13.computeFullSubgroups = VK_TRUE;
-    f13.subgroupSizeControl = VK_TRUE;
+    f13.computeFullSubgroups = s13.computeFullSubgroups;
+    f13.subgroupSizeControl = s13.subgroupSizeControl;
     VkPhysicalDeviceFeatures2 f2{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2};
     f2.pNext = &f13;
     f2.features.shaderInt64 = VK_TRUE;
@@ -92,7 +140,8 @@ VkContext::VkContext(const std::vector<const char*>& instance_exts, bool swapcha
 
     std::vector<const char*> dexts;
     if (exec_props_) dexts.push_back(VK_KHR_PIPELINE_EXECUTABLE_PROPERTIES_EXTENSION_NAME);
-    if (ext_mem_) dexts.push_back(VK_KHR_EXTERNAL_MEMORY_WIN32_EXTENSION_NAME);
+    if (ext_mem_) dexts.push_back(kExtMemExt);
+    if (portability) dexts.push_back("VK_KHR_portability_subset");
     if (swapchain) dexts.push_back(VK_KHR_SWAPCHAIN_EXTENSION_NAME);
     VkDeviceCreateInfo dci{VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO};
     dci.pNext = &f2;
@@ -179,7 +228,13 @@ Buffer VkContext::create_buffer(size_t bytes, bool host_visible) {
 
 void VkContext::destroy_buffer(Buffer& b) {
     if (b.memory) {
-        if (b.win32) CloseHandle(b.win32);
+        if (b.ext_handle != -1) {          // не передан CUDA (после импорта fd принадлежит CUDA)
+#ifdef _WIN32
+            CloseHandle(reinterpret_cast<HANDLE>(b.ext_handle));
+#else
+            close(int(b.ext_handle));
+#endif
+        }
         vkDestroyBuffer(device_, b.buf, nullptr);
         vkFreeMemory(device_, b.memory, nullptr);
     } else if (b.buf) vmaDestroyBuffer(vma_, b.buf, b.alloc);
@@ -187,11 +242,11 @@ void VkContext::destroy_buffer(Buffer& b) {
 }
 
 Buffer VkContext::create_exportable_buffer(size_t bytes) {
-    if (!ext_mem_) throw std::runtime_error("нет VK_KHR_external_memory_win32");
+    if (!ext_mem_) throw std::runtime_error("нет расширения внешней памяти Vulkan (обмен с CUDA)");
     Buffer b;
     b.size = bytes;
     VkExternalMemoryBufferCreateInfo ebi{VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_BUFFER_CREATE_INFO};
-    ebi.handleTypes = VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_WIN32_BIT;
+    ebi.handleTypes = kExtMemType;
     VkBufferCreateInfo bi{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
     bi.pNext = &ebi;
     bi.size = bytes > 0 ? bytes : 4;
@@ -209,19 +264,28 @@ Buffer VkContext::create_exportable_buffer(size_t bytes) {
     ded.buffer = b.buf;
     VkExportMemoryAllocateInfo exi{VK_STRUCTURE_TYPE_EXPORT_MEMORY_ALLOCATE_INFO};
     exi.pNext = &ded;
-    exi.handleTypes = VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_WIN32_BIT;
+    exi.handleTypes = kExtMemType;
     VkMemoryAllocateInfo mai{VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO};
     mai.pNext = &exi;
     mai.allocationSize = req.size;
     mai.memoryTypeIndex = type;
     check(vkAllocateMemory(device_, &mai, nullptr, &b.memory), "vkAllocateMemory (export)");
     check(vkBindBufferMemory(device_, b.buf, b.memory, 0), "vkBindBufferMemory");
+#if defined(_WIN32)
     VkMemoryGetWin32HandleInfoKHR hi{VK_STRUCTURE_TYPE_MEMORY_GET_WIN32_HANDLE_INFO_KHR};
     hi.memory = b.memory;
-    hi.handleType = VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_WIN32_BIT;
+    hi.handleType = kExtMemType;
     HANDLE h = nullptr;
     check(vkGetMemoryWin32HandleKHR(device_, &hi, &h), "vkGetMemoryWin32HandleKHR");
-    b.win32 = h;
+    b.ext_handle = reinterpret_cast<intptr_t>(h);
+#elif defined(__linux__)
+    VkMemoryGetFdInfoKHR hi{VK_STRUCTURE_TYPE_MEMORY_GET_FD_INFO_KHR};
+    hi.memory = b.memory;
+    hi.handleType = kExtMemType;
+    int fd = -1;
+    check(vkGetMemoryFdKHR(device_, &hi, &fd), "vkGetMemoryFdKHR");
+    b.ext_handle = fd;
+#endif
     b.alloc_size = req.size;
     return b;
 }

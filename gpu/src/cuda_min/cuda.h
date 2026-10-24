@@ -1,5 +1,6 @@
 // Минимальная замена <cuda.h> для заголовков OptiX (DD-005, ADR-0007): OptiX нужны только типы CUcontext,
-// CUstream и CUdeviceptr. Функции CUDA Driver API загружаются из nvcuda.dll (драйвер) динамически — см. denoise.cpp.
+// CUstream и CUdeviceptr. Функции CUDA Driver API загружаются из nvcuda.dll / libcuda.so.1 (драйвер) динамически —
+// см. denoiser.cpp.
 // CUDA Toolkit не требуется.
 #pragma once
 

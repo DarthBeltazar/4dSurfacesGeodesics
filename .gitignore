@@ -5,3 +5,4 @@ __pycache__/
 .venv/
 gpu/build/
 results/**/*.mp4
+gpu/build-debug/

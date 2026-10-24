@@ -46,7 +46,9 @@ GraphProgram::GraphProgram(VkContext& ctx, const std::string& path) : ctx_(ctx) 
             if (mode == "zero" || mode == "export") {
                 size_t bytes;
                 ss >> bytes;
-                bufs_[name] = mode == "export" ? ctx.create_exportable_buffer(bytes) : ctx.create_buffer(bytes, false);
+                // export без внешней памяти (macOS, старый драйвер) — обычный буфер; денойзер тогда отключается
+                bool exp = mode == "export" && ctx.external_memory();
+                bufs_[name] = exp ? ctx.create_exportable_buffer(bytes) : ctx.create_buffer(bytes, false);
                 Buffer h = ctx.create_buffer(bytes, true);
                 std::memset(h.mapped, 0, bytes);
                 ctx.copy_buffer(h, bufs_[name], bytes);

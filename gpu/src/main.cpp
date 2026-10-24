@@ -10,8 +10,10 @@
 #include <string>
 
 #include "graph.hpp"
-#ifdef GEO4D_OPTIX
+#ifdef GEO4D_APP
 #include "app.hpp"
+#endif
+#ifdef GEO4D_OPTIX
 #include "denoise.hpp"
 #endif
 #include "job.hpp"
@@ -26,6 +28,8 @@ int main(int argc, char** argv) {
         std::string cmd = argv[1];
 #ifdef GEO4D_OPTIX
         if (cmd == "denoise" && argc >= 3) return run_denoise(argv[2]);     // без Vulkan
+#endif
+#ifdef GEO4D_APP
         if (cmd == "app" && argc >= 3) return run_app(argv[2]);             // свой контекст с окном
 #endif
         VkContext ctx;

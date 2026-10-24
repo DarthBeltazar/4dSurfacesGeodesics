@@ -1,6 +1,6 @@
-// Денойзер OptiX (DD-005 п. 5, ADR-0007, DD-007): CUDA Driver API из nvcuda.dll, OptiX из драйвера.
-// Изображения — (H, W) float4 в памяти устройства CUDA: свои выделения или память буферов Vulkan, импортированная
-// через внешнюю память (import_win32).
+// Денойзер OptiX (DD-005 п. 5, ADR-0007, DD-007, ADR-0008): CUDA Driver API из nvcuda.dll / libcuda.so.1, OptiX из
+// драйвера. Изображения — (H, W) float4 в памяти устройства CUDA: свои выделения или память буферов Vulkan,
+// импортированная через внешнюю память (import_external).
 #pragma once
 
 #include <cstddef>
@@ -24,8 +24,9 @@ public:
     uint64_t alloc(size_t bytes);
     void upload(uint64_t dst, const void* src, size_t bytes);
     void download(void* dst, uint64_t src, size_t bytes);
-    // импорт памяти Vulkan (HANDLE OPAQUE_WIN32, размер выделения) → указатель CUDA на начало буфера
-    uint64_t import_win32(void* handle, size_t alloc_size, size_t buffer_size);
+    // импорт памяти Vulkan (HANDLE OPAQUE_WIN32 или OPAQUE_FD, размер выделения) → указатель CUDA на начало буфера.
+    // На Linux после успешного импорта fd принадлежит CUDA — вызывающий его не закрывает.
+    uint64_t import_external(intptr_t handle, size_t alloc_size, size_t buffer_size);
 
 private:
     struct Impl;
