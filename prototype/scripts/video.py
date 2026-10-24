@@ -9,8 +9,8 @@ BGRA8; затем ffmpeg (H.264, yuv420p). Сцена 3, путь flight: пов
 кривизна путь не искажает.
 
     python prototype/scripts/video.py --res 1920x1080 --spp 64
-    python prototype/scripts/video.py --path orbit --res 1600x900 --seconds 8 --fps 25 --gif 800
-Результат: results/stage-5/<дата>_video[_orbit]/ — video.mp4 (не в git), loop.gif (--gif), кадры-превью PNG, путь
+    python prototype/scripts/video.py --path orbit --res 1600x900 --seconds 8 --fps 25 --loop 800
+Результат: results/stage-5/<дата>_video[_orbit]/ — video.mp4 (не в git), loop.webp (--loop), кадры-превью PNG, путь
 камеры, время."""
 import argparse
 import json
@@ -60,7 +60,8 @@ def main():
     ap.add_argument("--cube", type=int, default=512)
     ap.add_argument("--path", choices=["flight", "orbit"], default="flight")
     ap.add_argument("--seconds", type=float, default=8.0, help="длительность облёта (orbit)")
-    ap.add_argument("--gif", type=int, default=0, help="ширина зацикленного GIF (0 — без него)")
+    ap.add_argument("--loop", type=int, default=0,
+                    help="ширина зацикленной анимации WebP (0 — без неё); GIF того же ролика в 6–10 раз больше")
     a = ap.parse_args()
     W, H = (int(v) for v in a.res.split("x"))
     out = new_run(5, "video" + ("" if a.path == "flight" else f"_{a.path}"),
@@ -101,13 +102,12 @@ def main():
                    "-i", str(raw), "-c:v", "libx264", "-preset", "slow", "-crf", "18", "-pix_fmt", "yuv420p", str(out / "video.mp4")]
             subprocess.run(cmd, check=True)
             info["mp4_bytes"] = (out / "video.mp4").stat().st_size
-            if a.gif:          # зацикленный GIF: своя палитра по всему ролику, без дизеринга шума денойзера
-                vf = (f"scale={a.gif}:-2:flags=lanczos,split[a][b];[a]palettegen=max_colors=256:stats_mode=full[p];"
-                      "[b][p]paletteuse=dither=sierra2_4a")
+            if a.loop:         # зацикленная анимация для README (WebP с потерями, бесконечный повтор)
                 cmd = [ffmpeg, "-y", "-loglevel", "error", "-f", "rawvideo", "-pix_fmt", "bgra", "-s", f"{W}x{H}",
-                       "-r", str(a.fps), "-i", str(raw), "-vf", vf, "-loop", "0", str(out / "loop.gif")]
+                       "-r", str(a.fps), "-i", str(raw), "-vf", f"scale={a.loop}:-2:flags=lanczos", "-c:v", "libwebp",
+                       "-quality", "75", "-compression_level", "6", "-loop", "0", "-an", str(out / "loop.webp")]
                 subprocess.run(cmd, check=True)
-                info["gif_bytes"] = (out / "loop.gif").stat().st_size
+                info["webp_bytes"] = (out / "loop.webp").stat().st_size
         else:
             info["mp4_bytes"] = None
     (out / "info.json").write_text(json.dumps(info, indent=1), encoding="utf-8")
