@@ -29,12 +29,15 @@ def slangc_version():
     return (r.stdout + r.stderr).strip()
 
 
-def compile_shader(source, entry, defines=None):
-    """Компилирует gpu/shaders/<source> с точкой входа entry; кэш по содержимому всех .slang и define-ам."""
+def compile_shader(source, entry, defines=None, include=None):
+    """Компилирует gpu/shaders/<source> с точкой входа entry; кэш по содержимому всех .slang, define-ам и файлам
+    дополнительного каталога include (сгенерированные заголовки, например описание сцены режима B)."""
     defines = dict(defines or {})
     h = hashlib.sha256()
-    for p in sorted((GPU / "shaders").rglob("*.slang")):
-        h.update(p.read_bytes())
+    dirs = [GPU / "shaders"] + ([Path(include)] if include else [])
+    for d in dirs:
+        for p in sorted(d.rglob("*.slang")):
+            h.update(p.read_bytes())
     h.update(json.dumps([source, entry, sorted(defines.items())]).encode())
     SPV_DIR.mkdir(parents=True, exist_ok=True)
     out = SPV_DIR / f"{Path(source).stem}_{entry}_{h.hexdigest()[:16]}.spv"
@@ -42,6 +45,8 @@ def compile_shader(source, entry, defines=None):
         cmd = [str(SLANGC), str(GPU / "shaders" / source), "-target", "spirv", "-profile", "spirv_1_6",
                "-entry", entry, "-fvk-use-entrypoint-name", "-O2", "-o", str(out)]
         cmd += [f"-D{k}={v}" for k, v in defines.items()]
+        if include:
+            cmd += ["-I", str(include)]
         r = subprocess.run(cmd, capture_output=True, text=True)
         if r.returncode != 0 or not out.exists():
             raise RuntimeError(f"slangc: {r.stdout}\n{r.stderr}")

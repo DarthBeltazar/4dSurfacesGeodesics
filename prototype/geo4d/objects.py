@@ -30,6 +30,7 @@ class Obj:
     center: np.ndarray = None             # ограничивающая 4D-сфера {g ≤ 0} (для аналитического пропуска)
     bound: float = np.inf
     plane: tuple = None                   # (ось, смещение, знак) для полупространства — аналитика на прямых
+    spec: tuple = ()                      # (вид, параметры…) — для генерации описания сцены на GPU (gpu_pt.py)
 
     def g_vec(self, P):
         return self.g(tuple(P[..., k] for k in range(4)))
@@ -38,7 +39,8 @@ class Obj:
 def ball4(c, r, mat=Material(), name="ball"):
     """4D-шар |p − c| − r; при c на листе плоской зоны режет лист по 3D-шару радиуса r (M26)."""
     c = [float(a) for a in c]
-    return Obj(name, lambda p: ops.length(*(p[i] - c[i] for i in range(4))) - r, mat, np.array(c), float(r))
+    return Obj(name, lambda p: ops.length(*(p[i] - c[i] for i in range(4))) - r, mat, np.array(c), float(r),
+               spec=("ball4", tuple(c), float(r)))
 
 
 def torus_in_sheet(c, R, r, mat=Material(), name="torus"):
@@ -48,12 +50,13 @@ def torus_in_sheet(c, R, r, mat=Material(), name="torus"):
     def g(p):
         d = [p[i] - c[i] for i in range(4)]
         return ops.length(ops.length(d[0], d[1]) - R, d[2], d[3]) - r
-    return Obj(name, g, mat, np.array(c), float(R + r))
+    return Obj(name, g, mat, np.array(c), float(R + r), spec=("torus", tuple(c), float(R), float(r)))
 
 
 def halfspace(axis, offset, mat=Material(), sign=1.0, name="floor"):
     """sign·(p[axis] − offset): не зависит от w, поэтому есть на обоих листах."""
-    return Obj(name, lambda p: sign * (p[axis] - offset), mat, None, np.inf, (axis, float(offset), float(sign)))
+    return Obj(name, lambda p: sign * (p[axis] - offset), mat, None, np.inf, (axis, float(offset), float(sign)),
+               spec=("plane", int(axis), float(offset), float(sign)))
 
 
 def g_all(objs):

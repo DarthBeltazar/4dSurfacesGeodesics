@@ -87,6 +87,7 @@ class Scene:
     escape: Optional[Callable] = None   # условие ухода для сцен без плоских зон (x, v) -> bool
     lights: tuple = ()                  # индексы NEE-источников: 4D-шары с центром на листе в плоской зоне
     env_scale: float = 1.0
+    meta: dict = field(default_factory=dict)   # для GPU: scene_id (scenes.slang), exit (1 — Эллис, 2 — плоский выход), ell_max
 
 
 def ahead_clear(objs, x, v):
@@ -290,6 +291,7 @@ class PTConfig:
     max_depth: int = 16
     rr_depth: int = 3
     nee: bool = True
+    mis: str = "power"      # power — степенная эвристика; nee — веса 1/0 (вся прямая освещённость через NEE, для проверки)
     tol: float = 1e-8
     eps_hit: float = 1e-9
     eps_off: float = 1e-7
@@ -342,6 +344,9 @@ def render(scene: Scene, cam: Camera, pc: PTConfig, seed=0, pix=None):
         return v / np.linalg.norm(v, axis=1, keepdims=True)
 
     def mis(pa, pb):
+        """Вес стратегии a при конкуренции с b; при mis = nee стратегия NEE (вызывается первой) получает 1."""
+        if pc.mis == "nee":
+            return np.ones_like(pa) if mis.nee_first else np.zeros_like(pa)
         return pa * pa / np.maximum(pa * pa + pb * pb, 1e-300)
 
     P = np.repeat(np.asarray(pix), pc.spp)
@@ -378,6 +383,7 @@ def render(scene: Scene, cam: Camera, pc: PTConfig, seed=0, pix=None):
                 straight = prev_flat[idx[e]] & np.asarray(fz.ray_clear(jnp.asarray(x0[e]), jnp.asarray(v0[e])))
                 s0 = np.asarray(sheet_index(jnp.asarray(x0[e, 3])))
                 pe = env_pdf(tab, s0, v0[e, :3])
+                mis.nee_first = False
                 w = np.where(straight, mis(prev_pdf[idx[e]], pe), 1.0)
             L[idx[e]] += T[idx[e]] * w[:, None] * Le
         alive[idx[~hit]] = False
@@ -394,6 +400,7 @@ def render(scene: Scene, cam: Camera, pc: PTConfig, seed=0, pix=None):
                 fz.in_flat(jnp.asarray(xh)) & fz.seg_clear(jnp.asarray(x0[h]), jnp.asarray(xh)))
             li = np.searchsorted(lights, k).clip(0, max(len(lights) - 1, 0))
             pl = 1.0 / (2 * np.pi * (1 - sphere_cone(x0[h, :3], lc[li], lr[li]))) / len(lights)
+            mis.nee_first = False
             w = np.where(straight, mis(prev_pdf[ih], pl), 1.0)
         L[ih] += T[ih] * w[:, None] * em
         refl = kinds[k] != 2
@@ -422,6 +429,7 @@ def render(scene: Scene, cam: Camera, pc: PTConfig, seed=0, pix=None):
                 same = np.abs(xh[m, 3] - lw[li]) < 1e-6           # источник на другом листе — вклад 0
                 vis = same & np.asarray(fz.seg_clear(jnp.asarray(xoff[m]), jnp.asarray(yv))) & ~blocked(
                     xoff[m], wi4, t * (1 - 1e-9), lights[li])
+                mis.nee_first = True
                 c = f * emit[lights[li]] / pdf_l[:, None] * mis(pdf_l, pb)[:, None]
                 L[ih[m]] += np.where(vis[:, None], T[ih[m]] * c, 0.0)
         # NEE: фон
@@ -437,6 +445,7 @@ def render(scene: Scene, cam: Camera, pc: PTConfig, seed=0, pix=None):
                 vis = np.asarray(fz.ray_clear(jnp.asarray(xoff[m]), jnp.asarray(wi4))) & ~blocked(
                     xoff[m], wi4, np.full(len(m), 1e30), np.full(len(m), -1))
                 Le = np.asarray(env(jnp.asarray(s0), jnp.asarray(d3)))
+                mis.nee_first = True
                 c = f * Le / pe[:, None] * mis(pe, pb)[:, None]
                 L[ih[m]] += np.where(vis[:, None], T[ih[m]] * c, 0.0)
         # сэмплирование BSDF
@@ -488,7 +497,8 @@ def scene_hyperplane(mips=None, furnace=False):
         objs.append(ball4((-1.5, 2, 2.5, 0), 0.4, Material("emit", emit=(30.0, 27.0, 22.0)), name="light"))
         lights = (3,)
     mips = constant_env() if furnace else (mips or procedural_env())
-    return Scene(S.SHAPES["hyperplane"], objs, mips, compact_exit, FlatZones((0.0,)), lights=lights)
+    return Scene(S.SHAPES["hyperplane"], objs, mips, compact_exit, FlatZones((0.0,)), lights=lights,
+                 meta=dict(scene_id=0, exit=2))
 
 
 def scene_two_wormholes(mips=None, furnace=False):
@@ -517,7 +527,7 @@ def scene_two_wormholes(mips=None, furnace=False):
         lights = (5, 6)
     mips = constant_env() if furnace else (mips or procedural_env())
     fz = FlatZones((W, -W), np.array([p["c1"], p["c2"]], float), rho0)
-    return Scene(sh, objs, mips, compact_exit, fz, lights=lights)
+    return Scene(sh, objs, mips, compact_exit, fz, lights=lights, meta=dict(scene_id=10, exit=2))
 
 
 def scene_ellis(mips=None, furnace=False, ell_max=12.0):
@@ -537,4 +547,5 @@ def scene_ellis(mips=None, furnace=False, ell_max=12.0):
         objs.append(ball4(rot(c3, 1) * np.array([1, -1, 1, 1]), 0.5, Material("emit", emit=(30.0, 27.0, 22.0)),
                           name="light"))
     mips = constant_env() if furnace else (mips or procedural_env())
-    return Scene(S.SHAPES["ellis"], objs, mips, ellis_exit, None, escape=ellis_escape(ell_max))
+    return Scene(S.SHAPES["ellis"], objs, mips, ellis_exit, None, escape=ellis_escape(ell_max),
+                 meta=dict(scene_id=8, exit=1, ell_max=ell_max))
