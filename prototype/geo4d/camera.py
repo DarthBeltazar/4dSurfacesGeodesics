@@ -140,3 +140,63 @@ def lens_rays_batch(shape, cam: Camera, U, V, alpha, beta, iters=3):
     n = G / jnp.linalg.norm(G, axis=-1, keepdims=True)
     v = target - jnp.sum(target * n, -1, keepdims=True) * n
     return x, v / jnp.linalg.norm(v, axis=-1, keepdims=True)
+
+
+# ---- M33: движение камеры по M (этап 5, DD-007) -------------------------------------------------------
+
+def _gram_schmidt(n, vecs):
+    out = []
+    for v in vecs:
+        w = np.asarray(v, float).copy()
+        for _ in range(2):
+            for b in [n, *out]:
+                w = w - (w @ b) * b
+        out.append(w / np.linalg.norm(w))
+    return out
+
+
+def fly(shape, cam: Camera, move=(0.0, 0.0, 0.0), rot=(0.0, 0.0, 0.0), substeps=16, gmin=None, margin=0.05):
+    """M33: поворот базиса (рыскание ψ, тангаж θ, крен φ) внутри T_xM, затем перемещение по геодезической на
+    m = a·f + b·r + c·u (move = (a, b, c)) с параллельным переносом базиса проекцией после каждого подшага RK4 (+ M3).
+    gmin(x) — SDF объектов: шаг отменяется, если камера входит ближе margin. Возвращает новую Camera."""
+    from dataclasses import replace
+    from .rhs import geodesic_rhs
+    x, f, r, u = (np.asarray(a, float).copy() for a in (cam.x, cam.f, cam.r, cam.u))
+    psi, th, phi = rot
+    f, r = np.cos(psi) * f + np.sin(psi) * r, -np.sin(psi) * f + np.cos(psi) * r
+    f, u = np.cos(th) * f + np.sin(th) * u, -np.sin(th) * f + np.cos(th) * u
+    r, u = np.cos(phi) * r + np.sin(phi) * u, -np.sin(phi) * r + np.cos(phi) * u
+    m = move[0] * f + move[1] * r + move[2] * u
+    s = np.linalg.norm(m)
+    if s > 0:
+        R = geodesic_rhs(shape.f, shape.alpha)
+        gradf = jax.grad(shape.f_vec)
+        acc = lambda X, V: np.asarray(R(jnp.asarray(X), jnp.asarray(V))[0])
+        X, V = x.copy(), m / s
+        W = [f, r, u]
+        h = s / substeps
+        for _ in range(substeps):
+            k1x, k1v = V, acc(X, V)
+            k2x, k2v = V + 0.5 * h * k1v, acc(X + 0.5 * h * k1x, V + 0.5 * h * k1v)
+            k3x, k3v = V + 0.5 * h * k2v, acc(X + 0.5 * h * k2x, V + 0.5 * h * k2v)
+            k4x, k4v = V + h * k3v, acc(X + h * k3x, V + h * k3v)
+            X = X + h / 6 * (k1x + 2 * k2x + 2 * k3x + k4x)
+            V = V + h / 6 * (k1v + 2 * k2v + 2 * k3v + k4v)
+            for _ in range(2):                                   # M3
+                g = np.asarray(gradf(jnp.asarray(X)))
+                X = X - float(shape.f_vec(jnp.asarray(X))) * g / (g @ g)
+            n = g / np.linalg.norm(g)
+            V = V - (V @ n) * n
+            V = V / np.linalg.norm(V)
+            W = [w - (w @ n) * n for w in W]                     # перенос проекцией (M32/M33)
+        n = np.asarray(gradf(jnp.asarray(X)))
+        n = n / np.linalg.norm(n)
+        f, r, u = _gram_schmidt(n, W)
+        if gmin is not None and float(gmin(X)) < margin:
+            return replace(cam, f=f, r=r, u=u)                    # столкновение: поворот да, перемещение нет
+        x = X
+    else:
+        n = np.asarray(jax.grad(shape.f_vec)(jnp.asarray(x)))
+        n = n / np.linalg.norm(n)
+        f, r, u = _gram_schmidt(n, [f, r, u])
+    return replace(cam, x=x, f=f, r=r, u=u)

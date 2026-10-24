@@ -111,7 +111,7 @@ class GPUPT:
 def _push(scene, p: GPUPT, n, env_n, use_list=0, c_mix=1.0, list_id=0, list_off=0):
     return [("u32", n), ("u32", p.seed), ("f32", p.tol_kappa), ("f32", p.tol_max), ("f32", p.c_hit),
             ("f32", p.k_cone), ("u32", p.max_depth), ("u32", p.rr_depth), ("u32", p.nee), ("u32", p.mis),
-            ("f32", p.s_max), ("u32", p.n_max), ("f32", scene.meta.get("ell_max", 0.0)), ("u32", env_n),
+            ("f32", min(p.s_max, scene.meta.get("s_max", p.s_max))), ("u32", p.n_max), ("f32", scene.meta.get("ell_max", 0.0)), ("u32", env_n),
             ("f32", p.env_scale * scene.env_scale), ("f32", p.k_lod), ("u32", use_list), ("f32", c_mix),
             ("u32", list_id), ("u32", list_off)]
 
@@ -281,3 +281,13 @@ def render_frame_graph(scene: Scene, cam, spp, p: GPUPT = GPUPT(), nfb=64, c_mix
     traced = (cls != 0) | flag
     col[traced] = (acc[:, :3] / c)[traced]
     return dict(color=col, cls=cls, flags=flag, aov=(alb[:, :3] / c, nrm[:, :3] / c), stats=st, cnt=cnt, report=rep)
+
+
+def cam_step(scene: Scene, cam, move, rot, frames=1, substeps=16, margin=0.05):
+    """M33 на GPU: frames одинаковых шагов камеры (ядро cam_step). Возвращает (x, f, r, u) float32."""
+    inc = write_header(scene)
+    spv = gpu.compile_shader("pathtrace.slang", "cam_step", {**_defs(scene), "CAM_STEP": 1}, include=inc)
+    push = [("f32", move[0]), ("f32", move[1]), ("f32", move[2]), ("f32", 0.0),
+            ("f32", rot[0]), ("f32", rot[1]), ("f32", rot[2]), ("f32", margin), ("u32", substeps)]
+    out, _ = gpu.run(spv, "cam_step", [("inout", camera_buffer(cam))], push=push, repeat=frames)
+    return out[0][:4]

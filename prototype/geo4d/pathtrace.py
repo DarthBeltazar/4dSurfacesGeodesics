@@ -212,7 +212,7 @@ def env_table(mips, level=None):
     omega = 4.0 / n ** 2 / (1 + u * u + v * v) ** 1.5
     lum = lev @ np.array([0.2126, 0.7152, 0.0722])
     w = np.maximum(lum, 0) * omega[None, None]
-    pmf = w.reshape(len(lev), -1)
+    pmf = w.reshape(len(lev), -1) + 1e-30          # чёрный фон (компактные сцены) — равномерная таблица
     pmf = pmf / pmf.sum(1, keepdims=True)
     return np.cumsum(pmf, 1), pmf, n
 
@@ -549,3 +549,38 @@ def scene_ellis(mips=None, furnace=False, ell_max=12.0):
     mips = constant_env() if furnace else (mips or procedural_env())
     return Scene(S.SHAPES["ellis"], objs, mips, ellis_exit, None, escape=ellis_escape(ell_max),
                  meta=dict(scene_id=8, exit=1, ell_max=ell_max))
+
+
+def _on_surface(shape, guesses):
+    from .shapes import project_points
+    return np.asarray(project_points(shape, np.asarray(guesses, float)))
+
+
+def scene_compact_space(name="S3", mips=None):
+    """Компактные пространства этапа 5 (свободный полёт): S³, «сферитор», «ториосфера». Фона нет (лучи замыкаются),
+    плоских зон нет — свет только от излучающих шаров через сэмплирование BSDF. Объекты — 4D-шары с центрами на M."""
+    from . import shapes as S
+    from .objects import ball4, Material
+    from .wormholes import compact_exit
+    sh = S.SHAPES[name]
+    if name == "S3":
+        pts = _on_surface(sh, [[0, 0, 0, 1], [0, 0, 0, -1], [0, 1, 0, 0], [0, -1, 0, 0], [0, 0, 1, 0], [-1, 0, 0, 0],
+                               [0.6, 0.6, -0.5, 0.2]])
+        rad = 0.22
+    else:
+        a = np.linspace(0, 2 * np.pi, 7, endpoint=False)
+        g = [[1.4 * np.cos(t), 1.4 * np.sin(t), 0.25 * np.cos(3 * t), 0.25 * np.sin(2 * t)] for t in a]
+        pts = _on_surface(sh, g)
+        rad = 0.15
+    mats = [Material("emit", emit=(12.0, 10.0, 7.0)), Material("diffuse", (0.85, 0.25, 0.2)),
+            Material("diffuse", (0.2, 0.8, 0.3)), Material("metal", (0.9, 0.9, 0.95), 0.15),
+            Material("emit", emit=(4.0, 7.0, 14.0)), Material("diffuse", (0.85, 0.85, 0.85)),
+            Material("metal", (0.95, 0.7, 0.35), 0.3)]
+    objs = [ball4(p, rad * (1.4 if m.kind == "emit" else 1.0), m) for p, m in zip(pts, mats)]
+    sid = {"S3": 1, "spheritorus": 5, "torisphere": 6}[name]
+    return Scene(sh, objs, mips or constant_env(0.0), compact_exit, None, escape=None,
+                 meta=dict(scene_id=sid, exit=2, ell_max=1e9, s_max=8 * np.pi))     # непопавшие лучи — чёрные
+
+
+def scene_s3(mips=None):
+    return scene_compact_space("S3", mips)

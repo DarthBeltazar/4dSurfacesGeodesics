@@ -85,3 +85,25 @@ def test_denoise_improves():
     d, rep = gpu.denoise(m.reshape(64, 64, 3), alb.reshape(64, 64, 3), nrm.reshape(64, 64, 3))
     from geo4d.modea import psnr
     assert psnr(d.reshape(-1, 3), ref) > psnr(m, ref) + 5
+
+
+@pytest.mark.parametrize("name", ["two_wormholes", "s3"])
+def test_cam_step_vs_prototype(name):
+    """M33: ядро cam_step (float32) против fly прототипа: полёт сквозь горловину c₁ / по большому кругу S³ с поворотами."""
+    from geo4d.camera import fly
+    if name == "s3":
+        sc = PT.scene_s3()
+        cam = make_camera(sc.shape, np.array([1.0, 0, 0, 0]), [0, 1, 0, 0], [0, 0, 1, 0])
+        move, rot, n = (0.15, 0.02, 0.0), (0.01, 0.005, 0.0), 30
+    else:
+        sc = PT.scene_two_wormholes()
+        cam = make_camera(sc.shape, np.array([-4.0, -6.0, 0.3, 1.5]), [0, 1, 0, 0], [0, 0, 1, 0])
+        move, rot, n = (0.3, 0.0, 0.0), (0.0, 0.0, 0.0), 40
+    c = cam
+    for _ in range(n):
+        c = fly(sc.shape, c, move=move, rot=rot, substeps=16)
+    g = G.cam_step(sc, cam, move, rot, frames=n, margin=-1e9)     # столкновения — отдельно
+    for a, b in zip(g, [c.x, c.f, c.r, c.u]):
+        assert np.linalg.norm(a - b) < 2e-3
+    if name == "two_wormholes":
+        assert c.x[3] < 0                                    # камера на нижнем листе

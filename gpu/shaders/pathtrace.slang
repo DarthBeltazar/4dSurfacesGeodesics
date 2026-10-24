@@ -33,7 +33,11 @@ struct PTParams
     uint list_off;
 };
 
+#ifndef CAM_STEP
 [[vk::push_constant]] ConstantBuffer<PTParams> pp;
+#else
+static PTParams pp;                 // cam_step не использует параметры трассировщика
+#endif
 [[vk::binding(0, 0)]] RWStructuredBuffer<float4> gCam;
 [[vk::binding(1, 0)]] RWStructuredBuffer<float4> gAcc;
 [[vk::binding(2, 0)]] RWStructuredBuffer<float4> gAcc2;
@@ -804,5 +808,55 @@ void pt_camera(uint3 id : SV_DispatchThreadID)
     exit_dir(X, V, d);
     gDir[i] = float4(d[0].a, d[1].a, d[2].a, x.w >= 0 ? 1.0 : -1.0);
     [ForceUnroll] for (int k = 0; k < 4; k++) gDd[4 * i + k] = float4(d[0].b[k], d[1].b[k], d[2].b[k], 0);
+}
+#endif
+
+// ---- M33: шаг камеры по M (этап 5, DD-007); -DCAM_STEP --------------------------------------------------
+#ifdef CAM_STEP
+struct CamMove
+{
+    float4 move;        // (a, b, c, 0): перемещение a·f + b·r + c·u
+    float4 rot;         // (рыскание, тангаж, крен, margin столкновений)
+    uint substeps;
+};
+[[vk::push_constant]] ConstantBuffer<CamMove> cm;
+
+float4 gs_one(float4 w, float4 n, float4 a, float4 b) { w -= dot(w, n) * n + dot(w, a) * a + dot(w, b) * b; return normalize(w); }
+
+[shader("compute")] [numthreads(1, 1, 1)]
+void cam_step(uint3 id : SV_DispatchThreadID)
+{
+    float4 x = gCam[0], f = gCam[1], r = gCam[2], u = gCam[3];
+    float ps = cm.rot.x, th = cm.rot.y, ph = cm.rot.z;
+    float4 f1 = cos(ps) * f + sin(ps) * r, r1 = -sin(ps) * f + cos(ps) * r;
+    f = cos(th) * f1 + sin(th) * u; u = -sin(th) * f1 + cos(th) * u; r = r1;
+    float4 r2 = cos(ph) * r + sin(ph) * u; u = -sin(ph) * r + cos(ph) * u; r = r2;
+    float4 m = cm.move.x * f + cm.move.y * r + cm.move.z * u;
+    float s = length(m);
+    float4 X = x, n;
+    if (s > 0)
+    {
+        float4 V = m / s;
+        float h = s / float(cm.substeps);
+        for (uint k = 0; k < cm.substeps; k++)
+        {
+            float4 k1v = rhs7(X, V, ALPHA).acc;
+            float4 k2v = rhs7(X + 0.5 * h * V, V + 0.5 * h * k1v, ALPHA).acc;
+            float4 k3v = rhs7(X + 0.5 * h * (V + 0.5 * h * k1v), V + 0.5 * h * k2v, ALPHA).acc;
+            float4 k4v = rhs7(X + h * (V + 0.5 * h * k2v), V + h * k3v, ALPHA).acc;
+            X = X + h / 6 * (V + 2 * (V + 0.5 * h * k1v) + 2 * (V + 0.5 * h * k2v) + (V + h * k3v));
+            V = V + h / 6 * (k1v + 2 * k2v + 2 * k3v + k4v);
+            X = proj_M(X);
+            n = normal_M(X);
+            V = normalize(V - dot(V, n) * n);
+            f -= dot(f, n) * n; r -= dot(r, n) * n; u -= dot(u, n) * n;      // перенос проекцией (M32/M33)
+        }
+    }
+    n = normal_M(X);
+    f = gs_one(f, n, float4(0), float4(0));
+    r = gs_one(r, n, f, float4(0));
+    u = gs_one(u, n, f, r);
+    if (s > 0 && pt_gmin(X) >= cm.rot.w) x = X;                          // столкновение — без перемещения
+    gCam[0] = x; gCam[1] = f; gCam[2] = r; gCam[3] = u;
 }
 #endif
