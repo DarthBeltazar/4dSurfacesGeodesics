@@ -80,6 +80,7 @@ gpu\build\geo4d_gpu.exe info                                # устройств
   [DD-002 компактная червоточина и фигуры](docs/design/DD-002-wormhole-f-and-shapes.md),
   [DD-003 Якоби и режим A](docs/design/DD-003-jacobi-mode-a.md),
   [DD-004 архитектура GPU](docs/design/DD-004-gpu-architecture.md),
+  [DD-005 path tracing](docs/design/DD-005-path-tracing.md),
   [DD-006 тесты и эталоны](docs/design/DD-006-test-infrastructure.md)
 - Решения: [docs/adr/](docs/adr/)
 - Отчёты по этапам: [docs/reports/](docs/reports/)
