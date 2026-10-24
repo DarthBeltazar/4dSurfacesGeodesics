@@ -1,7 +1,7 @@
 # Отчёт: этап 4 — режим B (трассировка путей)
 
 Дата: 2026-10-24. RTX 4080 SUPER, драйвер 610.88, Slang 2025.17.2, OptiX 9.1 (заголовки optix-dev, библиотека драйвера).
-Результаты: `results/stage-4/2026-10-24_gpu_pt_quality` (коммит `a128f45`) и `…_gpu_pt_profile` (`d6bcb9e`),
+Результаты: `results/stage-4/2026-10-24_gpu_pt_quality` (коммит `e6d05ef`) и `…_gpu_pt_profile` (`d6bcb9e`),
 оба `git_dirty: false`. Дизайн — DD-005 (Accepted), решения — ADR-0006, ADR-0007, формулы M26–M32.
 
 ## Критерии приёмки
