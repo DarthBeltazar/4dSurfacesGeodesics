@@ -35,6 +35,10 @@
 4. Проверить Linux с NVIDIA (OptiX, импорт fd) и macOS.
 5. Временная репроекция при движении; шов «режим A / трассировщик» (−4 дБ в полосе ±2 px).
 
+## Релиз
+- [v0.1.0-alpha](https://github.com/DarthBeltazar/4dSurfacesGeodesics/releases/tag/v0.1.0-alpha): архив редактора для
+  Windows (`prototype/scripts/package_windows.py`), нужен только Python 3.12
+
 ## Блокеры и открытые вопросы
 - Нет.
 

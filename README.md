@@ -25,6 +25,10 @@
 
 ## Быстрый старт (Windows)
 
+**Готовая сборка:** [Releases](https://github.com/DarthBeltazar/4dSurfacesGeodesics/releases) → архив
+`geo4d-editor-…-win64.zip`, распаковать и запустить `run_editor.cmd`. Нужен только Python 3.12; Vulkan SDK и
+компилятор не нужны. Из исходников:
+
 ```sh
 python -m venv .venv && .venv/Scripts/python -m pip install -r requirements.txt
 gpu\build.cmd                                                          # нужны Vulkan SDK 1.4.328.1 и MSVC 2022
