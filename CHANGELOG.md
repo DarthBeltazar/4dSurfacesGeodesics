@@ -1,5 +1,22 @@
 # CHANGELOG
 
+## После этапа 5 — другие ОС и запуск из IDE (2026-10-24)
+
+### Добавлено
+- Хост собирается и работает на Linux: внешняя память через fd, `dlopen("libcuda.so.1")`, `gpu/build.sh`;
+  Vulkan-Headers, volk, VMA и SDL3 скачиваются, если нет SDK.
+- Путь для macOS (MoltenVK portability, без денойзера) — не проверен.
+- Денойзер необязателен в рантайме: без CUDA/OptiX окно работает без него.
+- Проверка возможностей устройства с понятной ошибкой.
+- Корневой `CMakeLists.txt` и `CMakePresets.json` (`release` → `gpu/build`, `debug` → `gpu/build-debug`) для CLion.
+- Общие конфигурации запуска `.run/` (окна сцен, замер, ролик, тесты, хост под отладчиком), их генератор
+  `ide_configs.py`, `app.py --graph-only`.
+- `GEO4D_GPU_EXE`, `GEO4D_SLANGC`.
+
+### Решения
+- ADR-0008. Проверено: Windows `-m gpu` 32 passed; Linux в WSL2 на lavapipe — окно X11, полёт сквозь горловину,
+  swapchain побитово равен выводу (`results/stage-5/2026-10-24_linux_wsl_smoke`).
+
 ## Этап 5 — интерактивная камера и ролик (2026-10-24)
 
 ### Добавлено

@@ -1,0 +1,8 @@
+rc 0  �������� ���������� (OptiX: optixInit \u2192 OPTIX_ERROR_LIBRARY_NOT_FOUND) � ����� ��� ���������
+
+frames 90 accum 11 extent [160, 90] format 44 total_ms median 21.0554
+sheet w: 1.5 -> -1.4977272
+Present 0 std 1612521.3780741803
+swapchain 0 (90, 160) max diff 0
+Present 89 std 492287.23129791924
+swapchain 89 (90, 160) max diff 0

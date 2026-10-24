@@ -1,0 +1,4 @@
+.venv/Scripts/python.exe -
+
+# GPU-тесты против Linux-бинарника (lavapipe), без денойзера и приложения:
+GEO4D_WSL_ENV=SDL_VIDEO_DRIVER=x11 GEO4D_GPU_EXE=<wslgpu.cmd> .venv/Scripts/python -m pytest tests -q -m gpu -rs -k "not denoise and not app"  → pytest_gpu_lavapipe.txt

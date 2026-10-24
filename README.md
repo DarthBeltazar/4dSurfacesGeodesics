@@ -77,6 +77,39 @@ gpu\build\geo4d_gpu.exe info                                # устройств
 Shift — ×4; R — денойзер вкл/выкл; Esc — выход. Камера движется по геодезическим многообразия (M33): через горловину
 червоточины — на другой лист.
 
+### Запуск из IDE (CLion / PyCharm)
+
+В `.run/` лежат общие конфигурации (их генерирует `prototype/scripts/ide_configs.py`):
+- папка «Окно» — по одной на сцену;
+- «Замеры» — замер окна 1080p и ролик;
+- «Тесты» — все и GPU;
+- «Хост (C++)» — `geo4d_gpu info` и `geo4d_gpu app` под отладчиком. Перед запуском хоста конфигурация «Граф для
+  хоста» пишет граф в `gpu/build-debug/app/…` (`app.py --graph-only`).
+
+Один раз:
+1. Settings → Build, Execution, Deployment → Python Interpreter → добавить существующий `.venv`. CLion запускает
+   Python-конфигурации только с зарегистрированным интерпретатором.
+2. Settings → Build, Execution, Deployment → CMake: включить профили пресетов `release` (`gpu/build`, его использует
+   Python) и `debug` (`gpu/build-debug`), затем Reload CMake Project.
+3. Собрать `release` (или `gpu\build.cmd`) до запуска окон из Python.
+
+На Linux/macOS конфигурации нужно перегенерировать (путь `.venv/bin/python`):
+`.venv/bin/python prototype/scripts/ide_configs.py`.
+
+### Linux и macOS (ADR-0008)
+
+```sh
+./gpu/build.sh                     # CMake ≥ 3.28, C++20; Vulkan SDK необязателен: Vulkan-Headers, volk, VMA, SDL3 скачиваются
+.venv/bin/python prototype/scripts/app.py --scene two_wormholes --res 1280x720
+```
+
+- **Linux.** Нужны драйвер Vulkan и dev-пакеты X11 или Wayland для SDL3 (или системный `libsdl3-dev`). `slangc` берётся
+  из `$VULKAN_SDK/bin` или PATH. Денойзер работает с драйвером NVIDIA (`libcuda.so.1`, OptiX из драйвера, память
+  через fd). Без него кадр идёт без денойзера.
+- **macOS.** MoltenVK, без денойзера (CUDA нет). Код написан по документации, но не проверен: машины не было.
+- **Проверено** в WSL2 на lavapipe (`results/stage-5/2026-10-24_linux_wsl_smoke`): окно X11, полёт сквозь горловину,
+  swapchain побитово равен выводу.
+
 ## Обзор архитектуры
 
 `prototype/geo4d/`:

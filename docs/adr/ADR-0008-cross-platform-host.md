@@ -42,7 +42,8 @@
     накопление 11, образ swapchain побитово равен буферу вывода.
   - Денойзер штатно отключился. В WSL `libnvoptix.so.1` — заглушка dxcore без `optixQueryFunctionTable`, но
     `libcuda.so.1` загрузилась и `cuInit` прошёл.
-  - GPU-тесты `run`/`graph` на lavapipe — см. журнал 2026-10-24-07.
+  - GPU-тесты (`-m gpu` без денойзера и приложения) против Linux-бинарника на lavapipe: 30 passed
+    (`pytest_gpu_lavapipe.txt`).
 - **Не проверено:** OptiX и импорт fd на нативном Linux с драйвером NVIDIA; macOS целиком (нет машины). Код для
   macOS собран по документации MoltenVK. SDL-драйвер `offscreen` на lavapipe не создаёт swapchain
   (`VK_ERROR_OUT_OF_DEVICE_MEMORY`); для окна он и не нужен.

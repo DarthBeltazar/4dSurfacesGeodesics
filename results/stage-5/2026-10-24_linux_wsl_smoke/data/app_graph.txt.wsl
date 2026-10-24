@@ -1,0 +1,86 @@
+buffer cam in /mnt/c/Users/AlexandrGeorgiev/CLionProjects/4dSurfacesHeodesics/results/stage-5/2026-10-24_linux_wsl_smoke/data/cam.npy
+buffer Env in /mnt/c/Users/AlexandrGeorgiev/CLionProjects/4dSurfacesHeodesics/results/stage-5/2026-10-24_linux_wsl_smoke/data/env.npy
+cube Cube /mnt/c/Users/AlexandrGeorgiev/CLionProjects/4dSurfacesHeodesics/results/stage-5/2026-10-24_linux_wsl_smoke/data/cube.npy bc6h 16 /mnt/c/Users/AlexandrGeorgiev/CLionProjects/4dSurfacesHeodesics/gpu/build/spv/bc6h_encode_bc6h_encode_361eda83712b4b43.spv
+buffer Acc zero 230400
+buffer Acc2 zero 230400
+buffer Stats zero 230400
+buffer Pix zero 115200
+buffer Alb zero 230400
+buffer Nrm zero 230400
+buffer Dir zero 230400
+buffer Dd zero 921600
+buffer Status zero 57600
+buffer Class zero 57600
+buffer Flag zero 57600
+buffer Cnt zero 16
+buffer Args zero 32
+buffer Color zero 230400
+buffer Present zero 57600
+buffer Frame export 230400
+buffer AlbF export 230400
+buffer NrmF export 230400
+buffer Den export 230400
+pipeline camstep /mnt/c/Users/AlexandrGeorgiev/CLionProjects/4dSurfacesHeodesics/gpu/build/spv/pathtrace_cam_step_09b88cd62c2d27b8.spv cam_step cam
+pipeline camera /mnt/c/Users/AlexandrGeorgiev/CLionProjects/4dSurfacesHeodesics/gpu/build/spv/pathtrace_pt_camera_e89883fbb80a6a87.spv pt_camera cam Acc Acc2 Env Cube Stats Pix Alb Nrm Dir Dd Status Class Flag Cnt Args Frame AlbF NrmF Den Present Color
+pipeline shade /mnt/c/Users/AlexandrGeorgiev/CLionProjects/4dSurfacesHeodesics/gpu/build/spv/modea_modea_shade_ddd22239826eff89.spv modea_shade cam Dir Dd Status Color Cube
+pipeline detect /mnt/c/Users/AlexandrGeorgiev/CLionProjects/4dSurfacesHeodesics/gpu/build/spv/modea_modea_detect_5a45586596f9c26c.spv modea_detect cam Dir Dd Status Flag
+pipeline classall /mnt/c/Users/AlexandrGeorgiev/CLionProjects/4dSurfacesHeodesics/gpu/build/spv/pathtrace_pt_classall_7e719b3183b68217.spv pt_classall cam Acc Acc2 Env Cube Stats Pix Alb Nrm Dir Dd Status Class Flag Cnt Args Frame AlbF NrmF Den Present Color
+pipeline clear /mnt/c/Users/AlexandrGeorgiev/CLionProjects/4dSurfacesHeodesics/gpu/build/spv/pathtrace_pt_clear_8f99831f559841cf.spv pt_clear cam Acc Acc2 Env Cube Stats Pix Alb Nrm Dir Dd Status Class Flag Cnt Args Frame AlbF NrmF Den Present Color
+pipeline lists /mnt/c/Users/AlexandrGeorgiev/CLionProjects/4dSurfacesHeodesics/gpu/build/spv/pathtrace_pt_lists_659be2221a5414f7.spv pt_lists cam Acc Acc2 Env Cube Stats Pix Alb Nrm Dir Dd Status Class Flag Cnt Args Frame AlbF NrmF Den Present Color
+pipeline args /mnt/c/Users/AlexandrGeorgiev/CLionProjects/4dSurfacesHeodesics/gpu/build/spv/pathtrace_pt_args_b4a361af54ed8f7b.spv pt_args cam Acc Acc2 Env Cube Stats Pix Alb Nrm Dir Dd Status Class Flag Cnt Args Frame AlbF NrmF Den Present Color
+pipeline ptA /mnt/c/Users/AlexandrGeorgiev/CLionProjects/4dSurfacesHeodesics/gpu/build/spv/pathtrace_pt_sample_7b3fc6acfa0d3c57.spv pt_sample cam Acc Acc2 Env Cube Stats Pix Alb Nrm Dir Dd Status Class Flag Cnt Args Frame AlbF NrmF Den Present Color
+pipeline ptB /mnt/c/Users/AlexandrGeorgiev/CLionProjects/4dSurfacesHeodesics/gpu/build/spv/pathtrace_pt_sample_7b3fc6acfa0d3c57.spv pt_sample cam Acc Acc2 Env Cube Stats Pix Alb Nrm Dir Dd Status Class Flag Cnt Args Frame AlbF NrmF Den Present Color
+pipeline reset /mnt/c/Users/AlexandrGeorgiev/CLionProjects/4dSurfacesHeodesics/gpu/build/spv/pathtrace_pt_reset_992d352d28054412.spv pt_reset cam Acc Acc2 Env Cube Stats Pix Alb Nrm Dir Dd Status Class Flag Cnt Args Frame AlbF NrmF Den Present Color
+pipeline compose /mnt/c/Users/AlexandrGeorgiev/CLionProjects/4dSurfacesHeodesics/gpu/build/spv/pathtrace_pt_compose_14e7036ba7fea229.spv pt_compose cam Acc Acc2 Env Cube Stats Pix Alb Nrm Dir Dd Status Class Flag Cnt Args Frame AlbF NrmF Den Present Color
+pipeline present /mnt/c/Users/AlexandrGeorgiev/CLionProjects/4dSurfacesHeodesics/gpu/build/spv/pathtrace_pt_present_77e56701b4284a6d.spv pt_present cam Acc Acc2 Env Cube Stats Pix Alb Nrm Dir Dd Status Class Flag Cnt Args Frame AlbF NrmF Den Present Color
+push camstep f32 0 f32 0 f32 0 f32 0 f32 0 f32 0 f32 0 f32 0.05 u32 16
+push camera u32 14400 u32 1 f32 0.003 f32 0.01 f32 0.05 f32 0.25 u32 16 u32 3 u32 1 u32 0 f32 1000 u32 4000 f32 0 u32 32 f32 1 f32 0 u32 0 f32 1 u32 0 u32 0 u32 0 u32 1 f32 1
+push clear u32 14400 u32 1 f32 0.003 f32 0.01 f32 0.05 f32 0.25 u32 16 u32 3 u32 1 u32 0 f32 1000 u32 4000 f32 0 u32 32 f32 1 f32 0 u32 0 f32 1 u32 0 u32 0 u32 0 u32 1 f32 1
+push lists u32 14400 u32 1 f32 0.003 f32 0.01 f32 0.05 f32 0.25 u32 16 u32 3 u32 1 u32 0 f32 1000 u32 4000 f32 0 u32 32 f32 1 f32 0 u32 0 f32 1 u32 0 u32 14400 u32 0 u32 1 f32 1
+push args u32 14400 u32 1 f32 0.003 f32 0.01 f32 0.05 f32 0.25 u32 16 u32 3 u32 1 u32 0 f32 1000 u32 4000 f32 0 u32 32 f32 1 f32 0 u32 0 f32 1 u32 0 u32 0 u32 0 u32 1 f32 1
+push ptA u32 14400 u32 1 f32 0.003 f32 0.01 f32 0.05 f32 0.25 u32 16 u32 3 u32 1 u32 0 f32 1000 u32 4000 f32 0 u32 32 f32 1 f32 0 u32 2 f32 1 u32 0 u32 0 u32 0 u32 1 f32 1
+push ptB u32 14400 u32 7920 f32 0.003 f32 0.01 f32 0.05 f32 0.25 u32 16 u32 3 u32 1 u32 0 f32 1000 u32 4000 f32 0 u32 32 f32 1 f32 0 u32 2 f32 1 u32 1 u32 14400 u32 0 u32 1 f32 1
+push reset u32 14400 u32 1 f32 0.003 f32 0.01 f32 0.05 f32 0.25 u32 16 u32 3 u32 1 u32 0 f32 1000 u32 4000 f32 0 u32 32 f32 1 f32 0 u32 0 f32 1 u32 0 u32 0 u32 0 u32 1 f32 1
+push compose u32 14400 u32 1 f32 0.003 f32 0.01 f32 0.05 f32 0.25 u32 16 u32 3 u32 1 u32 0 f32 1000 u32 4000 f32 0 u32 32 f32 1 f32 0 u32 0 f32 1 u32 0 u32 0 u32 0 u32 1 f32 1
+push classall u32 14400 u32 1 f32 0.003 f32 0.01 f32 0.05 f32 0.25 u32 16 u32 3 u32 1 u32 0 f32 1000 u32 4000 f32 0 u32 32 f32 1 f32 0 u32 0 f32 1 u32 0 u32 0 u32 0 u32 1 f32 1
+push present u32 14400 u32 1 f32 0.003 f32 0.01 f32 0.05 f32 0.25 u32 16 u32 3 u32 1 u32 0 f32 1000 u32 4000 f32 0 u32 32 f32 1 f32 0 u32 0 f32 1 u32 0 u32 0 u32 1 u32 1 f32 1
+section move
+mark start
+dispatch camstep 1 1 1
+dispatch camera 225 1 1
+mark camera
+dispatch shade 225 1 1
+dispatch detect 225 1 1
+dispatch clear 1 1 1
+dispatch lists 225 1 1
+dispatch args 1 1 1
+dispatch reset 225 1 1
+mark lists
+indirect ptA Args 0
+mark pt
+loop 8
+indirect ptB Args 12
+endloop
+mark fallback
+dispatch compose 225 1 1
+mark compose
+section static
+mark start
+indirect ptA Args 0
+mark pt
+indirect ptB Args 12
+mark fallback
+dispatch compose 225 1 1
+mark compose
+section post
+dispatch present 225 1 1
+app 160 90 Present
+denoise Frame AlbF NrmF Den
+campipe camstep
+presentpipe present 20 21
+seedpipes 1 ptA ptB
+speed 2.0
+hidden
+bench /mnt/c/Users/AlexandrGeorgiev/CLionProjects/4dSurfacesHeodesics/results/stage-5/2026-10-24_linux_wsl_smoke/data/script.txt /mnt/c/Users/AlexandrGeorgiev/CLionProjects/4dSurfacesHeodesics/results/stage-5/2026-10-24_linux_wsl_smoke/data/f.json
+dump 0 /mnt/c/Users/AlexandrGeorgiev/CLionProjects/4dSurfacesHeodesics/results/stage-5/2026-10-24_linux_wsl_smoke/data
+dump 89 /mnt/c/Users/AlexandrGeorgiev/CLionProjects/4dSurfacesHeodesics/results/stage-5/2026-10-24_linux_wsl_smoke/data

@@ -1,0 +1,7 @@
+{
+  "platform": "WSL2 Ubuntu 26.04, gcc 15.2, cmake 4.2.3; Vulkan: lavapipe (llvmpipe, Mesa, LLVM 21.1.8) — CPU, не GPU",
+  "build": "cmake -S <repo> -B ~/geo4d-linux -G 'Unix Makefiles' -DCMAKE_BUILD_TYPE=Release; Vulkan-Headers/volk/VMA/SDL3 — FetchContent; заголовки X11 — apt download + dpkg-deb -x (без root)",
+  "window": "SDL_VIDEO_DRIVER=x11 (WSLg), скрытое окно, 160x90; сценарий: 20 кадров поворота, 60 вперёд сквозь горловину c1, 10 покоя",
+  "runner": "wslgpu.py: переписывает пути Windows в графе на /mnt/c и запускает Linux-бинарник в WSL",
+  "note": "meta.json описывает хост Windows, где запускался Python; время кадров на CPU-растеризаторе не показательно"
+}
