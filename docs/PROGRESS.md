@@ -6,14 +6,16 @@
 
 ## Сделано (после этапа 5)
 - [x] Хост на Linux: внешняя память через fd, `libcuda.so.1`, `gpu/build.sh`, зависимости из FetchContent. Проверен в
-  WSL2 на lavapipe (окно X11, 30 GPU-тестов пройдено) — `results/stage-5/2026-10-24_linux_wsl_smoke`
+  WSL2 на lavapipe (окно X11, 30 GPU-тестов, нативный `app.py`) — `results/stage-5/2026-10-24_linux_wsl_smoke`,
+  `…_linux_native_app_bench`
 - [x] Денойзер необязателен (без CUDA/OptiX — окно без него); путь для macOS (MoltenVK) — не проверен
 - [x] Корневой CMake + пресеты; конфигурации `.run/` (окна сцен, замер, ролик, тесты, хост под отладчиком)
 - [x] Windows без регрессий: `-m gpu` 32 passed
 
 ## Пользователю — один раз в CLion
 1. Python Interpreter → добавить `.venv` (иначе Python-конфигурации не запускаются).
-2. CMake → включить профили `release`/`debug` из пресетов, Reload CMake Project.
+2. CMake → включить профили `release`/`debug` из пресетов, выключить старый `Debug` (`cmake-build-debug`), Reload.
+3. Правки CLion в `.run/` (`CONFIG_NAME`, пропавший предзапуск) не коммитить.
 
 ## Дальше (по желанию)
 1. Проверить Linux с драйвером NVIDIA (OptiX, импорт fd) и macOS — нужны машины.

@@ -58,7 +58,9 @@ VkContext::VkContext(const std::vector<const char*>& instance_exts, bool swapcha
     std::vector<const char*> iexts = instance_exts;
     VkInstanceCreateInfo ici{VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO};
     if (has_ext(iext, VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME)) {
-        iexts.push_back(VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME);
+        bool listed = false;                     // SDL на macOS может уже вернуть его в списке расширений окна
+        for (auto* e : iexts) listed |= std::strcmp(e, VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME) == 0;
+        if (!listed) iexts.push_back(VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME);
         ici.flags |= VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR;
     }
     ici.pApplicationInfo = &app;

@@ -44,6 +44,9 @@
     `libcuda.so.1` загрузилась и `cuInit` прошёл.
   - GPU-тесты (`-m gpu` без денойзера и приложения) против Linux-бинарника на lavapipe: 30 passed
     (`pytest_gpu_lavapipe.txt`).
+- **Linux, нативно** (`results/stage-5/2026-10-24_linux_native_app_bench`): свежий клон, `./gpu/build.sh` (пресет
+  + Unix Makefiles), venv Python 3.14 из `requirements.txt`, Linux-`slangc` 2025.17.2 в PATH, без `VULKAN_SDK`.
+  `app.py --bench` → swapchain побитово равен выводу.
 - **Не проверено:** OptiX и импорт fd на нативном Linux с драйвером NVIDIA; macOS целиком (нет машины). Код для
   macOS собран по документации MoltenVK. SDL-драйвер `offscreen` на lavapipe не создаёт swapchain
   (`VK_ERROR_OUT_OF_DEVICE_MEMORY`); для окна он и не нужен.

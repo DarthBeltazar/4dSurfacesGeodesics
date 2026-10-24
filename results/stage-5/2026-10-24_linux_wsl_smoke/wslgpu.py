@@ -18,6 +18,6 @@ if len(args) >= 2:
 env = os.environ.get("GEO4D_WSL_ENV", "").split()
 cmd = ["wsl", "-d", "Ubuntu", "--", "env"] + env + ["/home/alexandrgeorgiev/geo4d-linux/geo4d_gpu"] + args
 r = subprocess.run(cmd, capture_output=True)
-sys.stdout.write(r.stdout.decode("utf-8", "replace"))
-sys.stderr.write(r.stderr.decode("utf-8", "replace"))
+sys.stdout.buffer.write(r.stdout); sys.stdout.flush()
+sys.stderr.buffer.write(r.stderr); sys.stderr.flush()   # UTF-8 как есть
 sys.exit(r.returncode)

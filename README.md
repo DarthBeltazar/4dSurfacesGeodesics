@@ -90,7 +90,8 @@ Shift — ×4; R — денойзер вкл/выкл; Esc — выход. Ка�
 1. Settings → Build, Execution, Deployment → Python Interpreter → добавить существующий `.venv`. CLion запускает
    Python-конфигурации только с зарегистрированным интерпретатором.
 2. Settings → Build, Execution, Deployment → CMake: включить профили пресетов `release` (`gpu/build`, его использует
-   Python) и `debug` (`gpu/build-debug`), затем Reload CMake Project.
+   Python) и `debug` (`gpu/build-debug`), выключить старый `Debug` (`cmake-build-debug`), затем Reload CMake Project.
+   CLion при этом может вписать в `.run/*.xml` имя локального профиля — такие правки не коммитить.
 3. Собрать `release` (или `gpu\build.cmd`) до запуска окон из Python.
 
 На Linux/macOS конфигурации нужно перегенерировать (путь `.venv/bin/python`):
