@@ -67,19 +67,37 @@ static PTParams pp;                 // cam_step не использует пар
 [[vk::binding(20, 0)]] RWStructuredBuffer<uint> gPresent;
 [[vk::binding(21, 0)]] RWStructuredBuffer<float4> gColor;
 
-// объекты (DD-008): строки float4 в хвосте буфера камеры (geo4d.gpu_pt.object_rows) — правятся без перекомпиляции
+// объекты (DD-008): строки float4 в хвосте буфера камеры (geo4d.gpu_pt.object_rows) — правятся без перекомпиляции.
+// Два варианта (pt_scene.slang): «запечённый» (PT_DYNAMIC 0) — число объектов, их виды и оси полупространств заданы
+// при компиляции (циклы разворачиваются, ветви по виду сворачиваются), из строк читаются только параметры;
+// «динамический» (PT_DYNAMIC 1, режим редактирования окна) — число и виды тоже из строк (медленнее, любая правка сразу).
 static const int OBJ_BASE = 8;
-int pt_nobj() { return int(gCam[OBJ_BASE].x); }
-int pt_nlight() { return int(gCam[OBJ_BASE].y); }
-int light_obj(int i) { return int(gCam[OBJ_BASE + 1 + i / 4][i % 4]); }
-float4 obj_c(int k) { return gCam[OBJ_BASE + 9 + 6 * k]; }          // центр
-float4 obj_s(int k) { return gCam[OBJ_BASE + 10 + 6 * k]; }         // (вид, a, b, знак)
-float4 obj_pl(int k) { return gCam[OBJ_BASE + 11 + 6 * k]; }        // (1, ось, смещение, знак) у полупространства
-float4 mat_a(int k) { return gCam[OBJ_BASE + 12 + 6 * k]; }         // (альбедо, вид материала)
-float4 mat_e(int k) { return gCam[OBJ_BASE + 13 + 6 * k]; }         // (излучение, шероховатость)
-float obj_r(int k) { return gCam[OBJ_BASE + 14 + 6 * k].x; }        // радиус ограничивающей 4D-сферы
+#if PT_DYNAMIC
+static const int OBJ_NROWS = 9 + 6 * PT_MAXOBJ;
+#else
+static const int OBJ_NROWS = 9 + 6 * PT_NOBJ;
+#endif
+#if PT_STAGE
+// мегаядро: строки объектов копируются в groupshared в начале группы (pt_sample)
+groupshared float4 gsObj[OBJ_NROWS];
+#define OBJ_ROW(r) gsObj[(r) - OBJ_BASE]
+#else
+#define OBJ_ROW(r) gCam[r]
+#endif
+int pt_nobj() { return int(OBJ_ROW(OBJ_BASE).x); }
+int pt_nlight() { return int(OBJ_ROW(OBJ_BASE).y); }
+int light_obj(int i) { return int(OBJ_ROW(OBJ_BASE + 1 + i / 4)[i % 4]); }
+float4 obj_c(int k) { return OBJ_ROW(OBJ_BASE + 9 + 6 * k); }          // центр
+float4 obj_s(int k) { return OBJ_ROW(OBJ_BASE + 10 + 6 * k); }         // (вид, a, b, знак)
+float4 obj_pl(int k) { return OBJ_ROW(OBJ_BASE + 11 + 6 * k); }        // (1, ось, смещение, знак) у полупространства
+float4 mat_a(int k) { return OBJ_ROW(OBJ_BASE + 12 + 6 * k); }         // (альбедо, вид материала)
+float4 mat_e(int k) { return OBJ_ROW(OBJ_BASE + 13 + 6 * k); }         // (излучение, шероховатость)
+float obj_r(int k) { return OBJ_ROW(OBJ_BASE + 14 + 6 * k).x; }        // радиус ограничивающей 4D-сферы
 
-// 4D SDF объекта k (geo4d.objects: ball4, torus_in_sheet, halfspace)
+#if PT_DYNAMIC
+#define PT_N pt_nobj()
+bool pt_isplane(int k) { return obj_pl(k).x != 0; }
+// 4D SDF объекта k по виду из строк (geo4d.objects: ball4, torus_in_sheet, halfspace)
 __generic<T : IReal> T obj_g(int k, T x, T y, T z, T w)
 {
     float4 c = obj_c(k), s = obj_s(k);
@@ -93,6 +111,10 @@ __generic<T : IReal> T obj_g(int k, T x, T y, T z, T w)
     else if (ax == 2) p = z;
     return s.w * (p - s.z);
 }
+#else
+#define PT_N PT_NOBJ
+bool pt_isplane(int k) { return PT_ISPLANE[k] != 0; }     // obj_g — в pt_scene.slang
+#endif
 
 static const float PI = 3.14159265;
 
@@ -124,7 +146,7 @@ float gmin_k(float4 p, out int k)
 {
     float g = 1e30;
     k = -1;
-    for (int i = 0; i < pt_nobj(); i++) { float v = obj_val(i, p); if (v < g) { g = v; k = i; } }
+    for (int i = 0; i < PT_N; i++) { float v = obj_val(i, p); if (v < g) { g = v; k = i; } }
     return g;
 }
 
@@ -135,7 +157,7 @@ float gmin_bounded_k(float4 p, out int k)
 {
     float g = 1e30;
     k = -1;
-    for (int i = 0; i < pt_nobj(); i++) if (obj_pl(i).x == 0) { float v = obj_val(i, p); if (v < g) { g = v; k = i; } }
+    for (int i = 0; i < PT_N; i++) if (!pt_isplane(i)) { float v = obj_val(i, p); if (v < g) { g = v; k = i; } }
     return g;
 }
 
@@ -144,7 +166,7 @@ float plane_hit(float4 x, float4 v, out int kp)
 {
     float tp = 1e30;
     kp = -1;
-    for (int k = 0; k < pt_nobj(); k++)
+    for (int k = 0; k < PT_N; k++)
     {
         float4 pl = obj_pl(k);
         if (pl.x == 0) continue;
@@ -214,7 +236,7 @@ float ball_entry(float4 x, float4 d)
 // planes = false — только ограниченные объекты
 bool ahead_clear(float4 x, float4 v, bool planes = true)
 {
-    for (int k = 0; k < pt_nobj(); k++)
+    for (int k = 0; k < PT_N; k++)
     {
         float4 pl = obj_pl(k);
         if (pl.x > 0) { if (planes && pl.w * v[int(pl.y)] < 0) return false; continue; }
@@ -240,7 +262,7 @@ bool pt_escape(float4 x, float4 v)
 bool line_blocked(float4 x, float4 d, float tmax, int skip, float eps)
 {
     float tfar = 0;
-    for (int k = 0; k < pt_nobj(); k++)
+    for (int k = 0; k < PT_N; k++)
     {
         if (k == skip) continue;
         float4 pl = obj_pl(k);
@@ -256,7 +278,7 @@ bool line_blocked(float4 x, float4 d, float tmax, int skip, float eps)
     {
         float4 p = x + t * d;
         float g = 1e30;
-        for (int k = 0; k < pt_nobj(); k++) if (k != skip && obj_pl(k).x == 0) g = min(g, obj_val(k, p));
+        for (int k = 0; k < PT_N; k++) if (k != skip && !pt_isplane(k)) g = min(g, obj_val(k, p));
         if (g < ulp_floor(p)) return true;          // пересечение (шаг g + ε/2 перескакивает поверхность)
         t += g + 0.5 * eps;
     }
@@ -557,8 +579,12 @@ float light_pdf(float4 p, int k)
 
 #if NJ == 0
 [shader("compute")] [numthreads(64, 1, 1)]
-void pt_sample(uint3 id : SV_DispatchThreadID)
+void pt_sample(uint3 id : SV_DispatchThreadID, uint3 tid : SV_GroupThreadID)
 {
+#if PT_STAGE
+    for (int r = int(tid.x); r < OBJ_NROWS; r += 64) gsObj[r] = gCam[OBJ_BASE + r];
+    GroupMemoryBarrierWithGroupSync();
+#endif
     uint n = pp.use_list == 2 ? gCnt[pp.list_id] : pp.n;
     if (id.x >= n) return;
     uint i = pp.use_list == 2 ? gPix[pp.list_off + id.x] : (pp.use_list != 0 ? gPix[id.x] : id.x);
@@ -950,7 +976,7 @@ void cam_step(uint3 id : SV_DispatchThreadID)
 [shader("compute")] [numthreads(1, 1, 1)]
 void pt_snap(uint3 id : SV_DispatchThreadID)
 {
-    for (int k = 0; k < pt_nobj(); k++)
+    for (int k = 0; k < PT_N; k++)
     {
         int row = OBJ_BASE + 9 + 6 * k;
         if (gCam[row + 5].y == 0 || int(gCam[row + 1].x) == 2) continue;

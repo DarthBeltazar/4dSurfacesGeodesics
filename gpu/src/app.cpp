@@ -17,6 +17,8 @@
 //   bench <сценарий> <json>          движение из файла (строка на кадр: a b c ψ θ φ за кадр), журнал времени, выход
 //   edit <кадр> <строки.npy>         в сценарии замера: заменить строки объектов перед кадром (как правка в окне)
 //   remanifold <кадр> <вид> k=v…     в сценарии: смена многообразия как кнопкой «Применить» (ждёт Python, перезагрузка)
+//   editgraph <граф>                 граф режима редактирования (шейдеры без зашитой структуры объектов, DD-008)
+//   editmode <кадр> on|off           в сценарии: войти в режим редактирования / выйти (ждёт перегенерацию)
 //   record <файл.raw> <период>       дописывать вывод (BGRA8/RGBA8, W·H·4 байт) каждого период-го кадра — для ролика
 //   dump <кадр> <каталог>            сохранить вывод (u32 RGBA8), кадр, выход денойзера и камеру этого кадра (.npy)
 // Управление: W/S, A/D — вперёд/вбок; Q/E — вниз/вверх; мышь (ЛКМ — захват) и стрелки — взгляд; Z/C — крен;
@@ -137,6 +139,8 @@ struct AppDirs {
     std::vector<std::string> den_bufs, seedpipes;
     std::vector<std::pair<uint32_t, std::string>> dumps, edits;
     std::vector<std::pair<uint32_t, std::vector<std::string>>> remanifold;     // кадр, вид, k=v…
+    std::vector<std::pair<uint32_t, bool>> editmode;                            // кадр, вкл/выкл
+    std::string editgraph;
     uint32_t record_period = 1;
     size_t i_use_den = 0, i_bgra = 0, i_seed = 1, i_exposure = SIZE_MAX;
     float speed = 1.0f;
@@ -161,6 +165,8 @@ AppDirs parse_dirs(const GraphProgram& prog) {
         else if (w[0] == "edit") d.edits.emplace_back(uint32_t(std::stoul(w.at(1))), w.at(2));
         else if (w[0] == "record") { d.record_path = w.at(1); d.record_period = uint32_t(std::stoul(w.at(2))); }
         else if (w[0] == "objrows") { d.objbuf = w.at(1); d.obj_base = std::stoi(w.at(2)); }
+        else if (w[0] == "editgraph") d.editgraph = w.at(1);
+        else if (w[0] == "editmode") d.editmode.emplace_back(uint32_t(std::stoul(w.at(1))), w.at(2) == "on");
         else if (w[0] == "remanifold") d.remanifold.emplace_back(uint32_t(std::stoul(w.at(1))),
                                                                  std::vector<std::string>(w.begin() + 2, w.end()));
     }
@@ -243,7 +249,7 @@ int run_app(const std::string& graph_path) {
             d = parse_dirs(*prog);
             if (!old.present_buf.empty()) {            // перезагрузка: сценарий, дампы и запись — из исходного графа
                 d.bench_in = old.bench_in; d.bench_out = old.bench_out;
-                d.dumps = old.dumps; d.edits = old.edits; d.remanifold = old.remanifold;
+                d.dumps = old.dumps; d.edits = old.edits; d.remanifold = old.remanifold; d.editmode = old.editmode;
                 d.record_path = old.record_path; d.record_period = old.record_period;
             }
             prog->set_push_u32(d.presentpipe, d.i_bgra, sc.format == VK_FORMAT_B8G8R8A8_UNORM ? 1u : 0u);
@@ -287,10 +293,46 @@ int run_app(const std::string& graph_path) {
         std::unique_ptr<Editor> editor;
         bool show_ui = true;
         VkFormat ui_format = sc.format;                // ImGui хранит указатель до создания конвейера
+        // быстрый граф (структура объектов зашита) и граф режима редактирования (DD-008)
+        std::string baked_path = graph_path, dyn_path = d.editgraph;
+        std::vector<std::pair<int, int>> baked_struct;
+        bool edit_mode = false, pending_exit = false, force_edit = false;
         if (editor_on) {
             editor = std::make_unique<Editor>(parse_editor_config(prog->extra()));
             editor->set_config(parse_editor_config(prog->extra()), read_rows());
+            baked_struct = structure(editor->objects());
         }
+        // смена графа без закрытия окна; keep_cam — камера старого графа побитово, ed_rows — объекты редактора
+        auto switch_graph = [&](const std::string& path, bool keep_cam, bool ed_rows) {
+            ctx.copy_buffer(prog->buffer("cam"), cam_host, 64);
+            std::vector<uint8_t> camb(static_cast<uint8_t*>(cam_host.mapped), static_cast<uint8_t*>(cam_host.mapped) + 64);
+            auto flat = editor->flat();
+            vkDeviceWaitIdle(ctx.device());
+            load(path);
+            if (ed_rows) write_rows(pack_rows(editor->objects(), flat).data());
+            if (keep_cam) {
+                std::memcpy(cam_host.mapped, camb.data(), 64);
+                ctx.copy_buffer(cam_host, prog->buffer("cam"), 64);
+            }
+            editor->set_config(parse_editor_config(prog->extra()), read_rows(), ed_rows);
+            use_den = use_den && has_den;
+            force_edit = true;
+        };
+        auto enter_edit = [&]() {
+            if (edit_mode || dyn_path.empty()) return;
+            switch_graph(dyn_path, true, true);
+            edit_mode = true;
+        };
+        auto exit_edit = [&](const CameraState& cam, bool wait) {
+            if (!edit_mode || editor->rebuilding()) return;
+            if (structure(editor->objects()) == baked_struct) {      // структура прежняя — быстрый граф уже есть
+                switch_graph(baked_path, true, true);
+                edit_mode = false;
+            } else {
+                pending_exit = true;
+                editor->rebuild_structure(cam, wait);
+            }
+        };
         if (overlay) {
             IMGUI_CHECKVERSION();
             ImGui::CreateContext();
@@ -362,7 +404,7 @@ int run_app(const std::string& graph_path) {
         }
         std::ofstream log;
         if (!d.bench_out.empty()) { log.open(d.bench_out); log << "[\n"; }
-        bool quit = false, grab = false, minimized = false, force_reset = false;
+        bool quit = false, grab = false, minimized = false, toggle_req = false;
         uint32_t frame = 0, accum = 0;
         auto t_prev = std::chrono::steady_clock::now();
         double fps_acc = 0, last_ms = 0;
@@ -384,6 +426,7 @@ int run_app(const std::string& graph_path) {
                     if (grab) { grab = false; SDL_SetWindowRelativeMouseMode(win, false); }
                     else quit = true;
                 } else if (e.type == SDL_EVENT_KEY_DOWN && e.key.key == SDLK_F1 && overlay) show_ui = !show_ui;
+                else if (e.type == SDL_EVENT_KEY_DOWN && e.key.key == SDLK_TAB && overlay && !ui_kb) toggle_req = true;
                 else if (e.type == SDL_EVENT_KEY_DOWN && e.key.key == SDLK_R && has_den && !ui_kb) { use_den = !use_den; accum = 0; }
                 else if (e.type == SDL_EVENT_MOUSE_BUTTON_DOWN && e.button.button == SDL_BUTTON_LEFT && (grab || !ui_mouse)) {
                     grab = !grab;
@@ -410,16 +453,25 @@ int run_app(const std::string& graph_path) {
                 rot[0] = 0.003f * mdx;
                 rot[1] = -0.003f * mdy;
             }
-            bool moved = frame == 0 || force_reset || mv[0] != 0 || mv[1] != 0 || mv[2] != 0 || rot[0] != 0 || rot[1] != 0 ||
-                         rot[2] != 0;
-            force_reset = false;
-            bool edited = false;
+            bool moved = frame == 0 || mv[0] != 0 || mv[1] != 0 || mv[2] != 0 || rot[0] != 0 || rot[1] != 0 || rot[2] != 0;
+            if (editor)
+                for (auto& [fi, on] : d.editmode)      // сценарий: режим редактирования
+                    if (fi == frame) {
+                        if (on) enter_edit();
+                        else exit_edit(camst, true);
+                    }
             for (auto& [fi, p] : d.edits)              // сценарий замера: правка объектов перед кадром
                 if (fi == frame) {
                     NpyArray a = npy_read(p);
                     if (a.data.size() != rows_host.size) throw std::runtime_error("edit: размер строк " + p);
-                    write_rows(reinterpret_cast<const float*>(a.data.data()));
-                    edited = true;
+                    const float* rows = reinterpret_cast<const float*>(a.data.data());
+                    write_rows(rows);
+                    if (editor) {                      // редактор видит правку (имена — по номеру)
+                        std::vector<std::string> names;
+                        for (auto& o : editor->objects()) names.push_back(o.name);
+                        editor->objects() = unpack_rows(rows, names);
+                    }
+                    force_edit = true;
                 }
             // панели редактора (до кадра: правка видна в этом же кадре)
             if (overlay) {
@@ -428,10 +480,12 @@ int run_app(const std::string& graph_path) {
                 ImGui::NewFrame();
                 if (show_ui) {
                     FrameInfo fi{last_ms, accum, has_den};
-                    UiActions act = editor->draw(fi, camst, use_den, exposure, speed);
+                    UiActions act = editor->draw(fi, camst, edit_mode, use_den, exposure, speed);
+                    if (act.toggle_edit) toggle_req = true;
+                    if (act.structural && !edit_mode) enter_edit();      // форма/число объектов — в режиме редактирования
                     if (act.objects_changed) {
                         write_rows(pack_rows(editor->objects(), editor->flat()).data());
-                        edited = true;
+                        force_edit = true;
                         if (act.snap) {                // центры on_M — на M (pt_snap), обратно в редактор
                             prog->run("snap");
                             auto snapped = unpack_rows(read_rows(), {});
@@ -444,6 +498,13 @@ int run_app(const std::string& graph_path) {
                 }
                 ImGui::Render();
             }
+            if (toggle_req && editor) {
+                if (edit_mode) exit_edit(camst, false);
+                else enter_edit();
+            }
+            toggle_req = false;
+            const bool edited = force_edit;
+            force_edit = false;
             // кадр со сбросом накопления: move — шаг камеры, edit — только правка объектов (камера на месте)
             const bool reset = moved || edited;
             const char* section = moved ? "move" : edited ? "edit" : "static";
@@ -606,16 +667,29 @@ int run_app(const std::string& graph_path) {
                     std::fprintf(stderr, "%s\n", editor->status().c_str());
                     throw std::runtime_error("remanifold: перегенерация не удалась");
                 }
-                if (!next_graph.empty()) {             // новое многообразие: перезагрузка графа без закрытия окна
-                    vkDeviceWaitIdle(ctx.device());
-                    try {
-                        load(next_graph);
-                        editor->set_config(parse_editor_config(prog->extra()), read_rows());
-                        use_den = use_den && has_den;
-                        force_reset = true;
-                    } catch (const std::exception& ex) {
-                        std::fprintf(stderr, "перезагрузка графа: %s\n", ex.what());
-                        throw;
+                if (pending_exit && next_graph.empty() && !editor->rebuilding()) pending_exit = false;   // ошибка Python
+                if (!next_graph.empty()) {             // перезагрузка графа без закрытия окна
+                    const std::string dir = next_graph.substr(0, next_graph.rfind('/'));
+                    const std::string next_dyn = dir + "/app_graph_dyn.txt";
+                    if (editor->last_rebuild_structural()) {      // быстрые шейдеры под новую структуру объектов
+                        baked_path = next_graph;
+                        dyn_path = next_dyn;
+                        baked_struct = editor->requested_structure();
+                        if (pending_exit) {
+                            if (structure(editor->objects()) == baked_struct) {
+                                switch_graph(baked_path, true, true);
+                                edit_mode = false;
+                                pending_exit = false;
+                            } else {
+                                editor->rebuild_structure(camst, false);   // структура менялась во время перегенерации
+                            }
+                        }
+                    } else {                                       // новое многообразие: камера и объекты — из Python
+                        baked_path = next_graph;
+                        dyn_path = next_dyn;
+                        switch_graph(edit_mode ? dyn_path : baked_path, false, false);
+                        baked_struct = structure(editor->objects());
+                        pending_exit = false;
                     }
                 }
             }

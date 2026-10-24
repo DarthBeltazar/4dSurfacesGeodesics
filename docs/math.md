@@ -455,4 +455,4 @@ r на θ (тангаж); r, u вокруг f на φ (крен) — базис 
 MIS-вес BSDF-попадания = 1 — несмещённо, но шумнее. Правило вычисляется заново после каждой правки объектов (в хосте —
 `editor.cpp::nee_lights`, в прототипе — `pathtrace.nee_lights`), список источников лежит в строках объектов на GPU.
 Проверка: `test_scene_editor.py` — `test_nee_rule_matches_manual_lights` (совпадает с ручными списками сцен этапа 4),
-`test_nee_rule_excludes_invalid_lights`, `test_app_hot_edit_equals_cold_start` (строки C++ = строки Python).
+`test_nee_rule_excludes_invalid_lights`, `test_app_edit_mode_structural_cycle` (строки C++ = строки Python, `rows_check`).

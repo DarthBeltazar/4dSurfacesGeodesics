@@ -155,44 +155,92 @@ def test_gpu_snap_matches_projection():
             assert np.array_equal(c, np.float32(o.center))
 
 
-def _app_run(sc, cam, td, frames, edits=(), dump=None):
+def _editor_cfg(td, res="96x54"):
+    import sys
+    from pathlib import Path
+    return dict(scene=SF.resolve("two_wormholes").as_posix(), work_dir=td.as_posix(), fov=75.0, env=None,
+                python=Path(sys.executable).as_posix(),
+                script=(Path(__file__).resolve().parents[1] / "prototype/scripts/app.py").as_posix(),
+                args=["--res", res, "--cube", "64"])
+
+
+def _app_run(sc, cam, td, frames, edits=(), dump=None, editor=None, extra=""):
     import subprocess
     td.mkdir(parents=True, exist_ok=True)
     np.savetxt(td / "script.txt", np.zeros((frames, 6)), fmt="%.6f")
     graph = G.app_graph(sc, cam, td, hidden=True, bench=(td / "script.txt", td / "f.json"), edits=edits,
-                        dumps=[(dump, td.as_posix())] if dump is not None else ())
-    r = subprocess.run([str(gpu.EXE), "app", str(graph)], capture_output=True, text=True)
+                        dumps=[(dump, td.as_posix())] if dump is not None else (), editor=editor)
+    if extra:
+        graph.write_text(graph.read_text(encoding="utf-8") + extra, encoding="utf-8")
+    r = subprocess.run([str(gpu.EXE), "app", str(graph)], capture_output=True, text=True, encoding="utf-8")
     assert r.returncode == 0, r.stdout + r.stderr
+    checks = [float(t.split()[1]) for t in r.stdout.splitlines() if t.startswith("rows_check")]
+    assert checks and max(checks) < 1e-6          # упаковка строк C++ (editor.cpp) = Python (object_rows)
     return r.stdout
 
 
-@pytest.mark.gpu
-@pytest.mark.skipif(not gpu.available(), reason="нет geo4d_gpu или slangc")
-def test_app_hot_edit_equals_cold_start(tmp_path):
-    """Правка объектов в окне (строки буфера, секция edit, сброс накопления) после N кадров покоя даёт тот же кадр,
-    что холодный старт отредактированной сцены с тем же числом кадров — побитово. Хост распаковывает и упаковывает
-    строки заново (editor.cpp) — расхождение с Python (rows_check) на уровне округления float32."""
+def _edited(structural):
     env = PT.procedural_env(64)
     d = json.loads(SF.resolve("two_wormholes").read_text(encoding="utf-8"))
     sc0, c, _ = SF.build(d, env)
     d["objects"][1]["center"][0] += 1.0                                   # сдвиг шара
     d["objects"][2]["material"]["rough"] = 0.6                           # металл тора
-    d["objects"].append(dict(name="new_light", kind="ball4", center=[0.0, 3.0, 1.0, 1.5], r=0.3,
-                             material=dict(kind="emit", emit=[5.0, 20.0, 5.0])))
+    d["objects"][5]["material"]["emit"] = [20.0, 40.0, 30.0]             # цвет источника
+    if structural:
+        d["objects"].append(dict(name="new_light", kind="ball4", center=[0.0, 3.0, 1.0, 1.5], r=0.3,
+                                 material=dict(kind="emit", emit=[5.0, 20.0, 5.0])))
     sc1, _, _ = SF.build(d, env)
-    assert PT.nee_lights(sc1.objs, sc1.flat) == (5, 6, 7)
     cam = make_camera(sc0.shape, c["x"], c["f"], c["up"], fov=75, width=96, height=54)
-    out_hot = _app_run(sc0, cam, tmp_path / "hot", 30, edits=[(10, G.object_rows(sc1))], dump=29)
-    out_cold = _app_run(sc1, cam, tmp_path / "cold", 20, dump=19)
-    for out in (out_hot, out_cold):
-        md = float(out.split("rows_check")[1].split()[0])
-        assert md < 1e-6
+    return sc0, sc1, cam
+
+
+@pytest.mark.gpu
+@pytest.mark.skipif(not gpu.available(), reason="нет geo4d_gpu или slangc")
+def test_app_param_edit_equals_cold_start(tmp_path):
+    """Правка параметров объектов в быстром графе (строки буфера, секция edit, сброс накопления) после N кадров
+    покоя даёт тот же кадр, что холодный старт отредактированной сцены с тем же числом кадров — побитово."""
+    sc0, sc1, cam = _edited(False)
+    assert G.structure_key(sc0) == G.structure_key(sc1)
+    _app_run(sc0, cam, tmp_path / "hot", 30, edits=[(10, G.object_rows(sc1))], dump=29)
+    _app_run(sc1, cam, tmp_path / "cold", 20, dump=19)
     for k in ["Frame", "Present"]:
-        a = np.load(tmp_path / "hot" / f"{k}_29.npy")
-        b = np.load(tmp_path / "cold" / f"{k}_19.npy")
-        assert np.array_equal(a, b), k
+        assert np.array_equal(np.load(tmp_path / "hot" / f"{k}_29.npy"), np.load(tmp_path / "cold" / f"{k}_19.npy")), k
     log = json.loads((tmp_path / "hot" / "f.json").read_text(encoding="utf-8"))
     assert log[10]["moving"] and log[-1]["accum"] == 20
+
+
+@pytest.mark.gpu
+@pytest.mark.skipif(not gpu.available(), reason="нет geo4d_gpu или slangc")
+def test_app_edit_mode_structural_cycle(tmp_path):
+    """Режим редактирования (DD-008): вход — граф с динамическими шейдерами, правка со сменой структуры (новый
+    источник), выход — фоновая перегенерация быстрых шейдеров и переход на них с той же камерой. Итог побитово равен
+    холодному старту отредактированной сцены с тем же числом кадров после сброса."""
+    sc0, sc1, cam = _edited(True)
+    assert PT.nee_lights(sc1.objs, sc1.flat) == (5, 6, 7)
+    extra = "editmode 5 on\neditmode 10 off\n"
+    _app_run(sc0, cam, tmp_path / "hot", 40, edits=[(6, G.object_rows(sc1))], dump=39,
+             editor=_editor_cfg(tmp_path / "hot"), extra=extra)
+    _app_run(sc1, cam, tmp_path / "cold", 29, dump=28)
+    edit = json.loads((tmp_path / "hot" / "edit_1.json").read_text(encoding="utf-8"))
+    assert len(edit["objects"]) == 8 and edit["manifold"]["params"]["W"] == 1.5
+    for k in ["Frame", "Present"]:
+        assert np.array_equal(np.load(tmp_path / "hot" / f"{k}_39.npy"), np.load(tmp_path / "cold" / f"{k}_28.npy")), k
+    log = json.loads((tmp_path / "hot" / "f.json").read_text(encoding="utf-8"))
+    assert log[5]["moving"] and log[6]["moving"] and log[11]["moving"] and log[-1]["accum"] == 29
+
+
+@pytest.mark.gpu
+@pytest.mark.skipif(not gpu.available(), reason="нет geo4d_gpu или slangc")
+def test_app_dynamic_matches_baked(tmp_path):
+    """Динамические шейдеры режима редактирования и быстрые (структура зашита) считают одно и то же: кадр после
+    20 сэмплов совпадает с точностью округления float32 (разный машинный код)."""
+    sc0, _, cam = _edited(False)
+    _app_run(sc0, cam, tmp_path / "dyn", 25, dump=24, editor=_editor_cfg(tmp_path / "dyn"), extra="editmode 4 on\n")
+    _app_run(sc0, cam, tmp_path / "baked", 21, dump=20)
+    a = np.load(tmp_path / "dyn" / "Frame_24.npy")[..., :3]
+    b = np.load(tmp_path / "baked" / "Frame_20.npy")[..., :3]
+    rel = np.abs(a - b).mean() / np.abs(b).mean()
+    assert rel < 1e-3, rel
 
 
 @pytest.mark.gpu

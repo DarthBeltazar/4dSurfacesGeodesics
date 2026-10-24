@@ -6,7 +6,7 @@
     python prototype/scripts/app.py --graph-only gpu/build-debug/app/two_wormholes  # только граф — запуск хоста из IDE
 
 Управление: W/S, A/D — вперёд/вбок; Q/E — вниз/вверх; ЛКМ — захват мыши (взгляд); стрелки; Z/C — крен; Shift — ×4;
-R — денойзер вкл/выкл; F1 — панели редактора; Esc — выход. Сцены — файлы scenes/*.json (DD-008): two_wormholes,
+R — денойзер вкл/выкл; F1 — панели редактора; Tab — режим редактирования; Esc — выход. Сцены — файлы scenes/*.json (DD-008): two_wormholes,
 ellis, S3, spheritorus, torisphere, tiger (T³), hyperplane, или путь к своему JSON. Редактор в окне правит объекты
 сразу, а многообразие — перегенерацией графа (этот же скрипт с --graph-only) без закрытия окна.
 

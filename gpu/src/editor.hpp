@@ -38,6 +38,8 @@ struct EdFlat {                                   // плоские зоны м�
 std::vector<int> nee_lights(const std::vector<EdObject>& objs, const EdFlat& flat);
 std::vector<float> pack_rows(const std::vector<EdObject>& objs, const EdFlat& flat);            // kObjRows × 4
 std::vector<EdObject> unpack_rows(const float* rows, const std::vector<std::string>& names);
+// структура, зашитая в быстрые шейдеры: (форма, ось полупространства) по порядку (geo4d.gpu_pt.structure_key)
+std::vector<std::pair<int, int>> structure(const std::vector<EdObject>& objs);
 
 struct ManifoldParam {
     std::string key;
@@ -70,6 +72,8 @@ std::string scene_json(const std::string& kind, const std::vector<ManifoldParam>
 // Что окно должно сделать после панелей
 struct UiActions {
     bool objects_changed = false;                 // загрузить строки, сбросить накопление
+    bool structural = false;                      // изменилась структура (число/формы/оси) — нужен режим редактирования
+    bool toggle_edit = false;                     // войти в режим редактирования / выйти из него
     bool snap = false;                            // спроецировать центры on_M на M (ядро pt_snap) и прочитать обратно
     bool need_camera = false;                     // прочитать камеру (поставить объект перед ней) — следующий кадр
 };
@@ -84,19 +88,25 @@ class Editor {
 public:
     explicit Editor(const EditorConfig& cfg);
     ~Editor();
-    void set_config(const EditorConfig& cfg, const float* rows);   // после перезагрузки графа
+    // после перезагрузки графа; keep_objs — оставить объекты редактора (имена, порядок), строки уже записаны хостом
+    void set_config(const EditorConfig& cfg, const float* rows, bool keep_objs = false);
     const std::vector<EdObject>& objects() const { return objs_; }
     std::vector<EdObject>& objects() { return objs_; }
     const EdFlat& flat() const { return cfg_.flat; }
 
     // панели; cam — текущая камера (для «перед камерой» и сохранения)
-    UiActions draw(const FrameInfo& fi, const CameraState& cam, bool& use_den, float& exposure, float& speed);
+    UiActions draw(const FrameInfo& fi, const CameraState& cam, bool edit_mode, bool& use_den, float& exposure,
+                   float& speed);
 
     // перегенерация: готово — путь к новому графу (иначе пусто); ошибка — сообщение в окне
     std::string poll_rebuild();
     // то же, что кнопка «Применить», из сценария (директива remanifold); wait — дождаться Python
     void rebuild(const std::string& kind, const std::vector<ManifoldParam>& params, const CameraState& cam, bool wait);
     const std::string& status() const { return status_; }
+    // быстрые шейдеры под текущую структуру объектов (многообразие и камера прежние) — при выходе из режима редактирования
+    void rebuild_structure(const CameraState& cam, bool wait);
+    bool last_rebuild_structural() const { return struct_rebuild_; }
+    const std::vector<std::pair<int, int>>& requested_structure() const { return requested_; }
     bool rebuilding() const { return worker_ != nullptr; }
 
 private:
@@ -113,6 +123,8 @@ private:
     int rc_ = 0;
     std::string log_path_, graph_out_;
 
-    void start_rebuild(const CameraState& cam);
+    bool struct_rebuild_ = false;
+    std::vector<std::pair<int, int>> requested_;
+    void start_rebuild(const CameraState& cam, bool same_manifold);
     void save(const std::string& path, const CameraState& cam);
 };

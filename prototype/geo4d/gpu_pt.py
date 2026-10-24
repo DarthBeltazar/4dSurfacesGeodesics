@@ -63,10 +63,12 @@ def pt_camera_buffer(scene: Scene, cam, *args, **kw):
     return np.concatenate([camera_buffer(cam, *args, **kw), object_rows(scene)])
 
 
-def scene_header(scene: Scene) -> str:
-    """Данные многообразия для трассировщика: плоские зоны (M29). Объекты — в буфере (object_rows)."""
+def scene_header(scene: Scene, dynamic=False) -> str:
+    """Плоские зоны (M29) и структура объектов (число, виды, оси полупространств) — при компиляции: циклы по объектам
+    разворачиваются, ветви по виду сворачиваются. Параметры объектов (центры, размеры, материалы) — строки object_rows.
+    dynamic — вариант режима редактирования (DD-008): структура тоже из строк, заголовок от объектов не зависит."""
     L = ["// Сгенерировано geo4d.gpu_pt.scene_header из описания сцены прототипа — не редактировать.",
-         f"#define PT_MAXOBJ {PT_MAXOBJ}"]
+         f"#define PT_MAXOBJ {PT_MAXOBJ}", f"#define PT_DYNAMIC {int(dynamic)}"]
     fz = scene.flat
     if fz is not None:
         L += ["#define PT_HAS_FLAT 1", f"#define PT_NBALL {len(fz.centers)}", f"static const float PT_RHO0 = {_f(fz.rho0)};",
@@ -74,12 +76,35 @@ def scene_header(scene: Scene) -> str:
     else:
         L += ["#define PT_HAS_FLAT 0", "#define PT_NBALL 0", "static const float PT_RHO0 = 0;",
               "static const float3 PT_BALL_C[1] = { float3(0) };"]
+    if dynamic:
+        return "\n".join(L) + "\n"
+    objs = scene.objs
+    L += [f"#define PT_NOBJ {len(objs)}",
+          _arr("int", "PT_ISPLANE", ["1" if o.spec[0] == "plane" else "0" for o in objs], len(objs)),
+          "__generic<T : IReal> T obj_g(int k, T x, T y, T z, T w)\n{"]
+    for k, o in enumerate(objs):
+        kind = o.spec[0]
+        if kind == "ball4":
+            L.append(f"    if (k == {k}) {{ float4 c = obj_c({k}); return jlength4(x - c.x, y - c.y, z - c.z, w - c.w) - obj_s({k}).y; }}")
+        elif kind == "torus":
+            L.append(f"    if (k == {k}) {{ float4 c = obj_c({k}), s = obj_s({k}); "
+                     f"return jlength3(jlength2(x - c.x, y - c.y) - s.y, z - c.z, w - c.w) - s.z; }}")
+        elif kind == "plane":
+            L.append(f"    if (k == {k}) {{ float4 s = obj_s({k}); return s.w * ({'xyzw'[o.spec[1]]} - s.z); }}")
+        else:
+            raise ValueError(f"нет вида объекта {kind} на GPU")
+    L.append("    return T.cst(1e30);\n}")
     return "\n".join(L) + "\n"
 
 
-def write_header(scene: Scene):
+def structure_key(scene: Scene):
+    """Структура объектов, зашитая в шейдер: (вид, ось полупространства) по порядку. Её смена — перегенерация."""
+    return tuple((o.spec[0], o.spec[1] if o.spec[0] == "plane" else -1) for o in scene.objs)
+
+
+def write_header(scene: Scene, dynamic=False):
     """Пишет заголовок в gpu/build/gen/<хэш>/pt_scene.slang и возвращает каталог для -I."""
-    text = scene_header(scene)
+    text = scene_header(scene, dynamic)
     d = GEN / hashlib.sha256(text.encode()).hexdigest()[:16]
     d.mkdir(parents=True, exist_ok=True)
     (d / "pt_scene.slang").write_text(text, encoding="utf-8")
@@ -329,11 +354,12 @@ I_SEED, I_USE_DEN, I_BGRA, I_EXPOSURE = 1, 20, 21, 22     # индексы push-
 
 
 def app_graph(scene: Scene, cam, td, p: GPUPT = GPUPT(), nfb_move=8, speed=1.0, fmt="bc6h", hidden=False, vsync=False,
-              bench=None, margin=0.05, det=None, k_grad=2.0, dumps=(), record=None, editor=None, edits=()):
+              bench=None, margin=0.05, det=None, k_grad=2.0, dumps=(), record=None, editor=None, edits=(), dynamic=False):
     """Граф интерактивного приложения (DD-007): секции move / edit / static / post / snap и директивы app.
     td — каталог для файлов. bench = (файл сценария, json журнала) — режим замера. editor — dict(scene, work_dir, fov,
-    env, python, script, args) для редактора сцен (DD-008); edits — [(кадр, строки объектов)] — горячие правки в
-    сценарии замера (проверка: правка = холодный старт). Возвращает путь к графу."""
+    env, python, script, args) для редактора сцен (DD-008): тогда рядом пишется и граф режима редактирования
+    (dynamic — шейдеры без зашитой структуры объектов, app_graph_dyn.txt, директива editgraph). edits — [(кадр, строки
+    объектов)] — правки в сценарии замера (проверка: правка = холодный старт). Возвращает путь к графу."""
     from pathlib import Path
     from .gpu import cube_for_gpu
     from .gpu_modea import Detector
@@ -341,10 +367,11 @@ def app_graph(scene: Scene, cam, td, p: GPUPT = GPUPT(), nfb_move=8, speed=1.0, 
     det = det or Detector()
     cube = cube_for_gpu(np.asarray(scene.mips[0]))
     N = cam.width * cam.height
-    inc = write_header(scene)
+    inc = write_header(scene, dynamic)
     envb, env_n = env_buffer(scene)
     ptc = gpu.compile_shader("pathtrace.slang", "pt_camera", _defs(scene, 4), include=inc)
-    pts = lambda e: gpu.compile_shader("pathtrace.slang", e, _defs(scene, 0), include=inc)
+    pts = lambda e: gpu.compile_shader("pathtrace.slang", e, {**_defs(scene, 0), "PT_STAGE": int(e == "pt_sample")},
+                                       include=inc)
     cst = gpu.compile_shader("pathtrace.slang", "cam_step", {**_defs(scene), "CAM_STEP": 1}, include=inc)
     snp = gpu.compile_shader("pathtrace.slang", "pt_snap", {**_defs(scene), "CAM_STEP": 1}, include=inc)
     md = lambda k, e: gpu.compile_shader("modea.slang", e, {**_defs(scene), "KERNEL": k})
@@ -394,6 +421,10 @@ def app_graph(scene: Scene, cam, td, p: GPUPT = GPUPT(), nfb_move=8, speed=1.0, 
           f"objrows cam {OBJ_BASE}"] + scene_directives(scene)
     if editor:
         L += editor_directives(scene, editor)
+        if not dynamic:
+            dyn = app_graph(scene, cam, td, p, nfb_move, speed, fmt, margin=margin, det=det, k_grad=k_grad, editor=editor,
+                            dynamic=True)
+            L.append(f"editgraph {dyn}")
     for k, (fi, rows) in enumerate(edits):
         np.save(td / f"edit_rows_{k}.npy", gpu.f32(rows))
         L.append(f"edit {fi} {td / f'edit_rows_{k}.npy'}")
@@ -407,7 +438,7 @@ def app_graph(scene: Scene, cam, td, p: GPUPT = GPUPT(), nfb_move=8, speed=1.0, 
         L.append(f"dump {fi} {d}")
     if record:
         L.append(f"record {record[0]} {record[1]}")
-    path = td / "app_graph.txt"
+    path = td / ("app_graph_dyn.txt" if dynamic else "app_graph.txt")
     path.write_text("\n".join(L) + "\n", encoding="utf-8")
     return path
 
