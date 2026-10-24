@@ -9,6 +9,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <filesystem>
 #include <fstream>
 #include <sstream>
 #include <stdexcept>
@@ -18,6 +19,121 @@ namespace {
 const char* kKinds[] = {"hyperplane", "S3", "spheritorus", "torisphere", "tiger", "ellis", "compact_wh", "two_compact_wh"};
 const char* kKindNames[] = {"гиперплоскость R³", "S³", "сферитор", "ториосфера", "T³ («тигр»)", "червоточина Эллиса",
                             "компактная червоточина", "две компактные червоточины"};
+
+const char* kCompactSpaces[] = {"S3", "spheritorus", "torisphere", "tiger"};       // geo4d.scenefile.COMPACT_SPACES
+
+bool is_compact_space(const std::string& kind) {
+    for (const char* k : kCompactSpaces) if (kind == k) return true;
+    return false;
+}
+
+// ---- JSON (только то, что пишет geo4d.scenefile.save / scene_json) ------------------------------------
+
+struct JVal {
+    enum T { Null, Bool, Num, Str, Arr, Obj } t = Null;
+    double n = 0;
+    bool b = false;
+    std::string s;
+    std::vector<JVal> a;
+    std::vector<std::pair<std::string, JVal>> o;
+    const JVal* get(const std::string& k) const {
+        for (auto& [key, v] : o) if (key == k) return &v;
+        return nullptr;
+    }
+};
+
+struct JParser {
+    const std::string& t;
+    size_t i = 0;
+    [[noreturn]] void fail(const char* what) const {
+        throw std::runtime_error(std::string("JSON: ") + what + " (символ " + std::to_string(i) + ")");
+    }
+    void ws() { while (i < t.size() && std::isspace(static_cast<unsigned char>(t[i]))) ++i; }
+    bool lit(const char* w) {
+        size_t n = std::strlen(w);
+        if (t.compare(i, n, w) != 0) return false;
+        i += n;
+        return true;
+    }
+    std::string str() {
+        if (t[i] != '"') fail("ожидалась строка");
+        std::string out;
+        for (++i; i < t.size() && t[i] != '"'; ++i) {
+            if (t[i] != '\\') { out += t[i]; continue; }
+            if (++i >= t.size()) fail("строка оборвана");
+            char e = t[i];
+            if (e == 'n') out += '\n';
+            else if (e == 't') out += '\t';
+            else if (e == 'u') {                   // \uXXXX → UTF-8 (без суррогатных пар: имена объектов)
+                if (i + 4 >= t.size()) fail("\\u оборвано");
+                unsigned cp = unsigned(std::stoul(t.substr(i + 1, 4), nullptr, 16));
+                i += 4;
+                if (cp < 0x80) out += char(cp);
+                else if (cp < 0x800) { out += char(0xC0 | (cp >> 6)); out += char(0x80 | (cp & 0x3F)); }
+                else { out += char(0xE0 | (cp >> 12)); out += char(0x80 | ((cp >> 6) & 0x3F)); out += char(0x80 | (cp & 0x3F)); }
+            } else out += e;
+        }
+        if (i >= t.size()) fail("строка оборвана");
+        ++i;
+        return out;
+    }
+    JVal val() {
+        ws();
+        if (i >= t.size()) fail("неожиданный конец");
+        JVal v;
+        char c = t[i];
+        if (c == '{') {
+            v.t = JVal::Obj;
+            ++i;
+            ws();
+            if (t[i] == '}') { ++i; return v; }
+            for (;;) {
+                ws();
+                std::string k = str();
+                ws();
+                if (t[i++] != ':') fail("ожидалось ':'");
+                v.o.emplace_back(k, val());
+                ws();
+                if (t[i] == ',') { ++i; continue; }
+                if (t[i++] != '}') fail("ожидалось '}'");
+                return v;
+            }
+        }
+        if (c == '[') {
+            v.t = JVal::Arr;
+            ++i;
+            ws();
+            if (t[i] == ']') { ++i; return v; }
+            for (;;) {
+                v.a.push_back(val());
+                ws();
+                if (t[i] == ',') { ++i; continue; }
+                if (t[i++] != ']') fail("ожидалось ']'");
+                return v;
+            }
+        }
+        if (c == '"') { v.t = JVal::Str; v.s = str(); return v; }
+        if (lit("true")) { v.t = JVal::Bool; v.b = true; return v; }
+        if (lit("false")) { v.t = JVal::Bool; return v; }
+        if (lit("null")) return v;
+        char* end = nullptr;
+        v.n = std::strtod(t.c_str() + i, &end);
+        if (end == t.c_str() + i) fail("ожидалось значение");
+        i = size_t(end - t.c_str());
+        v.t = JVal::Num;
+        return v;
+    }
+};
+
+double jnum(const JVal* v, double dflt) { return v && v->t == JVal::Num ? v->n : dflt; }
+std::string jstr(const JVal* v, const std::string& dflt) { return v && v->t == JVal::Str ? v->s : dflt; }
+void jvec(const JVal* v, float* out, int n) {        // нет — оставить значение по умолчанию
+    if (!v || v->t != JVal::Arr) return;
+    if (int(v->a.size()) != n) throw std::runtime_error("JSON: ожидался вектор из " + std::to_string(n) + " чисел");
+    for (int k = 0; k < n; ++k) out[k] = float(jnum(&v->a[k], 0));
+}
+
+}  // namespace
 
 // параметры по умолчанию — как geo4d.scenefile.MANIFOLDS
 std::vector<ManifoldParam> default_params(const std::string& kind) {
@@ -30,6 +146,8 @@ std::vector<ManifoldParam> default_params(const std::string& kind) {
         return {{"c1", {-4, 0, 0}}, {"c2", {4, 0, 0}}, {"b", {1.0f}}, {"rho0", {3.0f}}, {"W", {1.5f}}};
     return {};
 }
+
+namespace {
 
 std::string num(float v) {
     char b[32];
@@ -57,6 +175,232 @@ std::string json_str(const std::string& s) {
 float max3(const float* v) { return std::max(v[0], std::max(v[1], v[2])); }
 
 }  // namespace
+
+// ---- многообразие: строки для динамических шейдеров (зеркало geo4d.gpu_pt.manifold_rows) ---------------------
+
+std::string manifold_key(const std::string& kind, const std::vector<ManifoldParam>& params, const std::string& env) {
+    std::string k = kind + "|" + (env.empty() ? (is_compact_space(kind) ? "none" : "procedural") : env);
+    for (auto& p : default_params(kind)) {               // параметры по порядку вида, недостающие — по умолчанию
+        const ManifoldParam* q = &p;
+        for (auto& x : params) if (x.key == p.key) q = &x;
+        k += "|" + p.key;
+        for (float v : q->v) k += " " + num(v);
+    }
+    return k;
+}
+
+ManifoldInfo manifold_info(const std::string& kind, const std::vector<ManifoldParam>& params, const std::string& env) {
+    ManifoldInfo mi;
+    static const std::pair<const char*, int> ids[] = {{"hyperplane", 0}, {"S3", 1}, {"spheritorus", 5}, {"torisphere", 6},
+                                                      {"tiger", 7}, {"ellis", 8}, {"compact_wh", 9}, {"two_compact_wh", 10}};
+    int id = -1;
+    for (auto& [k, v] : ids) if (kind == k) id = v;
+    if (id < 0) { mi.err = "нет многообразия " + kind; return mi; }
+    auto p = default_params(kind);
+    for (auto& x : params)
+        for (auto& q : p)
+            if (q.key == x.key && q.v.size() == x.v.size()) q.v = x.v;
+    auto P = [&](const char* k) -> const std::vector<float>& {
+        for (auto& q : p) if (q.key == k) return q.v;
+        throw std::logic_error(k);
+    };
+    auto v = [&](const char* k) { return P(k)[0]; };
+    // geo4d.scenefile.check_params
+    bool ok = true;
+    std::string why;
+    if (kind == "S3") { ok = v("R") > 0; why = "R > 0"; }
+    else if (kind == "spheritorus" || kind == "torisphere") { ok = v("R") > 0 && v("r") > 0 && v("r") < v("R"); why = "0 < r < R"; }
+    else if (kind == "tiger") {
+        ok = v("R1") > 0 && v("R2") > 0 && v("r") > 0 && v("r") < v("R1") && v("r") < v("R2");
+        why = "0 < r < R1, R2";
+    } else if (kind == "ellis") { ok = v("b") > 0; why = "b > 0"; }
+    else if (kind == "compact_wh" || kind == "two_compact_wh") {
+        ok = v("b") > 0 && v("rho0") > 0 && v("W") > 0 && v("b") < v("rho0");
+        why = "0 < b < ρ₀, W > 0";
+        if (ok && kind == "two_compact_wh") {
+            double d2 = 0;
+            for (int i = 0; i < 3; ++i) d2 += double(P("c1")[i] - P("c2")[i]) * double(P("c1")[i] - P("c2")[i]);
+            ok = std::sqrt(d2) > 2.0 * v("rho0");
+            why = "|c₁ − c₂| > 2ρ₀";
+        }
+    }
+    if (!ok) { mi.err = kind + ": недопустимые параметры (нужно " + why + ")"; return mi; }
+    const bool compact = is_compact_space(kind);
+    const std::string e = env.empty() ? (compact ? "none" : "procedural") : env;
+    const int exit = kind == "ellis" ? 1 : 2;
+    // плоские зоны (geo4d.scenefile.build) и SCALE (scenes.slang = Shape.scale)
+    float scale = 1;
+    if (kind == "hyperplane") { mi.flat.has = true; mi.flat.sheets = {0.0f}; }
+    else if (kind == "compact_wh" || kind == "two_compact_wh") {
+        mi.flat.has = true;
+        mi.flat.sheets = {v("W"), -v("W")};
+        mi.flat.rho0 = v("rho0");
+        if (kind == "compact_wh") mi.flat.balls = {{0, 0, 0}};
+        else mi.flat.balls = {{P("c1")[0], P("c1")[1], P("c1")[2]}, {P("c2")[0], P("c2")[1], P("c2")[2]}};
+        scale = v("b");
+    } else if (kind == "S3") scale = v("R");
+    else if (kind == "spheritorus" || kind == "torisphere" || kind == "tiger") scale = v("r");
+    else if (kind == "ellis") scale = v("b");
+    mi.background = mi.flat.has || exit == 1;
+    mi.scale = scale;
+    mi.rows.assign(size_t(kMfRows) * 4, 0.0f);
+    auto row = [&](int i) { return &mi.rows[size_t(i) * 4]; };
+    row(0)[0] = float(id);
+    row(0)[1] = float(exit);
+    row(0)[2] = scale;
+    row(0)[3] = mi.background ? 1.0f : 0.0f;
+    static const std::pair<const char*, std::vector<const char*>> keys[] = {
+        {"S3", {"R"}}, {"spheritorus", {"R", "r"}}, {"torisphere", {"R", "r"}}, {"tiger", {"R1", "R2", "r"}},
+        {"ellis", {"b"}}, {"compact_wh", {"b", "rho0", "W"}}, {"two_compact_wh", {"b", "rho0", "W"}}};
+    for (auto& [k, ks] : keys)
+        if (kind == k)
+            for (size_t i = 0; i < ks.size(); ++i) row(1)[i] = v(ks[i]);
+    if (mi.flat.has) {
+        for (size_t i = 0; i < mi.flat.balls.size() && i < 2; ++i) std::copy(mi.flat.balls[i].begin(), mi.flat.balls[i].end(), row(2 + int(i)));
+        row(4)[0] = 1;
+        row(4)[1] = float(mi.flat.balls.size());
+        row(4)[2] = mi.flat.rho0;
+    }
+    row(4)[3] = e == "none" ? 0.0f : 1.0f;
+    double s_max = 1000.0, ell_max = 0.0;                 // GPUPT.s_max; длина пути компактных — от размера пространства
+    if (kind == "ellis") ell_max = 12.0;
+    if (compact) {
+        double size = kind == "tiger" ? double(v("R1")) / 1.2 : double(v("R"));
+        s_max = std::min(s_max, 8 * 3.14159265358979323846 * size);
+        ell_max = 1e9;
+    }
+    row(5)[0] = float(s_max);
+    row(5)[1] = float(ell_max);
+    mi.ok = true;
+    return mi;
+}
+
+// ---- сцена из JSON (geo4d.scenefile.build без проекций) ----------------------------------------------
+
+SceneDesc read_scene_json(const std::string& path) {
+    std::ifstream f(path, std::ios::binary);
+    if (!f) throw std::runtime_error("не удалось открыть " + path);
+    std::string text((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+    JParser jp{text};
+    JVal d = jp.val();
+    if (d.t != JVal::Obj) throw std::runtime_error("JSON: сцена — не объект");
+    SceneDesc sd;
+    sd.path = path;
+    const JVal* m = d.get("manifold");
+    if (!m || m->t != JVal::Obj) throw std::runtime_error("JSON: нет manifold");
+    sd.kind = jstr(m->get("kind"), "");
+    sd.params = default_params(sd.kind);
+    if (const JVal* ps = m->get("params"))
+        for (auto& [k, pv] : ps->o)
+            for (auto& q : sd.params)
+                if (q.key == k) {
+                    if (pv.t == JVal::Num && q.v.size() == 1) q.v[0] = float(pv.n);
+                    else jvec(&pv, q.v.data(), int(q.v.size()));
+                }
+    sd.env = jstr(d.get("env"), "");
+    static const char* geoms[] = {"ball4", "torus", "plane"};
+    static const char* mats[] = {"diffuse", "metal", "emit"};
+    if (const JVal* os = d.get("objects")) {
+        if (os->a.size() > size_t(kMaxObj)) throw std::runtime_error("объектов больше 32");
+        for (auto& o : os->a) {
+            EdObject e;
+            std::string k = jstr(o.get("kind"), "");
+            e.geom = -1;
+            for (int g = 0; g < 3; ++g) if (k == geoms[g]) e.geom = g;
+            if (e.geom < 0) throw std::runtime_error("нет вида объекта " + k);
+            e.name = jstr(o.get("name"), k);
+            std::replace(e.name.begin(), e.name.end(), ' ', '_');
+            if (e.geom == 2) {
+                e.axis = int(jnum(o.get("axis"), 2));
+                e.offset = float(jnum(o.get("offset"), 0));
+                e.sign = float(jnum(o.get("sign"), 1));
+            } else {
+                jvec(o.get("center"), e.c, 4);
+                if (e.geom == 0) e.a = float(jnum(o.get("r"), 0.5));
+                else { e.a = float(jnum(o.get("R"), 1.0)); e.b = float(jnum(o.get("r"), 0.15)); }
+            }
+            const JVal* on = o.get("on_M");
+            e.on_M = on && on->t == JVal::Bool && on->b;
+            const JVal* mt = o.get("material");
+            std::string mk = jstr(mt ? mt->get("kind") : nullptr, "diffuse");
+            e.mat = -1;
+            for (int g = 0; g < 3; ++g) if (mk == mats[g]) e.mat = g;
+            if (e.mat < 0) throw std::runtime_error("нет материала " + mk);
+            if (mt) {
+                jvec(mt->get("albedo"), e.albedo, 3);
+                e.rough = float(jnum(mt->get("rough"), 0.3));
+                jvec(mt->get("emit"), e.emit, 3);
+            }
+            sd.objs.push_back(e);
+        }
+    }
+    const JVal* c = d.get("camera");
+    float x[4] = {0, 0, 0, 0}, fh[4] = {0, 1, 0, 0}, up[4] = {0, 0, 1, 0}, rh[4] = {0, 0, 0, 0};
+    if (c) {
+        jvec(c->get("x"), x, 4);
+        jvec(c->get("f"), fh, 4);
+        jvec(c->get("up"), up, 4);
+        if (c->get("right")) { jvec(c->get("right"), rh, 4); sd.has_right = true; }
+        sd.fov = float(jnum(c->get("fov"), 75.0));
+    }
+    std::copy(x, x + 4, sd.cam.x);
+    std::copy(fh, fh + 4, sd.cam.f);
+    std::copy(up, up + 4, sd.cam.u);
+    std::copy(rh, rh + 4, sd.cam.r);
+    sd.speed = float(jnum(d.get("speed"), 1.0));
+    return sd;
+}
+
+// ---- касательный базис камеры (geo4d.camera.make_camera) ---------------------------------------------
+
+void tangent_basis(const float nf[4], const float fh[4], const float uh[4], const float rh[4], bool has_r, float f[4],
+                   float u[4], float r[4]) {
+    using V = std::array<double, 4>;
+    auto dot = [](const V& a, const V& b) { return a[0] * b[0] + a[1] * b[1] + a[2] * b[2] + a[3] * b[3]; };
+    auto from = [](const float* a) { return V{a[0], a[1], a[2], a[3]}; };
+    V n = from(nf);
+    double nn = std::sqrt(dot(n, n));
+    for (auto& a : n) a /= nn;
+    // двойной Грам–Шмидт; при вырожденной подсказке — первая координатная ось с устойчивым остатком
+    auto orth = [&](const V& hint, const std::vector<V>& basis) {
+        std::vector<V> cands{hint, {1, 0, 0, 0}, {0, 1, 0, 0}, {0, 0, 1, 0}, {0, 0, 0, 1}};
+        for (auto& cand : cands) {
+            V c = cand;
+            for (int it = 0; it < 2; ++it)
+                for (auto& b : basis) {
+                    double k = dot(c, b);
+                    for (int i = 0; i < 4; ++i) c[i] -= k * b[i];
+                }
+            double l = std::sqrt(dot(c, c)), l0 = std::max(std::sqrt(dot(cand, cand)), 1e-300);
+            if (l > 1e-6 * l0) {
+                for (auto& a : c) a /= l;
+                return c;
+            }
+        }
+        throw std::runtime_error("не удалось построить касательный базис");
+    };
+    V F = orth(from(fh), {n});
+    V U = orth(from(uh), {n, F});
+    V R;
+    if (has_r) R = orth(from(rh), {n, F, U});
+    else {
+        R = orth(V{0, 0, 0, 0}, {n, F, U});          // нулевая подсказка — первая ось с остатком: ±(дополнение)
+        auto det3 = [](double a, double b, double c, double d, double e, double f2, double g, double h, double i) {
+            return a * (e * i - f2 * h) - b * (d * i - f2 * g) + c * (d * h - e * g);
+        };
+        const V* M[4] = {&n, &F, &R, &U};             // det(n, f, r, u) > 0
+        double det = 0;
+        for (int j = 0; j < 4; ++j) {
+            int c[3], k = 0;
+            for (int q = 0; q < 4; ++q) if (q != j) c[k++] = q;
+            double minor = det3((*M[1])[c[0]], (*M[1])[c[1]], (*M[1])[c[2]], (*M[2])[c[0]], (*M[2])[c[1]], (*M[2])[c[2]],
+                                (*M[3])[c[0]], (*M[3])[c[1]], (*M[3])[c[2]]);
+            det += ((j % 2) ? -1.0 : 1.0) * (*M[0])[j] * minor;
+        }
+        if (det < 0) for (auto& a : R) a = -a;
+    }
+    for (int i = 0; i < 4; ++i) { f[i] = float(F[i]); u[i] = float(U[i]); r[i] = float(R[i]); }
+}
 
 const ResPreset kResPresets[] = {{"как окно", 1.0f, 0, 0},          {"3/4 окна", 0.75f, 0, 0},
                                  {"1/2 окна", 0.5f, 0, 0},          {"3840×2160", 0, 3840, 2160},
@@ -248,13 +592,49 @@ std::vector<std::pair<int, int>> structure(const std::vector<EdObject>& objs) {
 }
 
 void Editor::set_config(const EditorConfig& cfg, const float* rows, bool keep_objs) {
-    std::string wd = cfg_.work_dir;                    // перегенерации — в каталоге первого графа (без вложенности)
-    cfg_ = cfg;
-    if (!wd.empty()) cfg_.work_dir = wd;
-    kind_edit_ = cfg.kind;
-    params_edit_ = cfg.params;
-    if (!keep_objs) objs_ = unpack_rows(rows, cfg.names);
+    // keep_objs: сцена — состояние редактора (объекты, многообразие после мгновенной смены, fov, разрешение), граф —
+    // только исполнитель; иначе — сцена нового графа (перегенерация с другим многообразием)
+    if (!keep_objs) {
+        std::string wd = cfg_.work_dir;                // перегенерации — в каталоге первого графа (без вложенности)
+        cfg_ = cfg;
+        if (!wd.empty()) cfg_.work_dir = wd;
+        kind_edit_ = cfg.kind;
+        params_edit_ = cfg.params;
+        objs_ = unpack_rows(rows, cfg.names);
+    }
     if (sel_ >= int(objs_.size()) || sel_ < 0) sel_ = objs_.empty() ? -1 : 0;
+}
+
+SceneDesc Editor::with_manifold(const std::string& kind, const std::vector<ManifoldParam>& params,
+                                const CameraState& cam) const {
+    SceneDesc sd;
+    sd.path = cfg_.scene_path;
+    sd.kind = kind;
+    sd.params = default_params(kind);
+    for (auto& p : params)
+        for (auto& q : sd.params)
+            if (q.key == p.key && q.v.size() == p.v.size()) q.v = p.v;
+    sd.env = kind == cfg_.kind ? cfg_.env : "";          // другой вид — фон по умолчанию для вида
+    sd.objs = objs_;
+    sd.cam = cam;
+    sd.has_right = true;
+    sd.fov = cfg_.fov;
+    sd.speed = cfg_.speed;
+    return sd;
+}
+
+void Editor::commit_scene(const SceneDesc& sd, const ManifoldInfo& mi, const std::vector<EdObject>& objs) {
+    cfg_.kind = sd.kind;
+    cfg_.params = sd.params;
+    cfg_.env = sd.env;
+    cfg_.flat = mi.flat;
+    cfg_.fov = sd.fov;
+    cfg_.speed = sd.speed;
+    cfg_.scene_path = sd.path;
+    kind_edit_ = sd.kind;
+    params_edit_ = sd.params;
+    objs_ = objs;
+    sel_ = objs_.empty() ? -1 : 0;
 }
 
 void Editor::save(const std::string& path, const CameraState& cam) {
@@ -274,6 +654,7 @@ void Editor::start_rebuild(const CameraState& cam, RebuildKind rk) {
     log_path_ = base + ".log";
     rebuild_kind_ = rk;                         // структура объектов или разрешение: многообразие прежнее, камера — та же
     requested_ = structure(objs_);
+    requested_mf_ = same_manifold ? current_manifold_key() : manifold_key(kind_edit_, params_edit_, "");
     const std::string& kind = same_manifold ? cfg_.kind : kind_edit_;
     const auto& params = same_manifold ? cfg_.params : params_edit_;
     std::string env = kind == cfg_.kind ? cfg_.env : "";              // другой вид — фон по умолчанию для вида
@@ -393,7 +774,12 @@ UiActions Editor::draw(const FrameInfo& fi, const CameraState& cam, bool edit_mo
             if (p.v.size() == 3) ImGui::DragFloat3(p.key.c_str(), p.v.data(), 0.02f);
             else ImGui::DragFloat(p.key.c_str(), p.v.data(), 0.01f, 0.0f, 0.0f, "%.3f");
         }
-        if (ImGui::Button("Применить (перекомпиляция)")) start_rebuild(cam, RebuildKind::Manifold);
+        if (fi.instant) {          // DD-009: сразу, в режиме редактирования; быстрые шейдеры — при выходе из него
+            if (ImGui::Button("Применить")) {
+                pending_ = with_manifold(kind_edit_, params_edit_, cam);
+                act.manifold_now = true;
+            }
+        } else if (ImGui::Button("Применить (перекомпиляция)")) start_rebuild(cam, RebuildKind::Manifold);
         ImGui::SameLine();
         if (ImGui::Button("Сброс")) { kind_edit_ = cfg_.kind; params_edit_ = cfg_.params; }
         ImGui::EndDisabled();
@@ -401,9 +787,41 @@ UiActions Editor::draw(const FrameInfo& fi, const CameraState& cam, bool edit_mo
     }
 
     if (ImGui::CollapsingHeader("Файл", ImGuiTreeNodeFlags_DefaultOpen)) {
+        if (fi.instant) {           // DD-009: сцены из каталога файла сцены (scenes/) — открываются сразу
+            if (scene_files_.empty()) {
+                std::error_code ec;
+                auto dir = std::filesystem::path(cfg_.scene_path).parent_path();
+                for (auto& de : std::filesystem::directory_iterator(dir, ec))
+                    if (de.path().extension() == ".json") scene_files_.push_back(de.path().generic_string());
+                std::sort(scene_files_.begin(), scene_files_.end());
+            }
+            auto stem = [](const std::string& p) { return std::filesystem::path(p).stem().string(); };
+            std::string cur = scene_sel_ >= 0 && scene_sel_ < int(scene_files_.size()) ? stem(scene_files_[scene_sel_]) : "сцена…";
+            ImGui::BeginDisabled(busy);
+            if (ImGui::BeginCombo("##scenes", cur.c_str())) {
+                for (int i = 0; i < int(scene_files_.size()); ++i)
+                    if (ImGui::Selectable(stem(scene_files_[i]).c_str(), i == scene_sel_)) {
+                        scene_sel_ = i;
+                        std::snprintf(save_path_, sizeof(save_path_), "%s", scene_files_[i].c_str());
+                    }
+                ImGui::EndCombo();
+            }
+            ImGui::EndDisabled();
+        }
         ImGui::InputText("##path", save_path_, sizeof(save_path_));
         ImGui::BeginDisabled(busy);
         if (ImGui::Button("Сохранить сцену")) save(save_path_, cam);
+        if (fi.instant) {
+            ImGui::SameLine();
+            if (ImGui::Button("Открыть")) {
+                try {
+                    pending_ = read_scene_json(save_path_);
+                    act.load_now = true;
+                } catch (const std::exception& e) {
+                    status_ = std::string("не удалось открыть сцену: ") + e.what();
+                }
+            }
+        }
         ImGui::EndDisabled();
     }
     if (!status_.empty()) ImGui::TextWrapped("%s", status_.c_str());

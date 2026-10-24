@@ -247,9 +247,11 @@ def test_app_dynamic_matches_baked(tmp_path):
 @pytest.mark.skipif(not gpu.available(), reason="нет geo4d_gpu или slangc")
 @pytest.mark.parametrize("bad", [False, True])
 def test_app_remanifold(tmp_path, bad):
-    """Смена параметров многообразия из окна (тот же код, что кнопка «Применить»): хост пишет JSON с текущей камерой,
-    запускает app.py --graph-only, перезагружает граф без закрытия окна и заново импортирует буферы денойзера.
-    Камера на листе w = 1.5 проецируется на новый лист w = W = 2; денойзер после перезагрузки = денойзер через копии."""
+    """Смена параметров многообразия из окна (тот же код, что кнопка «Применить»): сразу — режим редактирования с
+    многообразием из строк (DD-009), камера на листе w = 1.5 проецируется на новый лист w = W = 2 (GPU); выход из него —
+    хост пишет JSON с текущей камерой, запускает app.py --graph-only, перезагружает граф без закрытия окна и заново
+    импортирует буферы денойзера; денойзер после перезагрузки = денойзер через копии. Недопустимые параметры —
+    отказ сразу (C++), без Python."""
     import subprocess
     import sys
     from pathlib import Path
@@ -264,23 +266,24 @@ def test_app_remanifold(tmp_path, bad):
     graph = G.app_graph(sc, cam, tmp_path, speed=speed, hidden=True, bench=(tmp_path / "script.txt", tmp_path / "f.json"),
                         dumps=[(9, tmp_path.as_posix()), (39, tmp_path.as_posix())], editor=ed)
     rho0 = 4.5 if bad else 3.5                               # 4.5: шары кривизны пересекаются (|c₁ − c₂| = 8 < 2ρ₀)
-    graph.write_text(graph.read_text(encoding="utf-8") + f"remanifold 10 two_compact_wh W=2.0 rho0={rho0}\n",
-                     encoding="utf-8")
+    graph.write_text(graph.read_text(encoding="utf-8") + f"remanifold 10 two_compact_wh W=2.0 rho0={rho0}\n"
+                     "editmode 15 off\n", encoding="utf-8")
     r = subprocess.run([str(gpu.EXE), "app", str(graph)], capture_output=True, text=True, encoding="utf-8")
-    if bad:      # в окне — сообщение и старая сцена; в сценарии — ошибка с текстом Python
+    if bad:      # в окне — сообщение и старая сцена; в сценарии — ошибка с текстом (как у Python)
         assert r.returncode != 0 and "недопустимые параметры" in r.stderr, r.stderr
         return
     assert r.returncode == 0, r.stdout + r.stderr
     checks = [float(t.split()[1]) for t in r.stdout.splitlines() if t.startswith("rows_check")]
-    assert len(checks) == 2 and max(checks) < 1e-6              # исходный граф и перегенерированный
+    assert len(checks) == 3 and max(checks) < 1e-6      # исходный граф, режим редактирования, перегенерированный
     edit = json.loads((tmp_path / "edit_1.json").read_text(encoding="utf-8"))
     assert edit["manifold"]["params"]["W"] == 2.0 and edit["manifold"]["params"]["rho0"] == 3.5
     cam0, cam1 = np.load(tmp_path / "cam_9.npy"), np.load(tmp_path / "cam_39.npy")
     assert abs(cam0[0, 3] - 1.5) < 1e-6 and abs(cam1[0, 3] - 2.0) < 1e-5
+    assert np.array_equal(cam1[G.MF_BASE:G.MF_BASE + 6, :3], G.manifold_rows(SF.build(edit)[0])[:6, :3])
     fr, a, n, d = (np.load(tmp_path / f"{k}_39.npy") for k in ["Frame", "AlbF", "NrmF", "Den"])
     ref, _ = gpu.denoise(fr, a, n)
     assert np.max(np.abs(ref - d[..., :3])) < 1e-5
     u = np.load(tmp_path / "Present_39.npy")
     assert (u & 0xFFFFFF).std() > 0
     log = json.loads((tmp_path / "f.json").read_text(encoding="utf-8"))
-    assert len(log) == 40 and log[11]["moving"] and log[-1]["accum"] == 29
+    assert len(log) == 40 and log[11]["moving"] and log[16]["moving"] and log[-1]["accum"] == 24

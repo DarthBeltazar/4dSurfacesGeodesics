@@ -12,6 +12,7 @@
 //   speed <ед./с>                    скорость полёта
 //   objrows <буфер> <строка>         строки объектов (DD-008) в буфере камеры; при запуске хост распаковывает и
 //                                    упаковывает их заново и печатает «rows_check <макс. расхождение>» (C++ = Python)
+//   mfrows <буфер> <строка>          строки многообразия (DD-009) после строк объектов; при запуске — «mf_check» (C++ = Python)
 //   editor / manifold / flat / objname / rebuild — редактор сцен (editor.hpp)
 //   hidden | vsync                   скрытое окно (замеры) / вертикальная синхронизация
 //   fullscreen                       полноэкранный режим (без рамки, на весь экран) при запуске; F11 — переключение
@@ -19,7 +20,9 @@
 //   ui                               оверлей и в режиме замера/дампа (снимок окна с панелями — проверка оверлея)
 //   bench <сценарий> <json>          движение из файла (строка на кадр: a b c ψ θ φ за кадр), журнал времени, выход
 //   edit <кадр> <строки.npy>         в сценарии замера: заменить строки объектов перед кадром (как правка в окне)
-//   remanifold <кадр> <вид> k=v…     в сценарии: смена многообразия как кнопкой «Применить» (ждёт Python, перезагрузка)
+//   remanifold <кадр> <вид> k=v…     в сценарии: смена многообразия как кнопкой «Применить» — сразу в режиме
+//                                    редактирования (DD-009); без графа режима редактирования — Python и перезагрузка
+//   loadscene <кадр> <сцена.json>    в сценарии: открыть сцену, как кнопкой «Открыть» (сразу, режим редактирования)
 //   resize <кадр> <W> <H>            в сценарии: новое разрешение рендера, как в панели «Рендер» (ждёт перегенерацию)
 //   editgraph <граф>                 граф режима редактирования (шейдеры без зашитой структуры объектов, DD-008)
 //   editmode <кадр> on|off           в сценарии: войти в режим редактирования / выйти (ждёт перегенерацию)
@@ -152,11 +155,12 @@ struct AppDirs {
     std::vector<std::pair<uint32_t, std::vector<std::string>>> remanifold;     // кадр, вид, k=v…
     std::vector<std::pair<uint32_t, bool>> editmode;                            // кадр, вкл/выкл
     std::vector<std::array<uint32_t, 3>> resize;                                // кадр, W, H
+    std::vector<std::pair<uint32_t, std::string>> loadscene;                     // кадр, файл сцены
     std::string editgraph;
     uint32_t record_period = 1, W = 0, H = 0;
     size_t i_use_den = 0, i_bgra = 0, i_seed = 1, i_exposure = SIZE_MAX;
     float speed = 1.0f;
-    int obj_base = -1;
+    int obj_base = -1, mf_base = -1;
 };
 
 AppDirs parse_dirs(const GraphProgram& prog) {
@@ -181,6 +185,8 @@ AppDirs parse_dirs(const GraphProgram& prog) {
         else if (w[0] == "edit") d.edits.emplace_back(uint32_t(std::stoul(w.at(1))), w.at(2));
         else if (w[0] == "record") { d.record_path = w.at(1); d.record_period = uint32_t(std::stoul(w.at(2))); }
         else if (w[0] == "objrows") { d.objbuf = w.at(1); d.obj_base = std::stoi(w.at(2)); }
+        else if (w[0] == "mfrows") d.mf_base = std::stoi(w.at(2));
+        else if (w[0] == "loadscene") d.loadscene.emplace_back(uint32_t(std::stoul(w.at(1))), w.at(2));
         else if (w[0] == "editgraph") d.editgraph = w.at(1);
         else if (w[0] == "resize")
             d.resize.push_back({uint32_t(std::stoul(w.at(1))), uint32_t(std::stoul(w.at(2))), uint32_t(std::stoul(w.at(3)))});
@@ -284,7 +290,7 @@ int run_app(const std::string& graph_path) {
             if (!old.present_buf.empty()) {            // перезагрузка: сценарий, дампы и запись — из исходного графа
                 d.bench_in = old.bench_in; d.bench_out = old.bench_out;
                 d.dumps = old.dumps; d.edits = old.edits; d.remanifold = old.remanifold; d.editmode = old.editmode;
-                d.resize = old.resize;
+                d.resize = old.resize; d.loadscene = old.loadscene;
                 d.record_path = old.record_path; d.record_period = old.record_period;
             }
             prog->set_push_u32(d.presentpipe, d.i_bgra, sc.format == VK_FORMAT_B8G8R8A8_UNORM ? 1u : 0u);
@@ -321,6 +327,20 @@ int run_app(const std::string& graph_path) {
                 std::printf("rows_check %.3g\n", md);
                 std::fflush(stdout);
             }
+            // строки многообразия (DD-009): C++ (editor.cpp::manifold_info) = Python (gpu_pt.manifold_rows)
+            auto ec = parse_editor_config(prog->extra());
+            if (d.mf_base >= 0 && !ec.kind.empty()) {
+                ManifoldInfo mi = manifold_info(ec.kind, ec.params, ec.env);
+                Buffer h = ctx.create_buffer(size_t(kMfRows) * 16, true);
+                ctx.copy_buffer(prog->buffer(d.objbuf), h, h.size, size_t(d.mf_base) * 16, 0);
+                const float* R = static_cast<const float*>(h.mapped);
+                double md = mi.ok ? 0 : 1e30;
+                for (size_t i = 0; mi.ok && i < 4 * 6 - 1; ++i)          // без невязки (5.w) и нормали (строка 6)
+                    md = std::max(md, double(std::fabs(mi.rows[i] - R[i])) / std::max(1.0, double(std::fabs(R[i]))));
+                ctx.destroy_buffer(h);
+                std::printf("mf_check %.3g\n", md);
+                std::fflush(stdout);
+            }
         };
         load(graph_path);
         bool use_den = has_den;
@@ -334,12 +354,24 @@ int run_app(const std::string& graph_path) {
         std::string baked_path = graph_path, dyn_path = d.editgraph;
         std::vector<std::pair<int, int>> baked_struct;
         bool edit_mode = false, pending_exit = false, force_edit = false;
+        // многообразие, зашитое в быстрые шейдеры (DD-009: после мгновенной смены выход из режима редактирования их
+        // перегенерирует); есть ли у текущего многообразия фон — секции кадра с режимом A или без (_nobg)
+        std::string baked_mf;
+        bool mf_bg = true;
+        auto read_bg = [&]() {
+            if (d.mf_base < 0) return;
+            ctx.copy_buffer(prog->buffer(d.objbuf), cam_host, 16, size_t(d.mf_base) * 16, 0);
+            mf_bg = static_cast<const float*>(cam_host.mapped)[3] != 0;
+        };
         if (editor_on) {
             editor = std::make_unique<Editor>(parse_editor_config(prog->extra()));
             editor->set_config(parse_editor_config(prog->extra()), read_rows());
             baked_struct = structure(editor->objects());
+            baked_mf = editor->current_manifold_key();
         }
-        // смена графа без закрытия окна; keep_cam — камера старого графа побитово, ed_rows — объекты редактора
+        read_bg();
+        // смена графа без закрытия окна; keep_cam — камера старого графа побитово, ed_rows — сцена редактора (объекты,
+        // многообразие и fov после мгновенной смены, DD-009)
         auto switch_graph = [&](const std::string& path, bool keep_cam, bool ed_rows) {
             ctx.copy_buffer(prog->buffer("cam"), cam_host, 64);
             std::vector<uint8_t> camb(static_cast<uint8_t*>(cam_host.mapped), static_cast<uint8_t*>(cam_host.mapped) + 64);
@@ -351,7 +383,29 @@ int run_app(const std::string& graph_path) {
                 std::memcpy(cam_host.mapped, camb.data(), 64);
                 ctx.copy_buffer(cam_host, prog->buffer("cam"), 64);
             }
+            if (ed_rows && d.mf_base >= 0) {
+                const EditorConfig& ec = editor->config();
+                ManifoldInfo mi = manifold_info(ec.kind, ec.params, ec.env);
+                if (mi.ok) {
+                    Buffer h = ctx.create_buffer(mi.rows.size() * 4, true);
+                    std::memcpy(h.mapped, mi.rows.data(), h.size);
+                    ctx.copy_buffer(h, prog->buffer(d.objbuf), h.size, 0, size_t(d.mf_base) * 16);
+                    ctx.destroy_buffer(h);
+                }
+                const float gfov = parse_editor_config(prog->extra()).fov;
+                if (keep_cam && ec.fov != gfov) {     // fov сцены, открытой в окне, — строки 4 и 6 (tf, θ_pix)
+                    Buffer h = ctx.create_buffer(128, true);
+                    ctx.copy_buffer(prog->buffer(d.objbuf), h, 128);
+                    float* R = static_cast<float*>(h.mapped);
+                    const double tf = std::tan(double(ec.fov) * (3.14159265358979323846 / 180.0) / 2.0);
+                    R[16] = float(tf);
+                    R[24] = float(2.0 * tf / double(R[17]));
+                    ctx.copy_buffer(h, prog->buffer(d.objbuf), 128);
+                    ctx.destroy_buffer(h);
+                }
+            }
             editor->set_config(parse_editor_config(prog->extra()), read_rows(), ed_rows);
+            read_bg();
             use_den = use_den && has_den;
             force_edit = true;
         };
@@ -362,13 +416,90 @@ int run_app(const std::string& graph_path) {
         };
         auto exit_edit = [&](const CameraState& cam, bool wait) {
             if (!edit_mode || editor->rebuilding()) return;
-            if (structure(editor->objects()) == baked_struct) {      // структура прежняя — быстрый граф уже есть
+            if (structure(editor->objects()) == baked_struct && editor->current_manifold_key() == baked_mf) {
+                // структура и многообразие прежние — быстрый граф уже есть
                 switch_graph(baked_path, true, true);
                 edit_mode = false;
             } else {
                 pending_exit = true;
                 editor->rebuild_structure(cam, wait);
             }
+        };
+        // DD-009: сцена с другим многообразием (файл или панель) — сразу, в графе режима редактирования (шейдеры с
+        // многообразием из строк): строки камеры (подсказки), объектов и многообразия → pt_snap проецирует точку
+        // камеры и центры on_M на новое M → касательный базис (как make_camera) → кадр секцией edit. Камера не
+        // проецируется (Ньютон не сошёлся) — всё возвращается как было, сообщение в окне. false — не применено.
+        auto apply_scene = [&](const SceneDesc& sd, bool from_file) -> bool {
+            const auto t_apply = std::chrono::steady_clock::now();
+            ManifoldInfo mi = manifold_info(sd.kind, sd.params, sd.env);
+            if (!mi.ok) { editor->set_status(mi.err + " — сцена не изменена"); return false; }
+            if (dyn_path.empty() || d.mf_base < 0) { editor->set_status("нет графа режима редактирования"); return false; }
+            if (!edit_mode) {
+                enter_edit();
+                edit_mode = true;
+            }
+            const size_t nb = size_t(d.mf_base + kMfRows) * 16;
+            Buffer save = ctx.create_buffer(nb, true), h = ctx.create_buffer(nb, true);
+            Buffer& camb = prog->buffer(d.objbuf);
+            ctx.copy_buffer(camb, save, nb);
+            std::memcpy(h.mapped, save.mapped, nb);
+            float* R = static_cast<float*>(h.mapped);
+            std::copy(sd.cam.x, sd.cam.x + 4, R);
+            std::copy(sd.cam.f, sd.cam.f + 4, R + 4);
+            std::copy(sd.cam.r, sd.cam.r + 4, R + 8);
+            std::copy(sd.cam.u, sd.cam.u + 4, R + 12);
+            if (sd.fov != editor->config().fov) {
+                const double tf = std::tan(double(sd.fov) * (3.14159265358979323846 / 180.0) / 2.0);
+                R[16] = float(tf);
+                R[24] = float(2.0 * tf / double(R[17]));
+            }
+            auto obj_rows = pack_rows(sd.objs, mi.flat);
+            std::copy(obj_rows.begin(), obj_rows.end(), R + size_t(d.obj_base) * 4);
+            std::copy(mi.rows.begin(), mi.rows.end(), R + size_t(d.mf_base) * 4);
+            ctx.copy_buffer(h, camb, nb);
+            prog->set_push_f32("snap", 3, 1.0f);       // pt_snap: и точку камеры
+            prog->run("snap");
+            prog->set_push_f32("snap", 3, 0.0f);
+            ctx.copy_buffer(camb, h, nb);
+            const float* n = R + size_t(d.mf_base + 6) * 4;
+            const float res = R[size_t(d.mf_base + 5) * 4 + 3];
+            bool ok = std::isfinite(res) && std::fabs(res) <= 1e-3f * std::max(1.0f, mi.scale);
+            for (int i = 0; i < 4; ++i) ok = ok && std::isfinite(R[i]) && std::isfinite(n[i]);
+            std::vector<EdObject> objs = sd.objs;
+            if (ok) {
+                try {
+                    float f[4], u[4], r[4];
+                    tangent_basis(n, sd.cam.f, sd.cam.u, sd.cam.r, sd.has_right, f, u, r);
+                    std::copy(f, f + 4, R + 4);
+                    std::copy(r, r + 4, R + 8);
+                    std::copy(u, u + 4, R + 12);
+                } catch (const std::exception&) { ok = false; }
+            }
+            if (ok) {
+                auto snapped = unpack_rows(R + size_t(d.obj_base) * 4, {});
+                for (size_t k = 0; k < objs.size() && k < snapped.size(); ++k)
+                    if (objs[k].on_M && objs[k].geom != 2) std::copy(snapped[k].c, snapped[k].c + 4, objs[k].c);
+                obj_rows = pack_rows(objs, mi.flat);                  // M34 — по центрам на новом M
+                std::copy(obj_rows.begin(), obj_rows.end(), R + size_t(d.obj_base) * 4);
+                ctx.copy_buffer(h, camb, nb);
+            } else {
+                ctx.copy_buffer(save, camb, nb);
+            }
+            ctx.destroy_buffer(save);
+            ctx.destroy_buffer(h);
+            if (!ok) {
+                editor->set_status("камера не проецируется на новое M (Ньютон не сошёлся) — сцена не изменена");
+                return false;
+            }
+            editor->commit_scene(sd, mi, objs);
+            std::printf("apply_scene_ms %.1f\n", ms_since(t_apply));     // вход в режим редактирования + строки + pt_snap
+            std::fflush(stdout);
+            mf_bg = mi.background;
+            if (from_file) speed = sd.speed;
+            force_edit = true;
+            editor->set_status((from_file ? "открыта " + sd.path : "многообразие: " + sd.kind) +
+                               " — режим редактирования; быстрые шейдеры — при выходе из него (Tab)");
+            return true;
         };
         if (overlay) {
             IMGUI_CHECKVERSION();
@@ -533,9 +664,11 @@ int run_app(const std::string& graph_path) {
                     fi.res_choice = res_choice;
                     fi.fullscreen = (SDL_GetWindowFlags(win) & SDL_WINDOW_FULLSCREEN) != 0;
                     fi.interactive = interactive;
+                    fi.instant = !dyn_path.empty() && d.mf_base >= 0;
                     UiActions act = editor->draw(fi, camst, edit_mode, use_den, exposure, speed);
                     if (act.res_choice >= 0) res_choice = act.res_choice;
                     if (act.toggle_fullscreen) SDL_SetWindowFullscreen(win, !fi.fullscreen);
+                    if (act.manifold_now || act.load_now) apply_scene(editor->pending_scene(), act.load_now);
                     if (act.toggle_edit) toggle_req = true;
                     if (act.structural && !edit_mode) enter_edit();      // форма/число объектов — в режиме редактирования
                     if (act.objects_changed) {
@@ -567,7 +700,9 @@ int run_app(const std::string& graph_path) {
             const uint32_t seed = (moved && frame > 0) ? 1000000u + frame : 1000u + (reset ? 0u : accum);
             for (auto& p : d.seedpipes) prog->set_push_u32(p, d.i_seed, seed);
             auto tg = std::chrono::steady_clock::now();
-            auto marks = prog->run(section);
+            std::string sec = section;
+            if (!mf_bg && prog->has_section(sec + "_nobg")) sec += "_nobg";     // компактное пространство: без фона
+            auto marks = prog->run(sec);
             double gpu_ms = ms_since(tg);
             accum = reset ? 1 : accum + 1;
             double den_ms = 0;
@@ -748,8 +883,16 @@ int run_app(const std::string& graph_path) {
                             for (std::string t; std::getline(ss, t, ',');) p.v.push_back(std::stof(t));
                             ps.push_back(p);
                         }
-                        editor->rebuild(w.at(0), ps, camst, true);
+                        if (!dyn_path.empty() && d.mf_base >= 0) {
+                            if (!apply_scene(editor->with_manifold(w.at(0), ps, camst), false))
+                                throw std::runtime_error("remanifold: " + editor->status());
+                        } else {
+                            editor->rebuild(w.at(0), ps, camst, true);
+                        }
                     }
+                for (auto& [fi, path] : d.loadscene)
+                    if (fi == frame && !apply_scene(read_scene_json(path), true))
+                        throw std::runtime_error("loadscene: " + editor->status());
                 for (auto& r : d.resize)
                     if (r[0] == frame) editor->rebuild_resolution(camst, r[1], r[2], true);
                 // разрешение рендера: перегенерация графа (Python, шейдеры из кэша), окно пока масштабирует старый кадр
@@ -775,7 +918,9 @@ int run_app(const std::string& graph_path) {
                         baked_path = next_graph;
                         dyn_path = next_dyn;
                         baked_struct = editor->requested_structure();
-                        const bool same = structure(editor->objects()) == baked_struct;
+                        baked_mf = editor->requested_manifold_key();
+                        const bool same = structure(editor->objects()) == baked_struct &&
+                                          editor->current_manifold_key() == baked_mf;
                         if (pending_exit && same) {
                             switch_graph(baked_path, true, true);
                             edit_mode = false;
@@ -790,6 +935,7 @@ int run_app(const std::string& graph_path) {
                         dyn_path = next_dyn;
                         switch_graph(edit_mode ? dyn_path : baked_path, false, false);
                         baked_struct = structure(editor->objects());
+                        baked_mf = editor->current_manifold_key();
                         pending_exit = false;
                     }
                 }
