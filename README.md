@@ -1,5 +1,14 @@
 # 4D-гиперповерхности и геодезические: рендерер червоточин
 
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-3776AB?logo=python&logoColor=white)
+![JAX](https://img.shields.io/badge/JAX-float64%20prototype-A100FF)
+![C++20](https://img.shields.io/badge/C%2B%2B-20-00599C?logo=cplusplus&logoColor=white)
+![Vulkan](https://img.shields.io/badge/Vulkan-1.4%20compute-AC162C?logo=vulkan&logoColor=white)
+![Slang](https://img.shields.io/badge/shaders-Slang-2C3E50)
+![OptiX](https://img.shields.io/badge/denoiser-OptiX%20(optional)-76B900?logo=nvidia&logoColor=white)
+![Platforms](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-lightgrey)
+
 Как выглядел бы мир, если бы само пространство было искривлено — с червоточиной, ведущей в другую вселенную, или
 замкнуто в трёхмерную сферу, где, глядя вперёд, видишь собственный затылок? Этот проект рисует такие миры
 физически честно: свет идёт по кратчайшим линиям (геодезическим) искривлённого пространства, а картинка
