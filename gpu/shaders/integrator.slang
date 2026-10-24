@@ -160,6 +160,9 @@ struct RayState
 #ifdef PT_OBJECTS
     float4 xp, vp;      // предыдущее принятое состояние (M27)
     float sp;
+    float mix;          // min (g − c_mix·след пикселя) вдоль пути (проход камеры, DD-005 п. 2)
+    uint transport;     // 1 — переносить базис AOV (M32) проекцией на каждом шаге
+    float4 wr, wu;
 #endif
 };
 
@@ -247,6 +250,16 @@ void trace_k(inout RayState st, Params p, uint K)
         if (accept && escaped(st.x, st.v, p)) st.status = DONE_ESCAPE;
 #ifdef PT_OBJECTS
         if (accept && gx < pt_hit_floor(st.x)) st.status = DONE_HIT;    // смена знака g (или |g| у пола округления)
+#if NJ > 0
+        if (accept) st.mix = min(st.mix, gx - pt_footprint(st.E));
+#endif
+        if (accept && st.transport != 0)
+        {
+            // M32: перенос проекцией — dW/ds нормально к M, проекция на новую касательную плоскость убирает ровно эту часть
+            st.wr = normalize(st.wr - dot(st.wr, n) * n - dot(st.wr, st.v) * st.v);
+            st.wu = st.wu - dot(st.wu, n) * n - dot(st.wu, st.v) * st.v - dot(st.wu, st.wr) * st.wr;
+            st.wu = normalize(st.wu);
+        }
 #endif
         if (st.status == RUNNING && st.nacc + st.nrej >= p.n_max) st.status = DONE_NMAX;
     }

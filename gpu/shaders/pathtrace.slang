@@ -25,6 +25,9 @@ struct PTParams
     float ell_max;      // уход для сцен без плоских зон (Эллис)
     uint env_n;         // текселей на грань в таблице фона
     float env_scale;
+    float k_lod;        // M31: множитель раствора отскоков для мипа фона (0 — мип 0)
+    uint use_list;      // 1 — потоки по списку пикселей gPix (n — длина списка)
+    float c_mix;        // проход камеры: «смешанный», если g < c_mix·след (след — 3σ полей пикселя и апертуры)
 };
 
 [[vk::push_constant]] ConstantBuffer<PTParams> pp;
@@ -34,6 +37,14 @@ struct PTParams
 [[vk::binding(3, 0)]] RWStructuredBuffer<float> gEnv;
 [[vk::binding(4, 0)]] SamplerCubeArray<float4> gCube;
 [[vk::binding(5, 0)]] RWStructuredBuffer<float4> gStats;
+[[vk::binding(6, 0)]] RWStructuredBuffer<uint> gPix;       // список пикселей (use_list)
+[[vk::binding(7, 0)]] RWStructuredBuffer<float4> gAlb;     // AOV: Σ альбедо первого попадания
+[[vk::binding(8, 0)]] RWStructuredBuffer<float4> gNrm;     // AOV: Σ нормали в базисе камеры (M32)
+// проход камеры (NJ = 4): выход режима A и класс пикселя
+[[vk::binding(9, 0)]] RWStructuredBuffer<float4> gDir;
+[[vk::binding(10, 0)]] RWStructuredBuffer<float4> gDd;
+[[vk::binding(11, 0)]] RWStructuredBuffer<uint> gStatus;
+[[vk::binding(12, 0)]] RWStructuredBuffer<uint> gClass;    // 0 — фон (режим A), 1 — объект, 2 — смешанный
 
 static const float PI = 3.14159265;
 
@@ -294,7 +305,9 @@ uint flat_flight(inout float4 x, float4 v, inout float s, out int k, inout uint 
 }
 
 // Сегмент от (x, v) до попадания/ухода. straight — весь сегмент прошёл по прямой в плоской зоне (M29).
-uint trace_segment(inout float4 x, inout float4 v, out float s, out int k, float tol, out bool straight, inout float4 stats)
+// wr, wu — базис AOV (M32), переносится при transport (в плоской зоне постоянен).
+uint trace_segment(inout float4 x, inout float4 v, out float s, out int k, float tol, out bool straight, inout float4 stats,
+                   inout float4 wr, inout float4 wu, bool transport)
 {
     s = 0;
     k = -1;
@@ -318,8 +331,10 @@ uint trace_segment(inout float4 x, inout float4 v, out float s, out int k, float
         RayState st;
         st.x = x; st.v = v;
         st.s = 0; st.h = 0; st.nacc = 0; st.nrej = 0; st.npass = 0; st.status = RUNNING;
+        st.mix = 1e30; st.transport = transport ? 1 : 0; st.wr = wr; st.wu = wu;
         p.s_max = pp.s_max - s;
         trace_ray(st, p);
+        wr = st.wr; wu = st.wu;
         stats.y += st.npass;
         straight = false;
         if (st.status == DONE_HIT)
@@ -426,13 +441,15 @@ float3 env_sample(uint sheet, inout uint seed)
     return face_dir(face, (rem % n + urand(seed)) / n, (rem / n + urand(seed)) / n);
 }
 
-float3 env_radiance(float3 d, float4 x, float gamma)
+// M31: мип по раствору, набранному на отскоках (gb); пиксельный след первичного луча уже отфильтрован джиттером
+float3 env_radiance(float3 d, float4 x, float gb)
 {
     float lod = 0;
-    if (pp.k_cone > 0)
+    gb *= pp.k_lod;
+    if (gb > 0)
     {
         Cam c = load_cam(gCam);
-        lod = max(log2(max(gamma, 1e-8) / (PI / (2 * c.cube_n))), 0.0);
+        lod = max(log2(gb / (PI / (2 * c.cube_n))), 0.0);
     }
     return gCube.SampleLevel(float4(d, x.w < 0 ? 1 : 0), lod).rgb * pp.env_scale;
 }
@@ -451,11 +468,12 @@ float light_pdf(float4 p, int k)
 
 // ---- ядро -----------------------------------------------------------------------------------------
 
+#if NJ == 0
 [shader("compute")] [numthreads(64, 1, 1)]
 void pt_sample(uint3 id : SV_DispatchThreadID)
 {
-    uint i = id.x;
-    if (i >= pp.n) return;
+    if (id.x >= pp.n) return;
+    uint i = pp.use_list != 0 ? gPix[id.x] : id.x;
     Cam c = load_cam(gCam);
     float4 acc = gAcc[i];
     uint smp = uint(acc.w);
@@ -472,9 +490,14 @@ void pt_sample(uint3 id : SV_DispatchThreadID)
     float4 x = proj_M(c.x + a);
     float4 n0 = normal_M(x);
     float4 v = normalize(target - dot(target, n0) * n0);
+    // M32: базис камеры для нормали AOV (касательный, ⟂ v), переносится вдоль первичного сегмента
+    float4 wr = normalize(c.r - dot(c.r, n0) * n0 - dot(c.r, v) * v);
+    float4 wu = c.u - dot(c.u, n0) * n0 - dot(c.u, v) * v;
+    wu = normalize(wu - dot(wu, wr) * wr);
+    float3 aov_alb = float3(0), aov_nrm = float3(0);
 
     float3 T = float3(1), L = float3(0);
-    float w = 0, gamma = c.theta_pix, prev_pdf = 0;
+    float w = 0, gamma = c.theta_pix, gb = 0, prev_pdf = 0;
     bool prev_flat = false;
     float4 stats = float4(0);
     g_c_hit = pp.c_hit;
@@ -486,7 +509,7 @@ void pt_sample(uint3 id : SV_DispatchThreadID)
         float s;
         int k;
         bool straight;
-        uint seg = trace_segment(x, v, s, k, tol, straight, stats);
+        uint seg = trace_segment(x, v, s, k, tol, straight, stats, wr, wu, depth == 0);
         stats.w += 1;
         w += gamma * s;                                                             // M31
         if (seg == SEG_CAP) { stats.x += 1; break; }
@@ -496,11 +519,20 @@ void pt_sample(uint3 id : SV_DispatchThreadID)
             float wgt = 1;
             if (pp.nee != 0 && PT_HAS_FLAT != 0 && prev_flat && straight)
                 wgt = mis_w(prev_pdf, env_pdf(x0.w < 0 ? 1 : 0, v0.xyz), false);
-            L += T * wgt * env_radiance(d, x, gamma);
+            float3 Le = env_radiance(d, x, gb);
+            L += T * wgt * Le;
+            if (depth == 0) aov_alb = saturate(Le);
             break;
         }
         // попадание в объект k
         float3 em = MAT_E[k].rgb;
+        if (depth == 0)
+        {
+            float4 gk = obj_grad(k, x), nM = normal_M(x);
+            float4 ngk = normalize(gk - dot(gk, nM) * nM);
+            aov_alb = int(MAT_A[k].w) == 2 ? saturate(em) : MAT_A[k].rgb;
+            aov_nrm = float3(dot(ngk, wr), dot(ngk, wu), -dot(ngk, v));
+        }
         if (any(em > 0))
         {
             float wgt = 1;
@@ -556,7 +588,7 @@ void pt_sample(uint3 id : SV_DispatchThreadID)
                 float4 wi4 = float4(d3, 0);
                 float3 f = bsdf_eval(kind, alb, rough, wo, float3(dot(wi4, t1), dot(wi4, t2), dot(wi4, ng)), pb);
                 if (any(f > 0) && ray_clear_balls(xo, wi4) && !line_blocked(xo, wi4, 1e30, -1, eh))
-                    L += T * f * env_radiance(d3, x, 0.0) / pe * mis_w(pe, pb, true);
+                    L += T * f * env_radiance(d3, x, gb) / pe * mis_w(pe, pb, true);
             }
         }
         float3 wgt;
@@ -570,7 +602,9 @@ void pt_sample(uint3 id : SV_DispatchThreadID)
         v = normalize(wi4 - dot(wi4, no) * no);
         prev_flat = flat_here;
         prev_pdf = pb;
-        gamma += pp.k_cone * (kind == 0 ? 1.0 : 2 * rough);                          // M31
+        float dg = pp.k_cone * (kind == 0 ? 1.0 : 2 * rough);                         // M31
+        gamma += dg;
+        gb += dg;
         if (depth + 1 >= pp.rr_depth)
         {
             float q = clamp(max(T.x, max(T.y, T.z)), 0.05, 0.95);
@@ -581,4 +615,124 @@ void pt_sample(uint3 id : SV_DispatchThreadID)
     gAcc[i] = acc + float4(L, 1);
     gAcc2[i] = gAcc2[i] + float4(L * L, 0);
     gStats[i] = gStats[i] + stats;
+    gAlb[i] = gAlb[i] + float4(aov_alb, 0);
+    gNrm[i] = gNrm[i] + float4(aov_nrm, 0);
 }
+#endif
+
+// ---- проход камеры (DD-005 п. 2): центральные лучи с полями Якоби, объекты, класс пикселя -----------------
+#if NJ > 0
+static float g_fp_pix, g_fp_ap;     // 3σ пикселя (в пикселях) и 3σ апертуры
+
+// c_mix · радиус следа: поля пикселя (J₂, J₃ — на пиксель) и апертуры (J₀, J₁ — на единицу сдвига линзы)
+float pt_footprint(Fields E)
+{
+    float rp = g_fp_pix * max(length(E.J[2]), length(E.J[3]));
+    float ra = g_fp_ap * max(length(E.J[0]), length(E.J[1]));
+    return pp.c_mix * max(rp, ra);
+}
+
+// прямой пролёт с переносом полей (M25) и учётом следа: 0 — уход, 1 — попадание, 2 — вход в шар, 3 — потолок
+uint flat_flight_E(inout float4 x, float4 v, inout float s, inout Fields E, inout float mix)
+{
+    g_sbase = 0;
+    for (int it = 0; it < 1024; it++)
+    {
+        float eps = pt_eps_hit(s, x);
+        int k;
+        float g = gmin_k(x, k);
+        mix = min(mix, g - pt_footprint(E));
+        if (g < pt_hit_floor(x)) return 1;
+        if (ray_clear_balls(x, v) && ahead_clear(x, v)) return 0;
+        float tb = ball_entry(x, v), step = g + 0.5 * eps;
+        float t = min(tb, step);
+        x += t * v;
+        s += t;
+        [ForceUnroll] for (int j = 0; j < 4; j++) E.J[j] += t * E.Jp[j];
+        if (tb <= step) return 2;
+        if (s > pp.s_max) return 3;
+    }
+    return 3;
+}
+
+[shader("compute")] [numthreads(64, 1, 1)]
+void pt_camera(uint3 id : SV_DispatchThreadID)
+{
+    Cam c = load_cam(gCam);
+    uint W = uint(c.width), H = uint(c.height);
+    uint i = id.x;
+    if (i >= W * H) return;
+    float2 uv = pixel_uv(c, i % W, i / W);
+    // M16: направление пикселя и начальные данные полей (как modea_central)
+    float4 D = c.f + uv.x * c.r + uv.y * c.u;
+    float nD = length(D);
+    float4 d0 = D / nD;
+    float Pl = c.focus / dot(d0, c.f);
+    float dpix = 2 * c.tf / c.width;
+    float4 pr = c.r - dot(d0, c.r) * d0, pu = c.u - dot(d0, c.u) * d0;
+    Fields E;
+    E.J[0] = c.r; E.J[1] = c.u; E.J[2] = float4(0); E.J[3] = float4(0);
+    E.Jp[0] = -pr / Pl; E.Jp[1] = -pu / Pl; E.Jp[2] = dpix * pr / nD; E.Jp[3] = dpix * pu / nD;
+    g_fp_pix = 3 * c.sigma_pix; g_fp_ap = 3 * c.sigma_ap;
+    g_c_hit = pp.c_hit; g_w0 = 0; g_gamma = c.theta_pix;
+    Params p;
+    p.n = 1; p.tol = min(pp.tol_max, pp.tol_kappa * c.theta_pix); p.h0 = 0.05 * SCALE; p.s_max = pp.s_max; p.h_max = 0;
+    p.h_min = 1e-7; p.n_max = pp.n_max; p.escape_mode = PT_HAS_FLAT != 0 ? 3 : 1; p.escape_param = pp.ell_max;
+    p.alpha = -1; p.xscale = 0; p.fixed = 0;
+    float4 x = c.x, v = d0;
+    float s = 0, mix = 1e30;
+    uint cls = 0;
+    float4 stats = float4(0);
+    for (int part = 0; part < 64; part++)
+    {
+        if (PT_HAS_FLAT != 0 && in_flat(x))
+        {
+            uint r = flat_flight_E(x, v, s, E, mix);
+            if (r == 0) break;
+            if (r == 1) { cls = 1; break; }
+            if (r == 3) { cls = 2; break; }
+        }
+        g_sbase = s;
+        RayState st;
+        st.x = x; st.v = v; st.E = E;
+        st.s = 0; st.h = 0; st.nacc = 0; st.nrej = 0; st.npass = 0; st.status = RUNNING;
+        st.mix = 1e30; st.transport = 0; st.wr = float4(0); st.wu = float4(0);
+        p.s_max = pp.s_max - s;
+        trace_ray(st, p);
+        stats.y += st.npass;
+        mix = min(mix, st.mix);
+        x = st.x; v = st.v; E = st.E; s += st.s;
+        if (st.status == DONE_HIT) { cls = 1; break; }
+        if (st.status != DONE_ESCAPE) { cls = 2; break; }
+        if (PT_HAS_FLAT == 0) break;
+    }
+    if (cls == 0 && mix < 0) cls = 2;
+    gClass[i] = cls;
+    gStatus[i] = cls == 0 ? DONE_ESCAPE : DONE_HIT;
+    gStats[i] = float4(s, mix, stats.y, 0);
+    if (cls != 0) { gDir[i] = float4(0, 0, 1, x.w >= 0 ? 1.0 : -1.0); [ForceUnroll] for (int k = 0; k < 4; k++) gDd[4 * i + k] = float4(0); return; }
+    // ∂v = J′ − ⟨SJ, v⟩n (M17); d∞ и ∂d∞ дуальными числами (M24) — как modea_central
+    Jet15 s15[4];
+    [ForceUnroll] for (int k = 0; k < 4; k++) { float4 e = float4(0); e[k] = 1; s15[k] = Jet15(x[k], e, float4x4(0)); }
+    Jet15 Jx = sdf(s15[0], s15[1], s15[2], s15[3]);
+    float gn = length(Jx.g);
+    float4 n = Jx.g / gn;
+    float4 Pv = v - dot(v, n) * n;
+    float4 dv[4];
+    [ForceUnroll] for (int k = 0; k < 4; k++)
+    {
+        float4 PJ = E.J[k] - dot(E.J[k], n) * n;
+        dv[k] = E.Jp[k] - dot(PJ, mul(Jx.H, Pv)) / gn * n;
+    }
+    Dual4 X[4], V[4];
+    [ForceUnroll] for (int k = 0; k < 4; k++)
+    {
+        X[k] = Dual4(x[k], float4(E.J[0][k], E.J[1][k], E.J[2][k], E.J[3][k]));
+        V[k] = Dual4(v[k], float4(dv[0][k], dv[1][k], dv[2][k], dv[3][k]));
+    }
+    Dual4 d[3];
+    exit_dir(X, V, d);
+    gDir[i] = float4(d[0].a, d[1].a, d[2].a, x.w >= 0 ? 1.0 : -1.0);
+    [ForceUnroll] for (int k = 0; k < 4; k++) gDd[4 * i + k] = float4(d[0].b[k], d[1].b[k], d[2].b[k], 0);
+}
+#endif
