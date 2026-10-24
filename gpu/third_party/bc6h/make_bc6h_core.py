@@ -2,7 +2,7 @@
 и без CSMain (они заменены своей точкой входа в bc6h_encode.slang)."""
 from pathlib import Path
 
-root = Path(r"C:\Users\AlexandrGeorgiev\CLionProjects\4dSurfacesHeodesics\gpu")
+root = Path(__file__).resolve().parents[2]  # gpu/
 src = (root / "third_party" / "bc6h" / "compress.hlsl").read_text(encoding="utf-8").splitlines()
 start_res = next(i for i, l in enumerate(src) if l.startswith("Texture2D SrcTexture"))
 end_cb = next(i for i in range(start_res, len(src)) if src[i].startswith("};"))

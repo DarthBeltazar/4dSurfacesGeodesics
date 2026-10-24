@@ -1,7 +1,0 @@
-<component name="ProjectRunConfigurationManager">
-  <configuration default="false" name="geo4d_gpu info" type="CMakeRunConfiguration" factoryName="Application" folderName="Хост (C++)" PROGRAM_PARAMS="info" REDIRECT_INPUT="false" ELEVATE="false" USE_EXTERNAL_CONSOLE="false" EMULATE_TERMINAL="false" WORKING_DIR="file://$PROJECT_DIR$" PASS_PARENT_ENVS_2="true" PROJECT_NAME="geo4d_gpu" TARGET_NAME="geo4d_gpu" RUN_TARGET_PROJECT_NAME="geo4d_gpu" RUN_TARGET_NAME="geo4d_gpu">
-    <method v="2">
-      <option name="com.jetbrains.cidr.execution.CidrBuildBeforeRunTaskProvider$BuildBeforeRunTask" enabled="true" />
-    </method>
-  </configuration>
-</component>

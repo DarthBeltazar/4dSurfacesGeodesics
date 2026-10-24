@@ -6,3 +6,13 @@ __pycache__/
 gpu/build/
 results/**/*.mp4
 gpu/build-debug/
+.pytest_cache/
+# общие конфигурации IDE не публикуются: генерируются prototype/scripts/ide_configs.py
+.run/
+# полноразмерные дампы кадров окна (десятки МБ); превью — PNG рядом
+results/**/Frame_*.npy
+results/**/Den_*.npy
+results/**/AlbF_*.npy
+results/**/NrmF_*.npy
+results/**/Present_*.npy
+results/**/swapchain_*.npy

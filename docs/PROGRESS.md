@@ -15,7 +15,7 @@
 ## Пользователю — один раз в CLion
 1. Python Interpreter → добавить `.venv` (иначе Python-конфигурации не запускаются).
 2. CMake → включить профили `release`/`debug` из пресетов, выключить старый `Debug` (`cmake-build-debug`), Reload.
-3. Правки CLion в `.run/` (`CONFIG_NAME`, пропавший предзапуск) не коммитить.
+3. `.run/` не в git — создаётся запуском `prototype/scripts/ide_configs.py`.
 
 ## Дальше (по желанию)
 1. Проверить Linux с драйвером NVIDIA (OptiX, импорт fd) и macOS — нужны машины.
