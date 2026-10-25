@@ -14,7 +14,10 @@
 
 #include "codegen.hpp"
 #include "npy.hpp"
+#include "scene_graph.hpp"
 #include "shader_compiler.hpp"
+
+#include <nlohmann/json.hpp>
 
 using namespace geo4d;
 
@@ -107,4 +110,47 @@ int run_export_graph(int argc, char** argv) {
     }
     std::printf("%s}\n", js.c_str());
     return failed ? 1 : 0;
+}
+
+int run_eval_graph(int argc, char** argv) {
+    if (argc < 5) throw std::runtime_error("использование: geo4d_gpu eval-graph <сцена> <вход.json> <выход.json>");
+    Dirs d = default_dirs(argv[0]);
+    Scene sc = load_scene(argv[2], false);
+    const Manifold& m = sc.mf;
+    // выражение многообразия: собранное по графу или формула ноды из библиотеки с её параметрами
+    ExprPtr e = m.expr;
+    std::map<std::string, double> vals = m.expr_vals;
+    if (!e) {
+        const NodeDef* def = node_library().find(sc.mf_node);
+        std::vector<std::string> names;
+        for (auto& [k, v] : sc.mf_values) names.push_back(k);
+        e = parse_expr(def->formula, names);
+        vals = sc.mf_values;
+    }
+    std::ifstream fi(argv[3], std::ios::binary);
+    if (!fi) throw std::runtime_error(std::string("не открыть ") + argv[3]);
+    const nlohmann::json in = nlohmann::json::parse(fi);
+    nlohmann::json out, f = nlohmann::json::array(), g = nlohmann::json::array(), H = nlohmann::json::array(),
+                         proj = nlohmann::json::array();
+    for (auto& pt : in.value("points", nlohmann::json::array())) {
+        Vec4 p{pt[0].get<double>(), pt[1].get<double>(), pt[2].get<double>(), pt[3].get<double>()};
+        EvalResult r = eval_expr(e, vals, p);
+        f.push_back(r.f);
+        g.push_back(r.g);
+        H.push_back(r.H);
+        proj.push_back(project(m, p));
+    }
+    out["f"] = f;
+    out["g"] = g;
+    out["H"] = H;
+    out["project"] = proj;
+    nlohmann::json centers = nlohmann::json::array();
+    for (auto& c : m.flat.centers) centers.push_back(c);
+    out["meta"] = {{"kind", m.kind}, {"scale", m.scale}, {"exit", m.exit}, {"compact", m.compact},
+                   {"flat", m.flat.has}, {"sheets", m.flat.sheets}, {"centers", centers}, {"rho0", m.flat.rho0},
+                   {"s_max", m.has_s_max ? m.s_max : 1000.0}, {"legacy", m.legacy()}};
+    out["mf_scene"] = mf_header(sc);
+    out["include"] = u8(write_header(d, sc, false, true));
+    std::ofstream(argv[4], std::ios::binary) << out.dump();
+    return 0;
 }

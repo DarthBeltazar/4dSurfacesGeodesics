@@ -50,7 +50,7 @@ SLANGC = _find_slangc()
 
 SCENE_IDS = {"hyperplane": 0, "S3": 1, "S2xR": 2, "S1xR2": 3, "ellipsoid": 4, "spheritorus": 5, "torisphere": 6,
              "tiger": 7, "ellis": 8, "compact_wh": 9, "two_compact_wh": 10,
-             "dynamic": 11}             # DD-009: вид и параметры многообразия — из строк буфера камеры (окно)
+             "dynamic": 11, "graph": 12}             # DD-009: вид и параметры многообразия — из строк буфера камеры (окно)
 
 
 def available():
@@ -133,12 +133,14 @@ def groups_for(n, local=64):
 
 def trace(scene, X, V, E=None, tol=1e-6, h0=0.05, s_max=10.0, h_max=0.0, h_min=1e-7, n_max=100_000,
           escape_mode=0, escape_param=0.0, alpha=-1.0, xscale=0.0, fixed=False, nj=0, jacobi_jet="jet15",
-          repeat=1):
-    """Мегаядро trace.slang: лучи (N, 4) [+ поля (N, 2, 4, 4)] → x, v, E, статистика, статус, отчёт."""
+          repeat=1, include=None):
+    """Мегаядро trace.slang: лучи (N, 4) [+ поля (N, 2, 4, 4)] → x, v, E, статистика, статус, отчёт.
+    include — каталог сгенерированного mf_scene.slang (многообразие графа сцены, DD-011; scene не важен)."""
     X, V = f32(X), f32(V)
     N = len(X)
-    defs = {"SCENE": SCENE_IDS[scene], "NJ": nj, "JACOBI_JET": 1 if jacobi_jet == "hvp" else 0}
-    spv = compile_shader("trace.slang", "trace", defs)
+    defs = {"SCENE": SCENE_IDS[scene] if include is None else SCENE_IDS["graph"], "NJ": nj,
+            "JACOBI_JET": 1 if jacobi_jet == "hvp" else 0}
+    spv = compile_shader("trace.slang", "trace", defs, include=include)
     Ebuf = f32(np.asarray(E).reshape(N * 8, 4)) if nj else np.zeros((1, 4), np.float32)
     push = [("u32", N), ("f32", tol), ("f32", h0), ("f32", s_max), ("f32", h_max), ("f32", h_min), ("u32", n_max),
             ("u32", escape_mode), ("f32", escape_param), ("f32", alpha), ("f32", xscale), ("u32", int(fixed))]

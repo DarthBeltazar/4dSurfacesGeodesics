@@ -251,14 +251,16 @@ std::string object_g_line(const Object& o, size_t k) {
 
 std::string mf_header(const Scene& sc) {
     const NodeDef* def = node_library().find(sc.mf_node);
-    if (!def || def->formula.empty()) throw std::runtime_error("нет формулы ноды многообразия «" + sc.mf_node + "»");
+    // формула: у нынешних видов — из библиотеки; у листов с горловинами и mf.formula — собранная по графу (DD-011)
+    const std::string formula = !sc.mf.formula.empty() ? sc.mf.formula : def ? def->formula : "";
+    if (!def || formula.empty()) throw std::runtime_error("нет формулы ноды многообразия «" + sc.mf_node + "»");
     std::vector<std::string> names;
     std::map<std::string, std::string> pm;
     for (auto& [n, v] : sc.mf_values) {
         names.push_back(n);
         pm[n] = param_lit(v);
     }
-    const std::string sdf = emit_slang(parse_expr(def->formula, names), pm);
+    const std::string sdf = emit_slang(parse_expr(formula, names), pm);
     // hcap (DD-001, M37): Эллис — 0.5|q|; плоские зоны с шарами кривизны — расстояние до ближайшего шара, не меньше ¼ℓ_s
     const Manifold& m = sc.mf;
     std::string hcap = "SCALE";
@@ -498,6 +500,14 @@ std::vector<std::string> scene_directives(const Scene& sc) {
 }
 
 std::vector<std::string> editor_directives(const GraphCtx& c) {
+    // без вида scenes.slang многообразие в редакторе DD-008/009 не правится (нет строк многообразия) — только editor
+    if (!c.sc.mf.legacy()) {
+        auto q = [](const std::string& s) {
+            for (char ch : s) if (std::isspace(static_cast<unsigned char>(ch))) return "\"" + s + "\"";
+            return s;
+        };
+        return {"editor " + q(posix(c.scene_path)) + " " + q(posix(c.td)) + " " + fmt9g(c.fov)};
+    }
     std::vector<std::string> w = {"manifold", c.sc.mf.kind, c.sc.env_field.empty() ? "-" : c.sc.env_field};
     for (auto& [k, v] : c.sc.mf.params) {
         std::vector<std::string> s;
@@ -520,7 +530,8 @@ std::vector<std::string> build(const GraphCtx& c, bool dynamic, std::map<std::st
     const EnvMap* env = &c.procedural;
     if (!dynamic && sc.env == "none") { none = constant_env(0.0f, 8); env = &none; }
     // DD-011: многообразие и объекты быстрого графа — из формул графа сцены (режим A тоже берёт mf_scene.slang)
-    const bool graph = !dynamic && !c.o.legacy_codegen && !sc.mf_node.empty();
+    // многообразие без вида scenes.slang (листы с горловинами, формула) — только из графа
+    const bool graph = !dynamic && !sc.mf_node.empty() && (!c.o.legacy_codegen || !sc.mf.legacy());
     fs::path inc = write_header(c.d, sc, dynamic, graph);
     auto df = [&](int nj) { return defines(sc, nj, dynamic, graph); };
     auto with = [](Defines d, const std::string& k, int v) { d.emplace_back(k, std::to_string(v)); return d; };
@@ -630,7 +641,7 @@ std::vector<std::string> build(const GraphCtx& c, bool dynamic, std::map<std::st
     auto ed = editor_directives(c);
     L.insert(L.end(), ed.begin(), ed.end());
     if (!dynamic) {                               // граф режима редактирования — без vsync/fullscreen, как в Python
-        L.push_back("editgraph " + qpath(c.td / "app_graph_dyn.txt"));
+        if (sc.mf.legacy()) L.push_back("editgraph " + qpath(c.td / "app_graph_dyn.txt"));   // DD-009: только виды scenes.slang
         if (c.o.vsync) L.push_back("vsync");
         if (c.o.fullscreen) L.push_back("fullscreen");
     }
@@ -646,7 +657,7 @@ AppGraph app_graph(const Dirs& d, const Scene& sc, const AppOptions& o, const fs
     AppGraph g;
     GraphCtx c{d, keys, sc, o, work_dir, scene_path, procedural, make_camera(sc.mf, sc.cam, o.width, o.height, fov), fov,
                &g.shaders};
-    g.dyn_lines = build(c, true, g.arrays);       // как в Python: граф режима редактирования пишется первым
+    if (sc.mf.legacy()) g.dyn_lines = build(c, true, g.arrays);   // как в Python: граф режима редактирования — первым
     g.lines = build(c, false, g.arrays);
     return g;
 }

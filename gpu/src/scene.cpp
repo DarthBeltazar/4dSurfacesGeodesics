@@ -174,6 +174,11 @@ double Object::bound() const {
 }
 
 double sdf(const Manifold& m, const Vec4& x, Vec4* grad) {
+    if (m.expr) {                                 // DD-011: формула графа — тем же вычислителем, что geo4d_gpu eval
+        EvalResult r = eval_expr(m.expr, m.expr_vals, x);
+        if (grad) *grad = r.g;
+        return r.f;
+    }
     std::array<D, 4> p;
     for (int i = 0; i < 4; ++i) { p[i].a = x[i]; p[i].g = {0, 0, 0, 0}; p[i].g[i] = 1; }
     D f = eval(m, p);

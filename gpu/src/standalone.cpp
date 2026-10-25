@@ -137,7 +137,8 @@ AppOptions parse_args(const std::vector<std::string>& args, AppOptions o, int* t
 bool is_standalone_args(int argc, char** argv) {
     if (argc < 2) return true;
     std::string a = argv[1];
-    return a.rfind("--", 0) == 0 || (a.size() > 5 && a.substr(a.size() - 5) == ".json");
+    auto ends = [&](const char* s) { std::string t = s; return a.size() > t.size() && a.substr(a.size() - t.size()) == t; };
+    return a.rfind("--", 0) == 0 || ends(".json") || ends(".g4d");     // сцена version 1 или граф (DD-011)
 }
 
 int run_standalone(int argc, char** argv) {

@@ -6,6 +6,8 @@
 
 #include <array>
 #include <map>
+
+#include "expr.hpp"
 #include <string>
 #include <utility>
 #include <vector>
@@ -57,6 +59,12 @@ struct Manifold {
     bool has_ell_max = false;
     double ell_max = 0;
     bool compact = false;                         // COMPACT_SPACES
+    // многообразие из графа без вида scenes.slang (DD-011: листы с горловинами M35, формула M37): f — формула языка
+    // нод (числа подставлены), вычисляется на CPU (проекции) и выводится в mf_scene.slang
+    std::string formula;
+    ExprPtr expr;
+    std::map<std::string, double> expr_vals;      // параметры формулы (a…d у mf.formula)
+    bool legacy() const { return formula.empty(); }
 
     double p(const std::string& key, size_t i = 0) const;
     const std::vector<double>& pv(const std::string& key) const;

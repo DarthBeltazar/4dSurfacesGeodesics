@@ -8,6 +8,7 @@
 //   geo4d_gpu [сцена.json] [--res WxH] [...] — окно без Python (см. standalone.cpp, DD-010)
 //   geo4d_gpu eval <вход.json> <выход.json> — формулы языка нод: значения, производные, Slang (expr.cpp, DD-011)
 //   geo4d_gpu migrate <сцена.json> <сцена.g4d> — сцена version 1 → граф (scene_graph.cpp, DD-011)
+//   geo4d_gpu eval-graph <сцена> <вход.json> <выход.json> — многообразие графа на CPU, метаданные, заголовок (DD-011)
 #include <cstdio>
 #include <exception>
 #include <iostream>
@@ -46,6 +47,7 @@ int main(int argc, char** argv) {
         if (cmd == "export-graph") return run_export_graph(argc, argv);     // без Vulkan
         if (cmd == "eval") return geo4d::run_eval(argc, argv);               // язык выражений (DD-011), без Vulkan
         if (cmd == "migrate") return geo4d::run_migrate(argc, argv);         // сцена version 1 → .g4d (DD-011)
+        if (cmd == "eval-graph") return run_eval_graph(argc, argv);          // многообразие графа на CPU (DD-011)
 #ifdef GEO4D_OPTIX
         if (cmd == "denoise" && argc >= 3) return run_denoise(argv[2]);     // без Vulkan
 #endif

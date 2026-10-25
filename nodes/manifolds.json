@@ -1,36 +1,306 @@
 [
- {"type": "mf.hyperplane", "group": "Многообразия", "title": "Гиперплоскость R³", "output": "manifold",
-  "params": [], "formula": "w", "legacy_kind": "hyperplane"},
- {"type": "mf.S3", "group": "Многообразия", "title": "S³", "output": "manifold",
-  "params": [{"name": "R", "type": "float", "default": 1.0, "min": 0.1, "max": 10.0}],
-  "formula": "length(x, y, z, w) - R", "legacy_kind": "S3"},
- {"type": "mf.spheritorus", "group": "Многообразия", "title": "Сферитор", "output": "manifold",
-  "params": [{"name": "R", "type": "float", "default": 1.0, "min": 0.1, "max": 10.0},
-             {"name": "r", "type": "float", "default": 0.4, "min": 0.01, "max": 10.0}],
-  "formula": "length(length(x, y, z) - R, w) - r", "legacy_kind": "spheritorus"},
- {"type": "mf.torisphere", "group": "Многообразия", "title": "Ториосфера", "output": "manifold",
-  "params": [{"name": "R", "type": "float", "default": 1.0, "min": 0.1, "max": 10.0},
-             {"name": "r", "type": "float", "default": 0.4, "min": 0.01, "max": 10.0}],
-  "formula": "length(length(x, y) - R, z, w) - r", "legacy_kind": "torisphere"},
- {"type": "mf.tiger", "group": "Многообразия", "title": "T³ («тигр»)", "output": "manifold",
-  "params": [{"name": "R1", "type": "float", "default": 1.2, "min": 0.1, "max": 10.0},
-             {"name": "R2", "type": "float", "default": 0.8, "min": 0.1, "max": 10.0},
-             {"name": "r", "type": "float", "default": 0.3, "min": 0.01, "max": 10.0}],
-  "formula": "length(length(x, y) - R1, length(z, w) - R2) - r", "legacy_kind": "tiger"},
- {"type": "mf.ellis", "group": "Многообразия", "title": "Червоточина Эллиса", "output": "manifold",
-  "params": [{"name": "b", "type": "float", "default": 1.0, "min": 0.05, "max": 10.0}],
-  "formula": "length(x, y, z) - b * cosh(w * (1.0 / b))", "legacy_kind": "ellis"},
- {"type": "mf.compact_wh", "group": "Многообразия", "title": "Компактная червоточина", "output": "manifold",
-  "params": [{"name": "b", "type": "float", "default": 1.0, "min": 0.05, "max": 10.0},
-             {"name": "rho0", "type": "float", "default": 3.0, "min": 0.1, "max": 50.0},
-             {"name": "W", "type": "float", "default": 1.5, "min": 0.05, "max": 10.0}],
-  "formula": "w * w - compact_h(length(x, y, z), b, rho0, W)", "legacy_kind": "compact_wh"},
- {"type": "mf.two_compact_wh", "group": "Многообразия", "title": "Две компактные червоточины", "output": "manifold",
-  "params": [{"name": "c1", "type": "vec3", "default": [-4.0, 0.0, 0.0]},
-             {"name": "c2", "type": "vec3", "default": [4.0, 0.0, 0.0]},
-             {"name": "b", "type": "float", "default": 1.0, "min": 0.05, "max": 10.0},
-             {"name": "rho0", "type": "float", "default": 3.0, "min": 0.1, "max": 50.0},
-             {"name": "W", "type": "float", "default": 1.5, "min": 0.05, "max": 10.0}],
+ {
+  "type": "mf.hyperplane",
+  "group": "Многообразия",
+  "title": "Гиперплоскость R³",
+  "output": "manifold",
+  "params": [],
+  "formula": "w",
+  "legacy_kind": "hyperplane"
+ },
+ {
+  "type": "mf.S3",
+  "group": "Многообразия",
+  "title": "S³",
+  "output": "manifold",
+  "params": [
+   {
+    "name": "R",
+    "type": "float",
+    "default": 1.0,
+    "min": 0.1,
+    "max": 10.0
+   }
+  ],
+  "formula": "length(x, y, z, w) - R",
+  "legacy_kind": "S3"
+ },
+ {
+  "type": "mf.spheritorus",
+  "group": "Многообразия",
+  "title": "Сферитор",
+  "output": "manifold",
+  "params": [
+   {
+    "name": "R",
+    "type": "float",
+    "default": 1.0,
+    "min": 0.1,
+    "max": 10.0
+   },
+   {
+    "name": "r",
+    "type": "float",
+    "default": 0.4,
+    "min": 0.01,
+    "max": 10.0
+   }
+  ],
+  "formula": "length(length(x, y, z) - R, w) - r",
+  "legacy_kind": "spheritorus"
+ },
+ {
+  "type": "mf.torisphere",
+  "group": "Многообразия",
+  "title": "Ториосфера",
+  "output": "manifold",
+  "params": [
+   {
+    "name": "R",
+    "type": "float",
+    "default": 1.0,
+    "min": 0.1,
+    "max": 10.0
+   },
+   {
+    "name": "r",
+    "type": "float",
+    "default": 0.4,
+    "min": 0.01,
+    "max": 10.0
+   }
+  ],
+  "formula": "length(length(x, y) - R, z, w) - r",
+  "legacy_kind": "torisphere"
+ },
+ {
+  "type": "mf.tiger",
+  "group": "Многообразия",
+  "title": "T³ («тигр»)",
+  "output": "manifold",
+  "params": [
+   {
+    "name": "R1",
+    "type": "float",
+    "default": 1.2,
+    "min": 0.1,
+    "max": 10.0
+   },
+   {
+    "name": "R2",
+    "type": "float",
+    "default": 0.8,
+    "min": 0.1,
+    "max": 10.0
+   },
+   {
+    "name": "r",
+    "type": "float",
+    "default": 0.3,
+    "min": 0.01,
+    "max": 10.0
+   }
+  ],
+  "formula": "length(length(x, y) - R1, length(z, w) - R2) - r",
+  "legacy_kind": "tiger"
+ },
+ {
+  "type": "mf.ellis",
+  "group": "Многообразия",
+  "title": "Червоточина Эллиса",
+  "output": "manifold",
+  "params": [
+   {
+    "name": "b",
+    "type": "float",
+    "default": 1.0,
+    "min": 0.05,
+    "max": 10.0
+   }
+  ],
+  "formula": "length(x, y, z) - b * cosh(w * (1.0 / b))",
+  "legacy_kind": "ellis"
+ },
+ {
+  "type": "mf.compact_wh",
+  "group": "Многообразия",
+  "title": "Компактная червоточина",
+  "output": "manifold",
+  "params": [
+   {
+    "name": "b",
+    "type": "float",
+    "default": 1.0,
+    "min": 0.05,
+    "max": 10.0
+   },
+   {
+    "name": "rho0",
+    "type": "float",
+    "default": 3.0,
+    "min": 0.1,
+    "max": 50.0
+   },
+   {
+    "name": "W",
+    "type": "float",
+    "default": 1.5,
+    "min": 0.05,
+    "max": 10.0
+   }
+  ],
+  "formula": "w * w - compact_h(length(x, y, z), b, rho0, W)",
+  "legacy_kind": "compact_wh"
+ },
+ {
+  "type": "mf.two_compact_wh",
+  "group": "Многообразия",
+  "title": "Две компактные червоточины",
+  "output": "manifold",
+  "params": [
+   {
+    "name": "c1",
+    "type": "vec3",
+    "default": [
+     -4.0,
+     0.0,
+     0.0
+    ]
+   },
+   {
+    "name": "c2",
+    "type": "vec3",
+    "default": [
+     4.0,
+     0.0,
+     0.0
+    ]
+   },
+   {
+    "name": "b",
+    "type": "float",
+    "default": 1.0,
+    "min": 0.05,
+    "max": 10.0
+   },
+   {
+    "name": "rho0",
+    "type": "float",
+    "default": 3.0,
+    "min": 0.1,
+    "max": 50.0
+   },
+   {
+    "name": "W",
+    "type": "float",
+    "default": 1.5,
+    "min": 0.05,
+    "max": 10.0
+   }
+  ],
   "formula": "w * w - (compact_h(length(x - c1.x, y - c1.y, z - c1.z), b, rho0, W) + compact_h(length(x - c2.x, y - c2.y, z - c2.z), b, rho0, W) - W * W)",
-  "legacy_kind": "two_compact_wh"}
+  "legacy_kind": "two_compact_wh"
+ },
+ {
+  "type": "mf.two_sheets",
+  "group": "Многообразия",
+  "title": "Два листа (база для горловин)",
+  "output": "manifold",
+  "params": [
+   {
+    "name": "W",
+    "type": "float",
+    "default": 1.5,
+    "min": 0.05,
+    "max": 10.0
+   }
+  ],
+  "doc": "Листы w = ±W (плоское R³ на каждом); горловины (mf.throat) соединяют листы (M35)"
+ },
+ {
+  "type": "mf.throat",
+  "group": "Многообразия",
+  "title": "Горловина",
+  "output": "manifold",
+  "inputs": [
+   {
+    "name": "base",
+    "type": "manifold"
+   }
+  ],
+  "params": [
+   {
+    "name": "c",
+    "type": "vec3",
+    "default": [
+     0.0,
+     0.0,
+     0.0
+    ]
+   },
+   {
+    "name": "b",
+    "type": "float",
+    "default": 1.0,
+    "min": 0.05,
+    "max": 10.0
+   },
+   {
+    "name": "rho0",
+    "type": "float",
+    "default": 3.0,
+    "min": 0.1,
+    "max": 50.0
+   }
+  ],
+  "doc": "Вставка в два листа: горловина радиуса b в шаре носителя |q − c| < ρ₀ (M11, M35)"
+ },
+ {
+  "type": "mf.formula",
+  "group": "Многообразия",
+  "title": "Многообразие-формула",
+  "output": "manifold",
+  "params": [
+   {
+    "name": "formula",
+    "type": "string",
+    "default": "length(x, y, z, w) - 1.0"
+   },
+   {
+    "name": "a",
+    "type": "float",
+    "default": 1.0
+   },
+   {
+    "name": "b",
+    "type": "float",
+    "default": 1.0
+   },
+   {
+    "name": "c",
+    "type": "float",
+    "default": 1.0
+   },
+   {
+    "name": "d",
+    "type": "float",
+    "default": 1.0
+   },
+   {
+    "name": "scale",
+    "type": "float",
+    "default": 1.0,
+    "min": 0.01,
+    "max": 100.0
+   },
+   {
+    "name": "s_max",
+    "type": "float",
+    "default": 30.0,
+    "min": 1.0,
+    "max": 10000.0
+   }
+  ],
+  "doc": "f(x, y, z, w) на языке нод (гладкие функции); вид неизвестен (M37): шаг ≤ ℓ_s = scale, без фона и NEE, длина пути ≤ s_max"
+ }
 ]

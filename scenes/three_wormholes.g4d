@@ -1,0 +1,184 @@
+{
+ "format": "geo4d",
+ "version": 2,
+ "graphs": {
+  "main": {
+   "nodes": [
+    {
+     "id": "base",
+     "type": "mf.two_sheets",
+     "params": {
+      "W": 1.4
+     }
+    },
+    {
+     "id": "t0",
+     "type": "mf.throat",
+     "params": {
+      "c": [
+       -5.0,
+       0.5,
+       0.0
+      ],
+      "b": 1.0,
+      "rho0": 2.8
+     }
+    },
+    {
+     "id": "t1",
+     "type": "mf.throat",
+     "params": {
+      "c": [
+       4.0,
+       -1.0,
+       0.5
+      ],
+      "b": 0.8,
+      "rho0": 2.8
+     }
+    },
+    {
+     "id": "t2",
+     "type": "mf.throat",
+     "params": {
+      "c": [
+       0.0,
+       6.0,
+       -1.0
+      ],
+      "b": 1.2,
+      "rho0": 2.8
+     }
+    },
+    {
+     "id": "scene",
+     "type": "out.scene"
+    },
+    {
+     "id": "lamp",
+     "type": "obj.ball4",
+     "params": {
+      "c": [
+       0.0,
+       -3.0,
+       1.0,
+       1.4
+      ],
+      "r": 0.3
+     }
+    },
+    {
+     "id": "e",
+     "type": "mat.emit",
+     "params": {
+      "emit": [
+       20.0,
+       18.0,
+       14.0
+      ]
+     }
+    },
+    {
+     "id": "floor",
+     "type": "obj.halfspace",
+     "params": {
+      "axis": 2,
+      "offset": -2.5,
+      "sign": 1.0
+     }
+    },
+    {
+     "id": "grey",
+     "type": "mat.diffuse",
+     "params": {
+      "albedo": [
+       0.6,
+       0.6,
+       0.6
+      ]
+     }
+    },
+    {
+     "id": "o1",
+     "type": "out.object",
+     "params": {
+      "name": "лампа"
+     }
+    },
+    {
+     "id": "o2",
+     "type": "out.object",
+     "params": {
+      "name": "пол"
+     }
+    }
+   ],
+   "links": [
+    {
+     "from": "base.out",
+     "to": "t0.base"
+    },
+    {
+     "from": "t0.out",
+     "to": "t1.base"
+    },
+    {
+     "from": "t1.out",
+     "to": "t2.base"
+    },
+    {
+     "from": "t2.out",
+     "to": "scene.manifold"
+    },
+    {
+     "from": "lamp.out",
+     "to": "o1.shape"
+    },
+    {
+     "from": "e.out",
+     "to": "o1.material"
+    },
+    {
+     "from": "floor.out",
+     "to": "o2.shape"
+    },
+    {
+     "from": "grey.out",
+     "to": "o2.material"
+    },
+    {
+     "from": "o1.out",
+     "to": "scene.objects"
+    },
+    {
+     "from": "o2.out",
+     "to": "scene.objects"
+    }
+   ]
+  }
+ },
+ "camera": {
+  "x": [
+   0.0,
+   -12.0,
+   0.5,
+   1.4
+  ],
+  "f": [
+   0.0,
+   1.0,
+   -0.05,
+   0.0
+  ],
+  "up": [
+   0.0,
+   0.0,
+   1.0,
+   0.0
+  ],
+  "fov": 75.0
+ },
+ "settings": {
+  "speed": 2.0
+ }
+}

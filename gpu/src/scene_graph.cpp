@@ -2,6 +2,8 @@
 #include "scene_graph.hpp"
 
 #include <algorithm>
+#include <cmath>
+#include <cstdio>
 #include <filesystem>
 #include <fstream>
 #include <mutex>
@@ -37,6 +39,15 @@ std::array<double, N> vec(const nlohmann::json& j, const char* key, std::array<d
     std::array<double, N> r;
     for (size_t i = 0; i < N; ++i) r[i] = (*it)[i].get<double>();
     return r;
+}
+
+// литерал числа для формулы: как repr Python; отрицательный — в скобках
+std::string lit(double v) {
+    char b[64];
+    std::snprintf(b, sizeof(b), "%.17g", v);
+    std::string s = b;
+    if (s.find_first_of(".eEn") == std::string::npos) s += ".0";
+    return v < 0 ? "(" + s + ")" : s;
 }
 
 }  // namespace
@@ -226,7 +237,91 @@ Scene scene_from_document(const nlohmann::json& doc0, const std::string& path, b
     // многообразие
     const std::string mid = source(out_scene, "manifold");
     const N& mn = nodes[mid];
-    if (mn.def->legacy_kind.empty()) fail(mid, "многообразие этого типа пока не собирается в окне (DD-011, шаг 3)");
+    if (mn.def->type == "mf.throat" || mn.def->type == "mf.two_sheets") {
+        // M35: два листа ±W и горловины (cᵢ, bᵢ, ρ₀) с непересекающимися шарами носителей
+        struct T { std::string id; double cx, cy, cz, b, rho0; };
+        std::vector<T> th;
+        std::string cur = mid;
+        while (nodes[cur].def->type == "mf.throat") {
+            auto v = node_values(*nodes[cur].def, *nodes[cur].params);
+            th.push_back({cur, v.at("c.x"), v.at("c.y"), v.at("c.z"), v.at("b"), v.at("rho0")});
+            cur = source(cur, "base");
+        }
+        if (nodes[cur].def->type != "mf.two_sheets") fail(cur, "горловина вставляется только в «Два листа» (или в цепочку горловин)");
+        std::reverse(th.begin(), th.end());       // порядок от базы
+        const double W = node_values(*nodes[cur].def, *nodes[cur].params).at("W");
+        if (!(W > 0)) fail(cur, "нужно W > 0");
+        Manifold m;
+        m.kind = "sheets";
+        m.shape_name = "sheets";
+        m.scene_id = 12;
+        m.exit = 2;
+        m.flat.has = true;
+        m.flat.sheets = {W, -W};
+        m.scale = W;
+        std::string f = "w * w - " + lit(W) + " * " + lit(W);
+        for (size_t i = 0; i < th.size(); ++i) {
+            const T& t = th[i];
+            if (!(t.b > 0 && t.b < t.rho0)) fail(t.id, "нужно 0 < b < ρ₀");
+            if (i > 0 && t.rho0 != th[0].rho0)
+                fail(t.id, "пока у всех горловин один ρ₀ (трассировщик: один радиус плоских зон, PT_RHO0)");
+            for (size_t j = 0; j < i; ++j) {
+                const T& u = th[j];
+                double d = std::sqrt((t.cx - u.cx) * (t.cx - u.cx) + (t.cy - u.cy) * (t.cy - u.cy) + (t.cz - u.cz) * (t.cz - u.cz));
+                if (!(d > t.rho0 + u.rho0)) fail(t.id, "шар носителя пересекается с горловиной «" + u.id + "» (нужно |cᵢ − cⱼ| > ρ₀ᵢ + ρ₀ⱼ)");
+            }
+            m.flat.centers.push_back({t.cx, t.cy, t.cz});
+            m.flat.rho0 = t.rho0;
+            m.scale = i == 0 ? t.b : std::min(m.scale, t.b);
+            f += " + (" + lit(W) + " * " + lit(W) + " - compact_h(length(x - " + lit(t.cx) + ", y - " + lit(t.cy) + ", z - " +
+                 lit(t.cz) + "), " + lit(t.b) + ", " + lit(t.rho0) + ", " + lit(W) + "))";
+        }
+        m.formula = f;
+        m.expr = parse_expr(f, {});
+        sc.mf = m;
+        sc.mf_node = mn.def->type;
+    } else if (mn.def->type == "mf.formula") {
+        // M37: вид неизвестен — шаг ≤ ℓ_s, без плоских зон (NEE) и фона, длина пути ≤ s_max
+        auto v = node_values(*mn.def, *mn.params);
+        const std::string src = mn.params->value("formula", mn.def->param("formula")->def.get<std::string>());
+        ExprPtr e;
+        try {
+            e = parse_expr(src, {"a", "b", "c", "d"});
+        } catch (const ExprError& ex) {
+            fail(mid, std::string("формула, символ ") + std::to_string(ex.pos + 1) + ": " + ex.what());
+        }
+        if (!e->field) fail(mid, "формула не зависит от x, y, z, w");
+        // параметры a…d — числами в текст (до слотов параметров, шаг 4)
+        std::string f;
+        {
+            std::map<std::string, std::string> pm;
+            for (const char* k : {"a", "b", "c", "d"}) pm[k] = lit(v.at(k));
+            f = emit_slang(e, pm, {"x", "y", "z", "w"});
+        }
+        Manifold m;
+        m.kind = "formula";
+        m.shape_name = "formula";
+        m.scene_id = 12;
+        m.exit = 2;
+        m.compact = true;
+        m.scale = v.at("scale");
+        if (!(m.scale > 0)) fail(mid, "нужно scale > 0");
+        m.has_s_max = true;
+        m.s_max = v.at("s_max");
+        m.has_ell_max = true;
+        m.ell_max = 1e9;
+        m.formula = src;
+        std::map<std::string, double> vals;
+        for (const char* k : {"a", "b", "c", "d"}) vals[k] = v.at(k);
+        // вычисление на CPU — по исходной формуле с параметрами (eval_expr подставит их)
+        m.expr = e;
+        m.expr_vals = vals;
+        sc.mf = m;
+        sc.mf_node = mn.def->type;
+        sc.mf_values = vals;
+        (void)f;
+    } else {
+    if (mn.def->legacy_kind.empty()) fail(mid, "многообразие типа «" + mn.def->type + "» не собирается в окне");
     auto mv = node_values(*mn.def, *mn.params);
     Params mp;
     for (auto& p : mn.def->params) {
@@ -239,6 +334,7 @@ Scene scene_from_document(const nlohmann::json& doc0, const std::string& path, b
     sc.mf = make_manifold(mn.def->legacy_kind, mp);
     sc.mf_node = mn.def->type;
     sc.mf_values = mv;
+    }
     const J settings = doc.value("settings", J::object());
     sc.env_field = settings.contains("env") && !settings["env"].is_null() ? settings["env"].get<std::string>() : "";
     sc.env = !sc.env_field.empty() ? sc.env_field : (sc.mf.compact ? "none" : "procedural");
