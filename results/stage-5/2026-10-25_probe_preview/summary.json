@@ -1,0 +1,56 @@
+{
+ "two_wormholes_640x360": {
+  "native": 0.51888,
+  "interp": 17.2879
+ },
+ "two_wormholes_960x540": {
+  "native": 0.850544,
+  "interp": 29.70675
+ },
+ "two_wormholes_1280x720": {
+  "native": 1.473585,
+  "interp": 55.436
+ },
+ "two_wormholes_1920x1080": {
+  "native": 3.346415,
+  "interp": 137.7445
+ },
+ "S3_640x360": {
+  "native": 3.246415,
+  "interp": 38.89485,
+  "native_s2pi": 0.843696,
+  "interp_s2pi": 9.379875
+ },
+ "S3_960x540": {
+  "native": 6.98203,
+  "interp": 93.65545,
+  "native_s2pi": 1.883825,
+  "interp_s2pi": 22.42875
+ },
+ "S3_1280x720": {
+  "native": 13.3077,
+  "interp": 182.7265,
+  "native_s2pi": 3.46899,
+  "interp_s2pi": 44.11905
+ },
+ "S3_1920x1080": {
+  "native": 33.2649,
+  "interp": 464.398,
+  "native_s2pi": 8.8472,
+  "interp_s2pi": 114.1755
+ },
+ "compile_cold": {
+  "-O2": {
+   "slangc_s": 1.105985000000146,
+   "pipe_ms": 224.969,
+   "run_ok": true,
+   "spv_kb": 127
+  },
+  "-O0": {
+   "slangc_s": 0.39810510000006616,
+   "pipe_ms": 903.203,
+   "run_ok": true,
+   "spv_kb": 70
+  }
+ }
+}
