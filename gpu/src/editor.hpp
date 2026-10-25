@@ -128,12 +128,14 @@ struct UiActions {
     bool load_now = false;                        // DD-009: открыть сцену pending_scene() сразу (режим редактирования)
     int res_choice = -1;                          // выбран пресет разрешения (индекс kResPresets)
     bool toggle_fullscreen = false;
+    bool toggle_preview = false;                  // DD-011 §6: предпросмотр (первичный луч, «фонарь у камеры») / рендер
 };
 
 struct FrameInfo {
     double ms = 0;
     uint32_t spp = 0;
     bool has_den = false;
+    bool preview_avail = false, preview = false;  // есть ядро предпросмотра; включён ли предпросмотр
     uint32_t rw = 0, rh = 0, ww = 0, wh = 0;      // разрешение рендера и окна (пиксели)
     int res_choice = -1;                          // текущий пресет (−1 — заданное в --res)
     bool fullscreen = false, interactive = false;

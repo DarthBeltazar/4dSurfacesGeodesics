@@ -1,0 +1,107 @@
+"""DD-011, шаг 5б: ядро предпросмотра (pt_preview: первичная геодезическая, «фонарь у камеры», G-буфер) — нативное в
+быстром графе (секции preview / preview_move, флажок P) и на интерпретаторе (граф предпросмотра: шейдеры от сцены не
+зависят, сцена — строки и программы байткода).
+
+- кадр интерпретатора = нативный предпросмотр той же сцены в пределах округления float32 (многообразия графа, составные
+  объекты-программы, прежние виды);
+- структурная правка (setparam числа многообразия, запечённого в быстрых шейдерах): кадр правки — предпросмотр на
+  интерпретаторе уже изменённой сцены (= нативный предпросмотр её холодного старта), затем в фоне — быстрый граф;
+- G-буфер: исход и id объекта согласованы с кадром."""
+import json
+import subprocess
+from pathlib import Path
+
+import numpy as np
+import pytest
+
+from geo4d import gpu
+from test_node_manifolds import sheets_doc
+from test_node_slots import csg_doc, set_param
+
+ROOT = Path(__file__).resolve().parents[1]
+pytestmark = [pytest.mark.gpu, pytest.mark.skipif(not gpu.available(), reason="нет geo4d_gpu или slangc")]
+RES = "160x90"
+
+
+def _scene(tmp_path, name):
+    if name == "two_wormholes":
+        return ROOT / "scenes" / "two_wormholes.json"
+    doc = {"throats": sheets_doc, "csg": csg_doc}[name]()
+    p = tmp_path / f"{name}.g4d"
+    p.write_text(json.dumps(doc, ensure_ascii=False), encoding="utf-8")
+    return p
+
+
+def _extra(d, frames, dumps, extra):
+    d.mkdir(parents=True, exist_ok=True)
+    np.savetxt(d / "s.txt", np.zeros((frames, 6)), fmt="%.6f")
+    (d / "extra.txt").write_text(f"hidden\nbench {gpu.qpath(d / 's.txt')} {gpu.qpath(d / 'f.json')}\n" +
+                                 "".join(f"dump {k} {gpu.qpath(d)}\n" for k in dumps) + extra, encoding="utf-8")
+    return d / "extra.txt"
+
+
+def _window(d, scene, frames, dumps, extra=""):
+    ex = _extra(d, frames, dumps, extra)
+    r = subprocess.run([str(gpu.EXE), str(scene), "--res", RES, "--cube", "64", "--work-dir", str(d / "w"), "--extra", str(ex)],
+                       capture_output=True, text=True, encoding="utf-8")
+    assert r.returncode == 0, r.stdout + r.stderr
+    return r.stdout
+
+
+def _interp(d, scene, frames, dumps):
+    """Граф предпросмотра сам по себе: --graph-only, затем `geo4d_gpu app app_graph_prev.txt` со сценарием."""
+    g = d / "g"
+    r = subprocess.run([str(gpu.EXE), str(scene), "--res", RES, "--cube", "64", "--graph-only", str(g)],
+                       capture_output=True, text=True, encoding="utf-8")
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "prevgraph" in (g / "app_graph.txt").read_text(encoding="utf-8")
+    prev = g / "app_graph_prev.txt"
+    ex = _extra(d, frames, dumps, "")
+    prev.write_text(prev.read_text(encoding="utf-8") + ex.read_text(encoding="utf-8"), encoding="utf-8")
+    r = subprocess.run([str(gpu.EXE), "app", str(prev)], capture_output=True, text=True, encoding="utf-8")
+    assert r.returncode == 0, r.stdout + r.stderr
+
+
+def _close(a, b):
+    a, b = a[..., :3], b[..., :3]
+    rel = np.abs(a - b).mean() / np.abs(b).mean()
+    frac = (np.abs(a - b).max(-1) > 1e-3).mean()
+    return rel, frac
+
+
+@pytest.mark.parametrize("name", ["throats", "csg", "two_wormholes"])
+def test_interpreter_equals_native_preview(tmp_path, name):
+    scene = _scene(tmp_path, name)
+    _window(tmp_path / "nat", scene, 3, [1], "previewmode 0 on\n")
+    _interp(tmp_path / "int", scene, 3, [1])
+    a, b = (np.load(tmp_path / d / "Frame_1.npy") for d in ("int", "nat"))
+    assert np.isfinite(a).all() and np.abs(b[..., :3]).mean() > 0
+    rel, frac = _close(a, b)
+    assert rel < 1e-4 and frac < 0.01, (rel, frac)
+    ga, gb = (np.load(tmp_path / d / "GB_1.npy") for d in ("int", "nat"))
+    assert np.mean(ga[..., 0, 2] == gb[..., 0, 2]) > 0.99          # исход луча
+    hit = gb[..., 0, 2] == 1
+    if name == "csg":
+        assert hit.mean() > 0.05 and set(np.unique(gb[..., 0, 3][hit])) <= {0.0, 1.0}
+    assert np.all(gb[..., 0, 3][~hit] == -1)
+
+
+def test_structural_edit_shows_interpreter_preview(tmp_path):
+    """b горловины (число многообразия запечено): кадр правки — интерпретатор с новым b, затем быстрый граф."""
+    doc = sheets_doc()
+    scene = tmp_path / "t.g4d"
+    scene.write_text(json.dumps(doc, ensure_ascii=False), encoding="utf-8")
+    out = _window(tmp_path / "hot", scene, 8, [2, 6], "previewmode 0 on\nsetparam 2 t1 b 0.5\n")
+    assert 'params_apply {"instant": 2' in out and 'graph_switch {"kind": 3' in out and out.count("standalone_build") == 2
+    new = tmp_path / "n.g4d"
+    new.write_text(json.dumps(set_param(doc, "t1", "b", 0.5), ensure_ascii=False), encoding="utf-8")
+    _window(tmp_path / "cold", new, 3, [1], "previewmode 0 on\n")
+    old = tmp_path / "old"
+    _window(old, scene, 3, [1], "previewmode 0 on\n")
+    a, b, c = (np.load(p) for p in (tmp_path / "hot" / "Frame_2.npy", tmp_path / "cold" / "Frame_1.npy", old / "Frame_1.npy"))
+    rel, frac = _close(a, b)
+    assert rel < 1e-4 and frac < 0.01, (rel, frac)
+    assert _close(c, b)[1] > 0.01                                   # правка действительно видна
+    # после сборки — быстрый граф с новым b (нативный предпросмотр)
+    rel, frac = _close(np.load(tmp_path / "hot" / "Frame_6.npy"), b)
+    assert rel < 1e-6 and frac == 0, (rel, frac)

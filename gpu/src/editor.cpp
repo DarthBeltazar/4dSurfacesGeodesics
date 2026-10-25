@@ -588,7 +588,11 @@ UiActions Editor::draw(const FrameInfo& fi, const CameraState& cam, bool edit_mo
     ImGui::TextDisabled("x = (%.2f, %.2f, %.2f, %.2f)", cam.x[0], cam.x[1], cam.x[2], cam.x[3]);
 
     if (ImGui::CollapsingHeader("Рендер", ImGuiTreeNodeFlags_DefaultOpen)) {
-        if (fi.has_den) ImGui::Checkbox("денойзер (R)", &use_den);
+        if (fi.has_den && !fi.preview) ImGui::Checkbox("денойзер (R)", &use_den);
+        if (fi.preview_avail) {
+            bool pv = fi.preview;
+            if (ImGui::Checkbox("предпросмотр (P)", &pv)) act.toggle_preview = true;
+        }
         else ImGui::TextDisabled("денойзер недоступен");
         ImGui::SliderFloat("экспозиция", &exposure, 0.05f, 20.0f, "%.2f", ImGuiSliderFlags_Logarithmic);
         ImGui::SliderFloat("скорость", &speed, 0.05f, 20.0f, "%.2f", ImGuiSliderFlags_Logarithmic);

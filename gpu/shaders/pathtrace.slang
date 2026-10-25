@@ -78,6 +78,9 @@ static PTParams pp;                 // cam_step не использует пар
 [[vk::binding(19, 0)]] RWStructuredBuffer<float4> gDen;
 [[vk::binding(20, 0)]] RWStructuredBuffer<uint> gPresent;
 [[vk::binding(21, 0)]] RWStructuredBuffer<float4> gColor;
+// G-буфер предпросмотра (DD-011 §6; наложения — DD-012): на пиксель 2 float4 — (длина пути, проходов Jet7, исход,
+// id объекта) и нормаль объекта (касательная к M) при попадании / направление луча в точке выхода
+[[vk::binding(22, 0)]] RWStructuredBuffer<float4> gGB;
 
 // объекты (DD-008): строки float4 в хвосте буфера камеры (geo4d.gpu_pt.object_rows) — правятся без перекомпиляции.
 // Два варианта (pt_scene.slang): «запечённый» (PT_DYNAMIC 0) — число объектов, их виды и оси полупространств заданы
@@ -812,6 +815,7 @@ void pt_preview(uint3 id : SV_DispatchThreadID)
     bool straight;
     uint seg = trace_segment(x, v, s, k, min(pp.tol_max, pp.tol_kappa * c.theta_pix), straight, stats, wr, wu, false);
     float3 col = float3(0.5, 0, 0.5);
+    float4 nrm = v;
     if (seg == SEG_ESCAPE) col = env_radiance(exit_value(x, v), x, 0);
     else if (seg == SEG_HIT)
     {
@@ -819,8 +823,11 @@ void pt_preview(uint3 id : SV_DispatchThreadID)
         float4 ngk = normalize(gk - dot(gk, nM) * nM);
         float3 alb = int(mat_a(k).w) == 2 ? saturate(mat_e(k).rgb) : mat_a(k).rgb;
         col = alb * (0.2 + 0.8 * abs(dot(ngk, v)));
+        nrm = ngk;
     }
     gFrame[i] = float4(col, 1);
+    gGB[2 * i] = float4(s, stats.y, float(seg), seg == SEG_HIT ? float(k) : -1.0);   // stats.y — проходы Jet7
+    gGB[2 * i + 1] = nrm;
     gClass[i] = 1;
     gFlag[i] = 0;
 }

@@ -121,6 +121,7 @@ struct AppOptions {
 struct AppGraph {
     std::vector<std::string> lines;               // app_graph.txt
     std::vector<std::string> dyn_lines;           // app_graph_dyn.txt
+    std::vector<std::string> prev_lines;          // app_graph_prev.txt: предпросмотр на интерпретаторе (DD-011 §6)
     std::map<std::string, Array> arrays;          // имя файла (cam.npy, env_dyn.npy, …) → данные
     std::vector<ShaderJob> shaders;               // SPIR-V, на которые ссылаются графы (без повторов)
 };
