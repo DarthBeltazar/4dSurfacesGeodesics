@@ -1,0 +1,5024 @@
+[
+ {
+  "scene": "two_wormholes",
+  "threads": 1,
+  "run": 0,
+  "compile_ms": 9854.9306,
+  "shaders": 27,
+  "env_ms": 45.2151,
+  "graph_ms": 68.7761,
+  "session_s": [
+   0.065148
+  ],
+  "kernels": [
+   {
+    "entry": "pt_camera",
+    "ok": true,
+    "cached": false,
+    "s": 0.655384,
+    "worker": 0
+   },
+   {
+    "entry": "cam_step",
+    "ok": true,
+    "cached": false,
+    "s": 0.496166,
+    "worker": 0
+   },
+   {
+    "entry": "pt_snap",
+    "ok": true,
+    "cached": false,
+    "s": 0.336367,
+    "worker": 0
+   },
+   {
+    "entry": "bc6h_encode",
+    "ok": true,
+    "cached": false,
+    "s": 0.192563,
+    "worker": 0
+   },
+   {
+    "entry": "modea_shade",
+    "ok": true,
+    "cached": false,
+    "s": 0.148474,
+    "worker": 0
+   },
+   {
+    "entry": "modea_detect",
+    "ok": true,
+    "cached": false,
+    "s": 0.143681,
+    "worker": 0
+   },
+   {
+    "entry": "pt_classall",
+    "ok": true,
+    "cached": false,
+    "s": 0.203231,
+    "worker": 0
+   },
+   {
+    "entry": "pt_clear",
+    "ok": true,
+    "cached": false,
+    "s": 0.20059,
+    "worker": 0
+   },
+   {
+    "entry": "pt_lists",
+    "ok": true,
+    "cached": false,
+    "s": 0.206872,
+    "worker": 0
+   },
+   {
+    "entry": "pt_args",
+    "ok": true,
+    "cached": false,
+    "s": 0.201106,
+    "worker": 0
+   },
+   {
+    "entry": "pt_sample",
+    "ok": true,
+    "cached": false,
+    "s": 2.178299,
+    "worker": 0
+   },
+   {
+    "entry": "pt_reset",
+    "ok": true,
+    "cached": false,
+    "s": 0.205453,
+    "worker": 0
+   },
+   {
+    "entry": "pt_compose",
+    "ok": true,
+    "cached": false,
+    "s": 0.202384,
+    "worker": 0
+   },
+   {
+    "entry": "pt_present",
+    "ok": true,
+    "cached": false,
+    "s": 0.204251,
+    "worker": 0
+   },
+   {
+    "entry": "pt_camera",
+    "ok": true,
+    "cached": false,
+    "s": 0.463071,
+    "worker": 0
+   },
+   {
+    "entry": "cam_step",
+    "ok": true,
+    "cached": false,
+    "s": 0.34065,
+    "worker": 0
+   },
+   {
+    "entry": "pt_snap",
+    "ok": true,
+    "cached": false,
+    "s": 0.222169,
+    "worker": 0
+   },
+   {
+    "entry": "modea_shade",
+    "ok": true,
+    "cached": false,
+    "s": 0.140036,
+    "worker": 0
+   },
+   {
+    "entry": "modea_detect",
+    "ok": true,
+    "cached": false,
+    "s": 0.132382,
+    "worker": 0
+   },
+   {
+    "entry": "pt_classall",
+    "ok": true,
+    "cached": false,
+    "s": 0.196437,
+    "worker": 0
+   },
+   {
+    "entry": "pt_clear",
+    "ok": true,
+    "cached": false,
+    "s": 0.202764,
+    "worker": 0
+   },
+   {
+    "entry": "pt_lists",
+    "ok": true,
+    "cached": false,
+    "s": 0.199754,
+    "worker": 0
+   },
+   {
+    "entry": "pt_args",
+    "ok": true,
+    "cached": false,
+    "s": 0.19652,
+    "worker": 0
+   },
+   {
+    "entry": "pt_sample",
+    "ok": true,
+    "cached": false,
+    "s": 1.458183,
+    "worker": 0
+   },
+   {
+    "entry": "pt_reset",
+    "ok": true,
+    "cached": false,
+    "s": 0.198073,
+    "worker": 0
+   },
+   {
+    "entry": "pt_compose",
+    "ok": true,
+    "cached": false,
+    "s": 0.219131,
+    "worker": 0
+   },
+   {
+    "entry": "pt_present",
+    "ok": true,
+    "cached": false,
+    "s": 0.208574,
+    "worker": 0
+   }
+  ]
+ },
+ {
+  "scene": "two_wormholes",
+  "threads": 1,
+  "run": 1,
+  "compile_ms": 9710.5468,
+  "shaders": 27,
+  "env_ms": 48.2789,
+  "graph_ms": 75.0698,
+  "session_s": [
+   0.064307
+  ],
+  "kernels": [
+   {
+    "entry": "pt_camera",
+    "ok": true,
+    "cached": false,
+    "s": 0.639478,
+    "worker": 0
+   },
+   {
+    "entry": "cam_step",
+    "ok": true,
+    "cached": false,
+    "s": 0.507083,
+    "worker": 0
+   },
+   {
+    "entry": "pt_snap",
+    "ok": true,
+    "cached": false,
+    "s": 0.3187,
+    "worker": 0
+   },
+   {
+    "entry": "bc6h_encode",
+    "ok": true,
+    "cached": false,
+    "s": 0.199574,
+    "worker": 0
+   },
+   {
+    "entry": "modea_shade",
+    "ok": true,
+    "cached": false,
+    "s": 0.150809,
+    "worker": 0
+   },
+   {
+    "entry": "modea_detect",
+    "ok": true,
+    "cached": false,
+    "s": 0.141979,
+    "worker": 0
+   },
+   {
+    "entry": "pt_classall",
+    "ok": true,
+    "cached": false,
+    "s": 0.196432,
+    "worker": 0
+   },
+   {
+    "entry": "pt_clear",
+    "ok": true,
+    "cached": false,
+    "s": 0.206802,
+    "worker": 0
+   },
+   {
+    "entry": "pt_lists",
+    "ok": true,
+    "cached": false,
+    "s": 0.204146,
+    "worker": 0
+   },
+   {
+    "entry": "pt_args",
+    "ok": true,
+    "cached": false,
+    "s": 0.198994,
+    "worker": 0
+   },
+   {
+    "entry": "pt_sample",
+    "ok": true,
+    "cached": false,
+    "s": 2.087613,
+    "worker": 0
+   },
+   {
+    "entry": "pt_reset",
+    "ok": true,
+    "cached": false,
+    "s": 0.19819,
+    "worker": 0
+   },
+   {
+    "entry": "pt_compose",
+    "ok": true,
+    "cached": false,
+    "s": 0.207904,
+    "worker": 0
+   },
+   {
+    "entry": "pt_present",
+    "ok": true,
+    "cached": false,
+    "s": 0.205986,
+    "worker": 0
+   },
+   {
+    "entry": "pt_camera",
+    "ok": true,
+    "cached": false,
+    "s": 0.45189,
+    "worker": 0
+   },
+   {
+    "entry": "cam_step",
+    "ok": true,
+    "cached": false,
+    "s": 0.32999,
+    "worker": 0
+   },
+   {
+    "entry": "pt_snap",
+    "ok": true,
+    "cached": false,
+    "s": 0.22148,
+    "worker": 0
+   },
+   {
+    "entry": "modea_shade",
+    "ok": true,
+    "cached": false,
+    "s": 0.139014,
+    "worker": 0
+   },
+   {
+    "entry": "modea_detect",
+    "ok": true,
+    "cached": false,
+    "s": 0.134051,
+    "worker": 0
+   },
+   {
+    "entry": "pt_classall",
+    "ok": true,
+    "cached": false,
+    "s": 0.196777,
+    "worker": 0
+   },
+   {
+    "entry": "pt_clear",
+    "ok": true,
+    "cached": false,
+    "s": 0.197843,
+    "worker": 0
+   },
+   {
+    "entry": "pt_lists",
+    "ok": true,
+    "cached": false,
+    "s": 0.207882,
+    "worker": 0
+   },
+   {
+    "entry": "pt_args",
+    "ok": true,
+    "cached": false,
+    "s": 0.201366,
+    "worker": 0
+   },
+   {
+    "entry": "pt_sample",
+    "ok": true,
+    "cached": false,
+    "s": 1.432524,
+    "worker": 0
+   },
+   {
+    "entry": "pt_reset",
+    "ok": true,
+    "cached": false,
+    "s": 0.213615,
+    "worker": 0
+   },
+   {
+    "entry": "pt_compose",
+    "ok": true,
+    "cached": false,
+    "s": 0.213559,
+    "worker": 0
+   },
+   {
+    "entry": "pt_present",
+    "ok": true,
+    "cached": false,
+    "s": 0.203646,
+    "worker": 0
+   }
+  ]
+ },
+ {
+  "scene": "two_wormholes",
+  "threads": 1,
+  "run": 2,
+  "compile_ms": 9677.7194,
+  "shaders": 27,
+  "env_ms": 52.5823,
+  "graph_ms": 74.2925,
+  "session_s": [
+   0.06693
+  ],
+  "kernels": [
+   {
+    "entry": "pt_camera",
+    "ok": true,
+    "cached": false,
+    "s": 0.643001,
+    "worker": 0
+   },
+   {
+    "entry": "cam_step",
+    "ok": true,
+    "cached": false,
+    "s": 0.491173,
+    "worker": 0
+   },
+   {
+    "entry": "pt_snap",
+    "ok": true,
+    "cached": false,
+    "s": 0.314988,
+    "worker": 0
+   },
+   {
+    "entry": "bc6h_encode",
+    "ok": true,
+    "cached": false,
+    "s": 0.196022,
+    "worker": 0
+   },
+   {
+    "entry": "modea_shade",
+    "ok": true,
+    "cached": false,
+    "s": 0.176222,
+    "worker": 0
+   },
+   {
+    "entry": "modea_detect",
+    "ok": true,
+    "cached": false,
+    "s": 0.141121,
+    "worker": 0
+   },
+   {
+    "entry": "pt_classall",
+    "ok": true,
+    "cached": false,
+    "s": 0.201372,
+    "worker": 0
+   },
+   {
+    "entry": "pt_clear",
+    "ok": true,
+    "cached": false,
+    "s": 0.201523,
+    "worker": 0
+   },
+   {
+    "entry": "pt_lists",
+    "ok": true,
+    "cached": false,
+    "s": 0.203199,
+    "worker": 0
+   },
+   {
+    "entry": "pt_args",
+    "ok": true,
+    "cached": false,
+    "s": 0.203344,
+    "worker": 0
+   },
+   {
+    "entry": "pt_sample",
+    "ok": true,
+    "cached": false,
+    "s": 2.147903,
+    "worker": 0
+   },
+   {
+    "entry": "pt_reset",
+    "ok": true,
+    "cached": false,
+    "s": 0.203226,
+    "worker": 0
+   },
+   {
+    "entry": "pt_compose",
+    "ok": true,
+    "cached": false,
+    "s": 0.201841,
+    "worker": 0
+   },
+   {
+    "entry": "pt_present",
+    "ok": true,
+    "cached": false,
+    "s": 0.205608,
+    "worker": 0
+   },
+   {
+    "entry": "pt_camera",
+    "ok": true,
+    "cached": false,
+    "s": 0.44956,
+    "worker": 0
+   },
+   {
+    "entry": "cam_step",
+    "ok": true,
+    "cached": false,
+    "s": 0.340065,
+    "worker": 0
+   },
+   {
+    "entry": "pt_snap",
+    "ok": true,
+    "cached": false,
+    "s": 0.22341,
+    "worker": 0
+   },
+   {
+    "entry": "modea_shade",
+    "ok": true,
+    "cached": false,
+    "s": 0.140234,
+    "worker": 0
+   },
+   {
+    "entry": "modea_detect",
+    "ok": true,
+    "cached": false,
+    "s": 0.13098,
+    "worker": 0
+   },
+   {
+    "entry": "pt_classall",
+    "ok": true,
+    "cached": false,
+    "s": 0.197713,
+    "worker": 0
+   },
+   {
+    "entry": "pt_clear",
+    "ok": true,
+    "cached": false,
+    "s": 0.199679,
+    "worker": 0
+   },
+   {
+    "entry": "pt_lists",
+    "ok": true,
+    "cached": false,
+    "s": 0.205344,
+    "worker": 0
+   },
+   {
+    "entry": "pt_args",
+    "ok": true,
+    "cached": false,
+    "s": 0.198685,
+    "worker": 0
+   },
+   {
+    "entry": "pt_sample",
+    "ok": true,
+    "cached": false,
+    "s": 1.351197,
+    "worker": 0
+   },
+   {
+    "entry": "pt_reset",
+    "ok": true,
+    "cached": false,
+    "s": 0.202566,
+    "worker": 0
+   },
+   {
+    "entry": "pt_compose",
+    "ok": true,
+    "cached": false,
+    "s": 0.199774,
+    "worker": 0
+   },
+   {
+    "entry": "pt_present",
+    "ok": true,
+    "cached": false,
+    "s": 0.20194,
+    "worker": 0
+   }
+  ]
+ },
+ {
+  "scene": "two_wormholes",
+  "threads": 4,
+  "run": 0,
+  "compile_ms": 2977.4747,
+  "shaders": 27,
+  "env_ms": 49.6231,
+  "graph_ms": 73.6482,
+  "session_s": [
+   0.076438,
+   0.074333,
+   0.074705,
+   0.074947
+  ],
+  "kernels": [
+   {
+    "entry": "pt_camera",
+    "ok": true,
+    "cached": false,
+    "s": 0.905059,
+    "worker": 0
+   },
+   {
+    "entry": "cam_step",
+    "ok": true,
+    "cached": false,
+    "s": 0.664176,
+    "worker": 3
+   },
+   {
+    "entry": "pt_snap",
+    "ok": true,
+    "cached": false,
+    "s": 0.368806,
+    "worker": 3
+   },
+   {
+    "entry": "bc6h_encode",
+    "ok": true,
+    "cached": false,
+    "s": 0.209385,
+    "worker": 0
+   },
+   {
+    "entry": "modea_shade",
+    "ok": true,
+    "cached": false,
+    "s": 0.158884,
+    "worker": 0
+   },
+   {
+    "entry": "modea_detect",
+    "ok": true,
+    "cached": false,
+    "s": 0.150118,
+    "worker": 3
+   },
+   {
+    "entry": "pt_classall",
+    "ok": true,
+    "cached": false,
+    "s": 0.234446,
+    "worker": 0
+   },
+   {
+    "entry": "pt_clear",
+    "ok": true,
+    "cached": false,
+    "s": 0.217827,
+    "worker": 3
+   },
+   {
+    "entry": "pt_lists",
+    "ok": true,
+    "cached": false,
+    "s": 0.219274,
+    "worker": 2
+   },
+   {
+    "entry": "pt_args",
+    "ok": true,
+    "cached": false,
+    "s": 0.219394,
+    "worker": 0
+   },
+   {
+    "entry": "pt_sample",
+    "ok": true,
+    "cached": false,
+    "s": 2.451415,
+    "worker": 1
+   },
+   {
+    "entry": "pt_reset",
+    "ok": true,
+    "cached": false,
+    "s": 0.216525,
+    "worker": 3
+   },
+   {
+    "entry": "pt_compose",
+    "ok": true,
+    "cached": false,
+    "s": 0.223742,
+    "worker": 2
+   },
+   {
+    "entry": "pt_present",
+    "ok": true,
+    "cached": false,
+    "s": 0.225627,
+    "worker": 0
+   },
+   {
+    "entry": "pt_camera",
+    "ok": true,
+    "cached": false,
+    "s": 0.540007,
+    "worker": 3
+   },
+   {
+    "entry": "cam_step",
+    "ok": true,
+    "cached": false,
+    "s": 0.393075,
+    "worker": 0
+   },
+   {
+    "entry": "pt_snap",
+    "ok": true,
+    "cached": false,
+    "s": 0.238865,
+    "worker": 3
+   },
+   {
+    "entry": "modea_shade",
+    "ok": true,
+    "cached": false,
+    "s": 0.150464,
+    "worker": 2
+   },
+   {
+    "entry": "modea_detect",
+    "ok": true,
+    "cached": false,
+    "s": 0.148658,
+    "worker": 0
+   },
+   {
+    "entry": "pt_classall",
+    "ok": true,
+    "cached": false,
+    "s": 0.212334,
+    "worker": 3
+   },
+   {
+    "entry": "pt_clear",
+    "ok": true,
+    "cached": false,
+    "s": 0.209092,
+    "worker": 2
+   },
+   {
+    "entry": "pt_lists",
+    "ok": true,
+    "cached": false,
+    "s": 0.209971,
+    "worker": 1
+   },
+   {
+    "entry": "pt_args",
+    "ok": true,
+    "cached": false,
+    "s": 0.216436,
+    "worker": 0
+   },
+   {
+    "entry": "pt_sample",
+    "ok": true,
+    "cached": false,
+    "s": 1.8388,
+    "worker": 2
+   },
+   {
+    "entry": "pt_reset",
+    "ok": true,
+    "cached": false,
+    "s": 0.246183,
+    "worker": 3
+   },
+   {
+    "entry": "pt_compose",
+    "ok": true,
+    "cached": false,
+    "s": 0.249435,
+    "worker": 2
+   },
+   {
+    "entry": "pt_present",
+    "ok": true,
+    "cached": false,
+    "s": 0.218059,
+    "worker": 1
+   }
+  ]
+ },
+ {
+  "scene": "two_wormholes",
+  "threads": 4,
+  "run": 1,
+  "compile_ms": 2942.8387,
+  "shaders": 27,
+  "env_ms": 45.492,
+  "graph_ms": 80.933,
+  "session_s": [
+   0.074086,
+   0.073852,
+   0.074145,
+   0.075651
+  ],
+  "kernels": [
+   {
+    "entry": "pt_camera",
+    "ok": true,
+    "cached": false,
+    "s": 0.910893,
+    "worker": 0
+   },
+   {
+    "entry": "cam_step",
+    "ok": true,
+    "cached": false,
+    "s": 0.656404,
+    "worker": 3
+   },
+   {
+    "entry": "pt_snap",
+    "ok": true,
+    "cached": false,
+    "s": 0.355366,
+    "worker": 3
+   },
+   {
+    "entry": "bc6h_encode",
+    "ok": true,
+    "cached": false,
+    "s": 0.204331,
+    "worker": 0
+   },
+   {
+    "entry": "modea_shade",
+    "ok": true,
+    "cached": false,
+    "s": 0.157738,
+    "worker": 0
+   },
+   {
+    "entry": "modea_detect",
+    "ok": true,
+    "cached": false,
+    "s": 0.155355,
+    "worker": 3
+   },
+   {
+    "entry": "pt_classall",
+    "ok": true,
+    "cached": false,
+    "s": 0.219283,
+    "worker": 0
+   },
+   {
+    "entry": "pt_clear",
+    "ok": true,
+    "cached": false,
+    "s": 0.221477,
+    "worker": 3
+   },
+   {
+    "entry": "pt_lists",
+    "ok": true,
+    "cached": false,
+    "s": 0.226679,
+    "worker": 2
+   },
+   {
+    "entry": "pt_args",
+    "ok": true,
+    "cached": false,
+    "s": 0.221448,
+    "worker": 0
+   },
+   {
+    "entry": "pt_sample",
+    "ok": true,
+    "cached": false,
+    "s": 2.412842,
+    "worker": 1
+   },
+   {
+    "entry": "pt_reset",
+    "ok": true,
+    "cached": false,
+    "s": 0.218089,
+    "worker": 3
+   },
+   {
+    "entry": "pt_compose",
+    "ok": true,
+    "cached": false,
+    "s": 0.220462,
+    "worker": 2
+   },
+   {
+    "entry": "pt_present",
+    "ok": true,
+    "cached": false,
+    "s": 0.219859,
+    "worker": 0
+   },
+   {
+    "entry": "pt_camera",
+    "ok": true,
+    "cached": false,
+    "s": 0.534162,
+    "worker": 3
+   },
+   {
+    "entry": "cam_step",
+    "ok": true,
+    "cached": false,
+    "s": 0.373153,
+    "worker": 0
+   },
+   {
+    "entry": "pt_snap",
+    "ok": true,
+    "cached": false,
+    "s": 0.231606,
+    "worker": 3
+   },
+   {
+    "entry": "modea_shade",
+    "ok": true,
+    "cached": false,
+    "s": 0.148071,
+    "worker": 2
+   },
+   {
+    "entry": "modea_detect",
+    "ok": true,
+    "cached": false,
+    "s": 0.143896,
+    "worker": 0
+   },
+   {
+    "entry": "pt_classall",
+    "ok": true,
+    "cached": false,
+    "s": 0.210701,
+    "worker": 3
+   },
+   {
+    "entry": "pt_clear",
+    "ok": true,
+    "cached": false,
+    "s": 0.210514,
+    "worker": 2
+   },
+   {
+    "entry": "pt_lists",
+    "ok": true,
+    "cached": false,
+    "s": 0.20895,
+    "worker": 1
+   },
+   {
+    "entry": "pt_args",
+    "ok": true,
+    "cached": false,
+    "s": 0.211199,
+    "worker": 0
+   },
+   {
+    "entry": "pt_sample",
+    "ok": true,
+    "cached": false,
+    "s": 1.812047,
+    "worker": 2
+   },
+   {
+    "entry": "pt_reset",
+    "ok": true,
+    "cached": false,
+    "s": 0.220117,
+    "worker": 3
+   },
+   {
+    "entry": "pt_compose",
+    "ok": true,
+    "cached": false,
+    "s": 0.237424,
+    "worker": 2
+   },
+   {
+    "entry": "pt_present",
+    "ok": true,
+    "cached": false,
+    "s": 0.227012,
+    "worker": 1
+   }
+  ]
+ },
+ {
+  "scene": "two_wormholes",
+  "threads": 4,
+  "run": 2,
+  "compile_ms": 2958.1886,
+  "shaders": 27,
+  "env_ms": 48.5885,
+  "graph_ms": 79.6162,
+  "session_s": [
+   0.07647,
+   0.076454,
+   0.075102,
+   0.075972
+  ],
+  "kernels": [
+   {
+    "entry": "pt_camera",
+    "ok": true,
+    "cached": false,
+    "s": 0.893836,
+    "worker": 0
+   },
+   {
+    "entry": "cam_step",
+    "ok": true,
+    "cached": false,
+    "s": 0.661785,
+    "worker": 3
+   },
+   {
+    "entry": "pt_snap",
+    "ok": true,
+    "cached": false,
+    "s": 0.354489,
+    "worker": 3
+   },
+   {
+    "entry": "bc6h_encode",
+    "ok": true,
+    "cached": false,
+    "s": 0.202703,
+    "worker": 0
+   },
+   {
+    "entry": "modea_shade",
+    "ok": true,
+    "cached": false,
+    "s": 0.153709,
+    "worker": 0
+   },
+   {
+    "entry": "modea_detect",
+    "ok": true,
+    "cached": false,
+    "s": 0.148016,
+    "worker": 3
+   },
+   {
+    "entry": "pt_classall",
+    "ok": true,
+    "cached": false,
+    "s": 0.218069,
+    "worker": 0
+   },
+   {
+    "entry": "pt_clear",
+    "ok": true,
+    "cached": false,
+    "s": 0.215054,
+    "worker": 3
+   },
+   {
+    "entry": "pt_lists",
+    "ok": true,
+    "cached": false,
+    "s": 0.214687,
+    "worker": 2
+   },
+   {
+    "entry": "pt_args",
+    "ok": true,
+    "cached": false,
+    "s": 0.220995,
+    "worker": 0
+   },
+   {
+    "entry": "pt_sample",
+    "ok": true,
+    "cached": false,
+    "s": 2.475234,
+    "worker": 1
+   },
+   {
+    "entry": "pt_reset",
+    "ok": true,
+    "cached": false,
+    "s": 0.217187,
+    "worker": 3
+   },
+   {
+    "entry": "pt_compose",
+    "ok": true,
+    "cached": false,
+    "s": 0.216127,
+    "worker": 2
+   },
+   {
+    "entry": "pt_present",
+    "ok": true,
+    "cached": false,
+    "s": 0.214406,
+    "worker": 0
+   },
+   {
+    "entry": "pt_camera",
+    "ok": true,
+    "cached": false,
+    "s": 0.523824,
+    "worker": 3
+   },
+   {
+    "entry": "cam_step",
+    "ok": true,
+    "cached": false,
+    "s": 0.373839,
+    "worker": 0
+   },
+   {
+    "entry": "pt_snap",
+    "ok": true,
+    "cached": false,
+    "s": 0.235844,
+    "worker": 3
+   },
+   {
+    "entry": "modea_shade",
+    "ok": true,
+    "cached": false,
+    "s": 0.151001,
+    "worker": 2
+   },
+   {
+    "entry": "modea_detect",
+    "ok": true,
+    "cached": false,
+    "s": 0.152658,
+    "worker": 0
+   },
+   {
+    "entry": "pt_classall",
+    "ok": true,
+    "cached": false,
+    "s": 0.21519,
+    "worker": 3
+   },
+   {
+    "entry": "pt_clear",
+    "ok": true,
+    "cached": false,
+    "s": 0.208918,
+    "worker": 2
+   },
+   {
+    "entry": "pt_lists",
+    "ok": true,
+    "cached": false,
+    "s": 0.211781,
+    "worker": 0
+   },
+   {
+    "entry": "pt_args",
+    "ok": true,
+    "cached": false,
+    "s": 0.211056,
+    "worker": 1
+   },
+   {
+    "entry": "pt_sample",
+    "ok": true,
+    "cached": false,
+    "s": 1.796503,
+    "worker": 2
+   },
+   {
+    "entry": "pt_reset",
+    "ok": true,
+    "cached": false,
+    "s": 0.208394,
+    "worker": 3
+   },
+   {
+    "entry": "pt_compose",
+    "ok": true,
+    "cached": false,
+    "s": 0.207851,
+    "worker": 2
+   },
+   {
+    "entry": "pt_present",
+    "ok": true,
+    "cached": false,
+    "s": 0.219904,
+    "worker": 0
+   }
+  ]
+ },
+ {
+  "scene": "two_wormholes",
+  "threads": 8,
+  "run": 0,
+  "compile_ms": 2532.0631,
+  "shaders": 27,
+  "env_ms": 52.0009,
+  "graph_ms": 79.8356,
+  "session_s": [
+   0.098102,
+   0.099017,
+   0.098219,
+   0.098834,
+   0.098696,
+   0.098117,
+   0.097305,
+   0.097305
+  ],
+  "kernels": [
+   {
+    "entry": "pt_camera",
+    "ok": true,
+    "cached": false,
+    "s": 0.998631,
+    "worker": 3
+   },
+   {
+    "entry": "cam_step",
+    "ok": true,
+    "cached": false,
+    "s": 0.771307,
+    "worker": 5
+   },
+   {
+    "entry": "pt_snap",
+    "ok": true,
+    "cached": false,
+    "s": 0.413386,
+    "worker": 0
+   },
+   {
+    "entry": "bc6h_encode",
+    "ok": true,
+    "cached": false,
+    "s": 0.23277,
+    "worker": 7
+   },
+   {
+    "entry": "modea_shade",
+    "ok": true,
+    "cached": false,
+    "s": 0.176247,
+    "worker": 7
+   },
+   {
+    "entry": "modea_detect",
+    "ok": true,
+    "cached": false,
+    "s": 0.164421,
+    "worker": 7
+   },
+   {
+    "entry": "pt_classall",
+    "ok": true,
+    "cached": false,
+    "s": 0.253636,
+    "worker": 0
+   },
+   {
+    "entry": "pt_clear",
+    "ok": true,
+    "cached": false,
+    "s": 0.246146,
+    "worker": 6
+   },
+   {
+    "entry": "pt_lists",
+    "ok": true,
+    "cached": false,
+    "s": 0.242005,
+    "worker": 7
+   },
+   {
+    "entry": "pt_args",
+    "ok": true,
+    "cached": false,
+    "s": 0.234513,
+    "worker": 4
+   },
+   {
+    "entry": "pt_sample",
+    "ok": true,
+    "cached": false,
+    "s": 2.429116,
+    "worker": 1
+   },
+   {
+    "entry": "pt_reset",
+    "ok": true,
+    "cached": false,
+    "s": 0.244188,
+    "worker": 0
+   },
+   {
+    "entry": "pt_compose",
+    "ok": true,
+    "cached": false,
+    "s": 0.235661,
+    "worker": 6
+   },
+   {
+    "entry": "pt_present",
+    "ok": true,
+    "cached": false,
+    "s": 0.244031,
+    "worker": 5
+   },
+   {
+    "entry": "pt_camera",
+    "ok": true,
+    "cached": false,
+    "s": 0.616841,
+    "worker": 4
+   },
+   {
+    "entry": "cam_step",
+    "ok": true,
+    "cached": false,
+    "s": 0.447162,
+    "worker": 6
+   },
+   {
+    "entry": "pt_snap",
+    "ok": true,
+    "cached": false,
+    "s": 0.266737,
+    "worker": 7
+   },
+   {
+    "entry": "modea_shade",
+    "ok": true,
+    "cached": false,
+    "s": 0.159846,
+    "worker": 4
+   },
+   {
+    "entry": "modea_detect",
+    "ok": true,
+    "cached": false,
+    "s": 0.156978,
+    "worker": 0
+   },
+   {
+    "entry": "pt_classall",
+    "ok": true,
+    "cached": false,
+    "s": 0.228498,
+    "worker": 6
+   },
+   {
+    "entry": "pt_clear",
+    "ok": true,
+    "cached": false,
+    "s": 0.22626,
+    "worker": 3
+   },
+   {
+    "entry": "pt_lists",
+    "ok": true,
+    "cached": false,
+    "s": 0.228766,
+    "worker": 4
+   },
+   {
+    "entry": "pt_args",
+    "ok": true,
+    "cached": false,
+    "s": 0.226157,
+    "worker": 5
+   },
+   {
+    "entry": "pt_sample",
+    "ok": true,
+    "cached": false,
+    "s": 1.878834,
+    "worker": 2
+   },
+   {
+    "entry": "pt_reset",
+    "ok": true,
+    "cached": false,
+    "s": 0.226515,
+    "worker": 0
+   },
+   {
+    "entry": "pt_compose",
+    "ok": true,
+    "cached": false,
+    "s": 0.231578,
+    "worker": 7
+   },
+   {
+    "entry": "pt_present",
+    "ok": true,
+    "cached": false,
+    "s": 0.241671,
+    "worker": 6
+   }
+  ]
+ },
+ {
+  "scene": "two_wormholes",
+  "threads": 8,
+  "run": 1,
+  "compile_ms": 2489.4471,
+  "shaders": 27,
+  "env_ms": 54.3366,
+  "graph_ms": 79.4769,
+  "session_s": [
+   0.094192,
+   0.095419,
+   0.096624,
+   0.094952,
+   0.096126,
+   0.094915,
+   0.092605,
+   0.093187
+  ],
+  "kernels": [
+   {
+    "entry": "pt_camera",
+    "ok": true,
+    "cached": false,
+    "s": 0.995524,
+    "worker": 3
+   },
+   {
+    "entry": "cam_step",
+    "ok": true,
+    "cached": false,
+    "s": 0.787582,
+    "worker": 5
+   },
+   {
+    "entry": "pt_snap",
+    "ok": true,
+    "cached": false,
+    "s": 0.411788,
+    "worker": 0
+   },
+   {
+    "entry": "bc6h_encode",
+    "ok": true,
+    "cached": false,
+    "s": 0.23048,
+    "worker": 7
+   },
+   {
+    "entry": "modea_shade",
+    "ok": true,
+    "cached": false,
+    "s": 0.181657,
+    "worker": 7
+   },
+   {
+    "entry": "modea_detect",
+    "ok": true,
+    "cached": false,
+    "s": 0.16478,
+    "worker": 7
+   },
+   {
+    "entry": "pt_classall",
+    "ok": true,
+    "cached": false,
+    "s": 0.240646,
+    "worker": 0
+   },
+   {
+    "entry": "pt_clear",
+    "ok": true,
+    "cached": false,
+    "s": 0.2398,
+    "worker": 6
+   },
+   {
+    "entry": "pt_lists",
+    "ok": true,
+    "cached": false,
+    "s": 0.24215,
+    "worker": 7
+   },
+   {
+    "entry": "pt_args",
+    "ok": true,
+    "cached": false,
+    "s": 0.239209,
+    "worker": 4
+   },
+   {
+    "entry": "pt_sample",
+    "ok": true,
+    "cached": false,
+    "s": 2.390147,
+    "worker": 1
+   },
+   {
+    "entry": "pt_reset",
+    "ok": true,
+    "cached": false,
+    "s": 0.242705,
+    "worker": 0
+   },
+   {
+    "entry": "pt_compose",
+    "ok": true,
+    "cached": false,
+    "s": 0.237105,
+    "worker": 6
+   },
+   {
+    "entry": "pt_present",
+    "ok": true,
+    "cached": false,
+    "s": 0.237653,
+    "worker": 5
+   },
+   {
+    "entry": "pt_camera",
+    "ok": true,
+    "cached": false,
+    "s": 0.607484,
+    "worker": 4
+   },
+   {
+    "entry": "cam_step",
+    "ok": true,
+    "cached": false,
+    "s": 0.437138,
+    "worker": 6
+   },
+   {
+    "entry": "pt_snap",
+    "ok": true,
+    "cached": false,
+    "s": 0.260099,
+    "worker": 7
+   },
+   {
+    "entry": "modea_shade",
+    "ok": true,
+    "cached": false,
+    "s": 0.159406,
+    "worker": 4
+   },
+   {
+    "entry": "modea_detect",
+    "ok": true,
+    "cached": false,
+    "s": 0.154813,
+    "worker": 0
+   },
+   {
+    "entry": "pt_classall",
+    "ok": true,
+    "cached": false,
+    "s": 0.236906,
+    "worker": 6
+   },
+   {
+    "entry": "pt_clear",
+    "ok": true,
+    "cached": false,
+    "s": 0.228244,
+    "worker": 3
+   },
+   {
+    "entry": "pt_lists",
+    "ok": true,
+    "cached": false,
+    "s": 0.231169,
+    "worker": 4
+   },
+   {
+    "entry": "pt_args",
+    "ok": true,
+    "cached": false,
+    "s": 0.231223,
+    "worker": 5
+   },
+   {
+    "entry": "pt_sample",
+    "ok": true,
+    "cached": false,
+    "s": 1.86938,
+    "worker": 2
+   },
+   {
+    "entry": "pt_reset",
+    "ok": true,
+    "cached": false,
+    "s": 0.227392,
+    "worker": 0
+   },
+   {
+    "entry": "pt_compose",
+    "ok": true,
+    "cached": false,
+    "s": 0.236617,
+    "worker": 7
+   },
+   {
+    "entry": "pt_present",
+    "ok": true,
+    "cached": false,
+    "s": 0.23316,
+    "worker": 6
+   }
+  ]
+ },
+ {
+  "scene": "two_wormholes",
+  "threads": 8,
+  "run": 2,
+  "compile_ms": 2506.5612,
+  "shaders": 27,
+  "env_ms": 46.1359,
+  "graph_ms": 76.5561,
+  "session_s": [
+   0.102949,
+   0.112482,
+   0.108945,
+   0.108884,
+   0.110672,
+   0.109388,
+   0.107755,
+   0.110083
+  ],
+  "kernels": [
+   {
+    "entry": "pt_camera",
+    "ok": true,
+    "cached": false,
+    "s": 1.006107,
+    "worker": 3
+   },
+   {
+    "entry": "cam_step",
+    "ok": true,
+    "cached": false,
+    "s": 0.769512,
+    "worker": 5
+   },
+   {
+    "entry": "pt_snap",
+    "ok": true,
+    "cached": false,
+    "s": 0.40906,
+    "worker": 0
+   },
+   {
+    "entry": "bc6h_encode",
+    "ok": true,
+    "cached": false,
+    "s": 0.231137,
+    "worker": 7
+   },
+   {
+    "entry": "modea_shade",
+    "ok": true,
+    "cached": false,
+    "s": 0.176802,
+    "worker": 7
+   },
+   {
+    "entry": "modea_detect",
+    "ok": true,
+    "cached": false,
+    "s": 0.165031,
+    "worker": 0
+   },
+   {
+    "entry": "pt_classall",
+    "ok": true,
+    "cached": false,
+    "s": 0.239465,
+    "worker": 7
+   },
+   {
+    "entry": "pt_clear",
+    "ok": true,
+    "cached": false,
+    "s": 0.236244,
+    "worker": 6
+   },
+   {
+    "entry": "pt_lists",
+    "ok": true,
+    "cached": false,
+    "s": 0.240933,
+    "worker": 0
+   },
+   {
+    "entry": "pt_args",
+    "ok": true,
+    "cached": false,
+    "s": 0.241721,
+    "worker": 4
+   },
+   {
+    "entry": "pt_sample",
+    "ok": true,
+    "cached": false,
+    "s": 2.390203,
+    "worker": 1
+   },
+   {
+    "entry": "pt_reset",
+    "ok": true,
+    "cached": false,
+    "s": 0.240649,
+    "worker": 7
+   },
+   {
+    "entry": "pt_compose",
+    "ok": true,
+    "cached": false,
+    "s": 0.251172,
+    "worker": 6
+   },
+   {
+    "entry": "pt_present",
+    "ok": true,
+    "cached": false,
+    "s": 0.24788,
+    "worker": 5
+   },
+   {
+    "entry": "pt_camera",
+    "ok": true,
+    "cached": false,
+    "s": 0.605032,
+    "worker": 4
+   },
+   {
+    "entry": "cam_step",
+    "ok": true,
+    "cached": false,
+    "s": 0.444982,
+    "worker": 6
+   },
+   {
+    "entry": "pt_snap",
+    "ok": true,
+    "cached": false,
+    "s": 0.262196,
+    "worker": 0
+   },
+   {
+    "entry": "modea_shade",
+    "ok": true,
+    "cached": false,
+    "s": 0.167815,
+    "worker": 4
+   },
+   {
+    "entry": "modea_detect",
+    "ok": true,
+    "cached": false,
+    "s": 0.163344,
+    "worker": 7
+   },
+   {
+    "entry": "pt_classall",
+    "ok": true,
+    "cached": false,
+    "s": 0.230625,
+    "worker": 6
+   },
+   {
+    "entry": "pt_clear",
+    "ok": true,
+    "cached": false,
+    "s": 0.232849,
+    "worker": 3
+   },
+   {
+    "entry": "pt_lists",
+    "ok": true,
+    "cached": false,
+    "s": 0.231718,
+    "worker": 4
+   },
+   {
+    "entry": "pt_args",
+    "ok": true,
+    "cached": false,
+    "s": 0.24299,
+    "worker": 5
+   },
+   {
+    "entry": "pt_sample",
+    "ok": true,
+    "cached": false,
+    "s": 1.864089,
+    "worker": 2
+   },
+   {
+    "entry": "pt_reset",
+    "ok": true,
+    "cached": false,
+    "s": 0.227033,
+    "worker": 7
+   },
+   {
+    "entry": "pt_compose",
+    "ok": true,
+    "cached": false,
+    "s": 0.233104,
+    "worker": 0
+   },
+   {
+    "entry": "pt_present",
+    "ok": true,
+    "cached": false,
+    "s": 0.241012,
+    "worker": 6
+   }
+  ]
+ },
+ {
+  "scene": "two_wormholes",
+  "threads": 16,
+  "run": 0,
+  "compile_ms": 2588.9067,
+  "shaders": 27,
+  "env_ms": 47.4711,
+  "graph_ms": 80.0798,
+  "session_s": [
+   0.194597,
+   0.205245,
+   0.198044,
+   0.201347,
+   0.20309,
+   0.200728,
+   0.199881,
+   0.191194,
+   0.199407,
+   0.194619,
+   0.191636,
+   0.195548,
+   0.200707,
+   0.19032,
+   0.190577,
+   0.192629
+  ],
+  "kernels": [
+   {
+    "entry": "pt_camera",
+    "ok": true,
+    "cached": false,
+    "s": 1.014064,
+    "worker": 3
+   },
+   {
+    "entry": "cam_step",
+    "ok": true,
+    "cached": false,
+    "s": 0.791743,
+    "worker": 5
+   },
+   {
+    "entry": "pt_snap",
+    "ok": true,
+    "cached": false,
+    "s": 0.453515,
+    "worker": 7
+   },
+   {
+    "entry": "bc6h_encode",
+    "ok": true,
+    "cached": false,
+    "s": 0.258778,
+    "worker": 8
+   },
+   {
+    "entry": "modea_shade",
+    "ok": true,
+    "cached": false,
+    "s": 0.243856,
+    "worker": 9
+   },
+   {
+    "entry": "modea_detect",
+    "ok": true,
+    "cached": false,
+    "s": 0.223639,
+    "worker": 10
+   },
+   {
+    "entry": "pt_classall",
+    "ok": true,
+    "cached": false,
+    "s": 0.317305,
+    "worker": 11
+   },
+   {
+    "entry": "pt_clear",
+    "ok": true,
+    "cached": false,
+    "s": 0.292054,
+    "worker": 12
+   },
+   {
+    "entry": "pt_lists",
+    "ok": true,
+    "cached": false,
+    "s": 0.311371,
+    "worker": 13
+   },
+   {
+    "entry": "pt_args",
+    "ok": true,
+    "cached": false,
+    "s": 0.325557,
+    "worker": 14
+   },
+   {
+    "entry": "pt_sample",
+    "ok": true,
+    "cached": false,
+    "s": 2.379751,
+    "worker": 1
+   },
+   {
+    "entry": "pt_reset",
+    "ok": true,
+    "cached": false,
+    "s": 0.311742,
+    "worker": 0
+   },
+   {
+    "entry": "pt_compose",
+    "ok": true,
+    "cached": false,
+    "s": 0.319064,
+    "worker": 15
+   },
+   {
+    "entry": "pt_present",
+    "ok": true,
+    "cached": false,
+    "s": 0.259028,
+    "worker": 10
+   },
+   {
+    "entry": "pt_camera",
+    "ok": true,
+    "cached": false,
+    "s": 0.678666,
+    "worker": 4
+   },
+   {
+    "entry": "cam_step",
+    "ok": true,
+    "cached": false,
+    "s": 0.515378,
+    "worker": 6
+   },
+   {
+    "entry": "pt_snap",
+    "ok": true,
+    "cached": false,
+    "s": 0.272517,
+    "worker": 9
+   },
+   {
+    "entry": "modea_shade",
+    "ok": true,
+    "cached": false,
+    "s": 0.214075,
+    "worker": 8
+   },
+   {
+    "entry": "modea_detect",
+    "ok": true,
+    "cached": false,
+    "s": 0.173967,
+    "worker": 12
+   },
+   {
+    "entry": "pt_classall",
+    "ok": true,
+    "cached": false,
+    "s": 0.288242,
+    "worker": 13
+   },
+   {
+    "entry": "pt_clear",
+    "ok": true,
+    "cached": false,
+    "s": 0.261646,
+    "worker": 0
+   },
+   {
+    "entry": "pt_lists",
+    "ok": true,
+    "cached": false,
+    "s": 0.242605,
+    "worker": 15
+   },
+   {
+    "entry": "pt_args",
+    "ok": true,
+    "cached": false,
+    "s": 0.264173,
+    "worker": 11
+   },
+   {
+    "entry": "pt_sample",
+    "ok": true,
+    "cached": false,
+    "s": 1.863615,
+    "worker": 2
+   },
+   {
+    "entry": "pt_reset",
+    "ok": true,
+    "cached": false,
+    "s": 0.226535,
+    "worker": 14
+   },
+   {
+    "entry": "pt_compose",
+    "ok": true,
+    "cached": false,
+    "s": 0.244391,
+    "worker": 7
+   },
+   {
+    "entry": "pt_present",
+    "ok": true,
+    "cached": false,
+    "s": 0.260927,
+    "worker": 12
+   }
+  ]
+ },
+ {
+  "scene": "two_wormholes",
+  "threads": 16,
+  "run": 1,
+  "compile_ms": 2543.757,
+  "shaders": 27,
+  "env_ms": 50.2162,
+  "graph_ms": 80.101,
+  "session_s": [
+   0.200448,
+   0.201588,
+   0.201781,
+   0.193077,
+   0.199227,
+   0.199549,
+   0.194672,
+   0.202175,
+   0.200761,
+   0.199203,
+   0.196467,
+   0.196922,
+   0.200746,
+   0.199527,
+   0.201313,
+   0.200536
+  ],
+  "kernels": [
+   {
+    "entry": "pt_camera",
+    "ok": true,
+    "cached": false,
+    "s": 0.996339,
+    "worker": 3
+   },
+   {
+    "entry": "cam_step",
+    "ok": true,
+    "cached": false,
+    "s": 0.82769,
+    "worker": 5
+   },
+   {
+    "entry": "pt_snap",
+    "ok": true,
+    "cached": false,
+    "s": 0.481458,
+    "worker": 7
+   },
+   {
+    "entry": "bc6h_encode",
+    "ok": true,
+    "cached": false,
+    "s": 0.28,
+    "worker": 8
+   },
+   {
+    "entry": "modea_shade",
+    "ok": true,
+    "cached": false,
+    "s": 0.244741,
+    "worker": 9
+   },
+   {
+    "entry": "modea_detect",
+    "ok": true,
+    "cached": false,
+    "s": 0.219115,
+    "worker": 10
+   },
+   {
+    "entry": "pt_classall",
+    "ok": true,
+    "cached": false,
+    "s": 0.312978,
+    "worker": 11
+   },
+   {
+    "entry": "pt_clear",
+    "ok": true,
+    "cached": false,
+    "s": 0.32611,
+    "worker": 12
+   },
+   {
+    "entry": "pt_lists",
+    "ok": true,
+    "cached": false,
+    "s": 0.314618,
+    "worker": 13
+   },
+   {
+    "entry": "pt_args",
+    "ok": true,
+    "cached": false,
+    "s": 0.307598,
+    "worker": 14
+   },
+   {
+    "entry": "pt_sample",
+    "ok": true,
+    "cached": false,
+    "s": 2.338363,
+    "worker": 1
+   },
+   {
+    "entry": "pt_reset",
+    "ok": true,
+    "cached": false,
+    "s": 0.308789,
+    "worker": 0
+   },
+   {
+    "entry": "pt_compose",
+    "ok": true,
+    "cached": false,
+    "s": 0.297319,
+    "worker": 15
+   },
+   {
+    "entry": "pt_present",
+    "ok": true,
+    "cached": false,
+    "s": 0.267164,
+    "worker": 10
+   },
+   {
+    "entry": "pt_camera",
+    "ok": true,
+    "cached": false,
+    "s": 0.660869,
+    "worker": 4
+   },
+   {
+    "entry": "cam_step",
+    "ok": true,
+    "cached": false,
+    "s": 0.486689,
+    "worker": 6
+   },
+   {
+    "entry": "pt_snap",
+    "ok": true,
+    "cached": false,
+    "s": 0.267487,
+    "worker": 9
+   },
+   {
+    "entry": "modea_shade",
+    "ok": true,
+    "cached": false,
+    "s": 0.179114,
+    "worker": 8
+   },
+   {
+    "entry": "modea_detect",
+    "ok": true,
+    "cached": false,
+    "s": 0.168841,
+    "worker": 15
+   },
+   {
+    "entry": "pt_classall",
+    "ok": true,
+    "cached": false,
+    "s": 0.265823,
+    "worker": 14
+   },
+   {
+    "entry": "pt_clear",
+    "ok": true,
+    "cached": false,
+    "s": 0.258323,
+    "worker": 11
+   },
+   {
+    "entry": "pt_lists",
+    "ok": true,
+    "cached": false,
+    "s": 0.258507,
+    "worker": 0
+   },
+   {
+    "entry": "pt_args",
+    "ok": true,
+    "cached": false,
+    "s": 0.246983,
+    "worker": 13
+   },
+   {
+    "entry": "pt_sample",
+    "ok": true,
+    "cached": false,
+    "s": 1.881656,
+    "worker": 2
+   },
+   {
+    "entry": "pt_reset",
+    "ok": true,
+    "cached": false,
+    "s": 0.26377,
+    "worker": 12
+   },
+   {
+    "entry": "pt_compose",
+    "ok": true,
+    "cached": false,
+    "s": 0.239404,
+    "worker": 8
+   },
+   {
+    "entry": "pt_present",
+    "ok": true,
+    "cached": false,
+    "s": 0.239529,
+    "worker": 15
+   }
+  ]
+ },
+ {
+  "scene": "two_wormholes",
+  "threads": 16,
+  "run": 2,
+  "compile_ms": 2578.4857,
+  "shaders": 27,
+  "env_ms": 46.2935,
+  "graph_ms": 87.4009,
+  "session_s": [
+   0.179804,
+   0.182063,
+   0.178668,
+   0.17689,
+   0.181572,
+   0.182771,
+   0.17921,
+   0.183219,
+   0.179365,
+   0.181848,
+   0.18289,
+   0.179019,
+   0.17558,
+   0.176125,
+   0.17894,
+   0.181018
+  ],
+  "kernels": [
+   {
+    "entry": "pt_camera",
+    "ok": true,
+    "cached": false,
+    "s": 0.999167,
+    "worker": 3
+   },
+   {
+    "entry": "cam_step",
+    "ok": true,
+    "cached": false,
+    "s": 0.846269,
+    "worker": 5
+   },
+   {
+    "entry": "pt_snap",
+    "ok": true,
+    "cached": false,
+    "s": 0.463823,
+    "worker": 7
+   },
+   {
+    "entry": "bc6h_encode",
+    "ok": true,
+    "cached": false,
+    "s": 0.26458,
+    "worker": 8
+   },
+   {
+    "entry": "modea_shade",
+    "ok": true,
+    "cached": false,
+    "s": 0.217387,
+    "worker": 9
+   },
+   {
+    "entry": "modea_detect",
+    "ok": true,
+    "cached": false,
+    "s": 0.211436,
+    "worker": 10
+   },
+   {
+    "entry": "pt_classall",
+    "ok": true,
+    "cached": false,
+    "s": 0.297537,
+    "worker": 11
+   },
+   {
+    "entry": "pt_clear",
+    "ok": true,
+    "cached": false,
+    "s": 0.293246,
+    "worker": 12
+   },
+   {
+    "entry": "pt_lists",
+    "ok": true,
+    "cached": false,
+    "s": 0.308362,
+    "worker": 13
+   },
+   {
+    "entry": "pt_args",
+    "ok": true,
+    "cached": false,
+    "s": 0.311723,
+    "worker": 14
+   },
+   {
+    "entry": "pt_sample",
+    "ok": true,
+    "cached": false,
+    "s": 2.391811,
+    "worker": 1
+   },
+   {
+    "entry": "pt_reset",
+    "ok": true,
+    "cached": false,
+    "s": 0.298393,
+    "worker": 0
+   },
+   {
+    "entry": "pt_compose",
+    "ok": true,
+    "cached": false,
+    "s": 0.309974,
+    "worker": 15
+   },
+   {
+    "entry": "pt_present",
+    "ok": true,
+    "cached": false,
+    "s": 0.262773,
+    "worker": 10
+   },
+   {
+    "entry": "pt_camera",
+    "ok": true,
+    "cached": false,
+    "s": 0.664489,
+    "worker": 4
+   },
+   {
+    "entry": "cam_step",
+    "ok": true,
+    "cached": false,
+    "s": 0.489596,
+    "worker": 6
+   },
+   {
+    "entry": "pt_snap",
+    "ok": true,
+    "cached": false,
+    "s": 0.285205,
+    "worker": 9
+   },
+   {
+    "entry": "modea_shade",
+    "ok": true,
+    "cached": false,
+    "s": 0.173291,
+    "worker": 8
+   },
+   {
+    "entry": "modea_detect",
+    "ok": true,
+    "cached": false,
+    "s": 0.17849,
+    "worker": 12
+   },
+   {
+    "entry": "pt_classall",
+    "ok": true,
+    "cached": false,
+    "s": 0.249314,
+    "worker": 11
+   },
+   {
+    "entry": "pt_clear",
+    "ok": true,
+    "cached": false,
+    "s": 0.26227,
+    "worker": 0
+   },
+   {
+    "entry": "pt_lists",
+    "ok": true,
+    "cached": false,
+    "s": 0.233132,
+    "worker": 13
+   },
+   {
+    "entry": "pt_args",
+    "ok": true,
+    "cached": false,
+    "s": 0.229583,
+    "worker": 14
+   },
+   {
+    "entry": "pt_sample",
+    "ok": true,
+    "cached": false,
+    "s": 1.847608,
+    "worker": 2
+   },
+   {
+    "entry": "pt_reset",
+    "ok": true,
+    "cached": false,
+    "s": 0.251055,
+    "worker": 15
+   },
+   {
+    "entry": "pt_compose",
+    "ok": true,
+    "cached": false,
+    "s": 0.269248,
+    "worker": 8
+   },
+   {
+    "entry": "pt_present",
+    "ok": true,
+    "cached": false,
+    "s": 0.244158,
+    "worker": 7
+   }
+  ]
+ },
+ {
+  "scene": "S3",
+  "threads": 1,
+  "run": 0,
+  "compile_ms": 8553.2709,
+  "shaders": 27,
+  "env_ms": 48.3699,
+  "graph_ms": 65.1693,
+  "session_s": [
+   0.066776
+  ],
+  "kernels": [
+   {
+    "entry": "pt_camera",
+    "ok": true,
+    "cached": false,
+    "s": 0.649063,
+    "worker": 0
+   },
+   {
+    "entry": "cam_step",
+    "ok": true,
+    "cached": false,
+    "s": 0.486351,
+    "worker": 0
+   },
+   {
+    "entry": "pt_snap",
+    "ok": true,
+    "cached": false,
+    "s": 0.31514,
+    "worker": 0
+   },
+   {
+    "entry": "bc6h_encode",
+    "ok": true,
+    "cached": false,
+    "s": 0.189537,
+    "worker": 0
+   },
+   {
+    "entry": "modea_shade",
+    "ok": true,
+    "cached": false,
+    "s": 0.148146,
+    "worker": 0
+   },
+   {
+    "entry": "modea_detect",
+    "ok": true,
+    "cached": false,
+    "s": 0.139001,
+    "worker": 0
+   },
+   {
+    "entry": "pt_classall",
+    "ok": true,
+    "cached": false,
+    "s": 0.199556,
+    "worker": 0
+   },
+   {
+    "entry": "pt_clear",
+    "ok": true,
+    "cached": false,
+    "s": 0.200683,
+    "worker": 0
+   },
+   {
+    "entry": "pt_lists",
+    "ok": true,
+    "cached": false,
+    "s": 0.199736,
+    "worker": 0
+   },
+   {
+    "entry": "pt_args",
+    "ok": true,
+    "cached": false,
+    "s": 0.208849,
+    "worker": 0
+   },
+   {
+    "entry": "pt_sample",
+    "ok": true,
+    "cached": false,
+    "s": 2.073116,
+    "worker": 0
+   },
+   {
+    "entry": "pt_reset",
+    "ok": true,
+    "cached": false,
+    "s": 0.200169,
+    "worker": 0
+   },
+   {
+    "entry": "pt_compose",
+    "ok": true,
+    "cached": false,
+    "s": 0.202562,
+    "worker": 0
+   },
+   {
+    "entry": "pt_present",
+    "ok": true,
+    "cached": false,
+    "s": 0.200668,
+    "worker": 0
+   },
+   {
+    "entry": "pt_camera",
+    "ok": true,
+    "cached": false,
+    "s": 0.320541,
+    "worker": 0
+   },
+   {
+    "entry": "cam_step",
+    "ok": true,
+    "cached": false,
+    "s": 0.257305,
+    "worker": 0
+   },
+   {
+    "entry": "pt_snap",
+    "ok": true,
+    "cached": false,
+    "s": 0.209241,
+    "worker": 0
+   },
+   {
+    "entry": "modea_shade",
+    "ok": true,
+    "cached": false,
+    "s": 0.135629,
+    "worker": 0
+   },
+   {
+    "entry": "modea_detect",
+    "ok": true,
+    "cached": false,
+    "s": 0.129084,
+    "worker": 0
+   },
+   {
+    "entry": "pt_classall",
+    "ok": true,
+    "cached": false,
+    "s": 0.193263,
+    "worker": 0
+   },
+   {
+    "entry": "pt_clear",
+    "ok": true,
+    "cached": false,
+    "s": 0.199131,
+    "worker": 0
+   },
+   {
+    "entry": "pt_lists",
+    "ok": true,
+    "cached": false,
+    "s": 0.196535,
+    "worker": 0
+   },
+   {
+    "entry": "pt_args",
+    "ok": true,
+    "cached": false,
+    "s": 0.192441,
+    "worker": 0
+   },
+   {
+    "entry": "pt_sample",
+    "ok": true,
+    "cached": false,
+    "s": 0.605803,
+    "worker": 0
+   },
+   {
+    "entry": "pt_reset",
+    "ok": true,
+    "cached": false,
+    "s": 0.195382,
+    "worker": 0
+   },
+   {
+    "entry": "pt_compose",
+    "ok": true,
+    "cached": false,
+    "s": 0.204335,
+    "worker": 0
+   },
+   {
+    "entry": "pt_present",
+    "ok": true,
+    "cached": false,
+    "s": 0.200721,
+    "worker": 0
+   }
+  ]
+ },
+ {
+  "scene": "S3",
+  "threads": 1,
+  "run": 1,
+  "compile_ms": 8660.5437,
+  "shaders": 27,
+  "env_ms": 49.7378,
+  "graph_ms": 53.815,
+  "session_s": [
+   0.065334
+  ],
+  "kernels": [
+   {
+    "entry": "pt_camera",
+    "ok": true,
+    "cached": false,
+    "s": 0.645648,
+    "worker": 0
+   },
+   {
+    "entry": "cam_step",
+    "ok": true,
+    "cached": false,
+    "s": 0.497107,
+    "worker": 0
+   },
+   {
+    "entry": "pt_snap",
+    "ok": true,
+    "cached": false,
+    "s": 0.311957,
+    "worker": 0
+   },
+   {
+    "entry": "bc6h_encode",
+    "ok": true,
+    "cached": false,
+    "s": 0.188032,
+    "worker": 0
+   },
+   {
+    "entry": "modea_shade",
+    "ok": true,
+    "cached": false,
+    "s": 0.147846,
+    "worker": 0
+   },
+   {
+    "entry": "modea_detect",
+    "ok": true,
+    "cached": false,
+    "s": 0.138463,
+    "worker": 0
+   },
+   {
+    "entry": "pt_classall",
+    "ok": true,
+    "cached": false,
+    "s": 0.199932,
+    "worker": 0
+   },
+   {
+    "entry": "pt_clear",
+    "ok": true,
+    "cached": false,
+    "s": 0.199476,
+    "worker": 0
+   },
+   {
+    "entry": "pt_lists",
+    "ok": true,
+    "cached": false,
+    "s": 0.201753,
+    "worker": 0
+   },
+   {
+    "entry": "pt_args",
+    "ok": true,
+    "cached": false,
+    "s": 0.200823,
+    "worker": 0
+   },
+   {
+    "entry": "pt_sample",
+    "ok": true,
+    "cached": false,
+    "s": 2.171071,
+    "worker": 0
+   },
+   {
+    "entry": "pt_reset",
+    "ok": true,
+    "cached": false,
+    "s": 0.204878,
+    "worker": 0
+   },
+   {
+    "entry": "pt_compose",
+    "ok": true,
+    "cached": false,
+    "s": 0.199522,
+    "worker": 0
+   },
+   {
+    "entry": "pt_present",
+    "ok": true,
+    "cached": false,
+    "s": 0.210108,
+    "worker": 0
+   },
+   {
+    "entry": "pt_camera",
+    "ok": true,
+    "cached": false,
+    "s": 0.322604,
+    "worker": 0
+   },
+   {
+    "entry": "cam_step",
+    "ok": true,
+    "cached": false,
+    "s": 0.255175,
+    "worker": 0
+   },
+   {
+    "entry": "pt_snap",
+    "ok": true,
+    "cached": false,
+    "s": 0.212154,
+    "worker": 0
+   },
+   {
+    "entry": "modea_shade",
+    "ok": true,
+    "cached": false,
+    "s": 0.136298,
+    "worker": 0
+   },
+   {
+    "entry": "modea_detect",
+    "ok": true,
+    "cached": false,
+    "s": 0.131204,
+    "worker": 0
+   },
+   {
+    "entry": "pt_classall",
+    "ok": true,
+    "cached": false,
+    "s": 0.194852,
+    "worker": 0
+   },
+   {
+    "entry": "pt_clear",
+    "ok": true,
+    "cached": false,
+    "s": 0.192911,
+    "worker": 0
+   },
+   {
+    "entry": "pt_lists",
+    "ok": true,
+    "cached": false,
+    "s": 0.198002,
+    "worker": 0
+   },
+   {
+    "entry": "pt_args",
+    "ok": true,
+    "cached": false,
+    "s": 0.194727,
+    "worker": 0
+   },
+   {
+    "entry": "pt_sample",
+    "ok": true,
+    "cached": false,
+    "s": 0.615255,
+    "worker": 0
+   },
+   {
+    "entry": "pt_reset",
+    "ok": true,
+    "cached": false,
+    "s": 0.19298,
+    "worker": 0
+   },
+   {
+    "entry": "pt_compose",
+    "ok": true,
+    "cached": false,
+    "s": 0.201761,
+    "worker": 0
+   },
+   {
+    "entry": "pt_present",
+    "ok": true,
+    "cached": false,
+    "s": 0.197618,
+    "worker": 0
+   }
+  ]
+ },
+ {
+  "scene": "S3",
+  "threads": 1,
+  "run": 2,
+  "compile_ms": 8682.87,
+  "shaders": 27,
+  "env_ms": 50.4149,
+  "graph_ms": 47.7899,
+  "session_s": [
+   0.067646
+  ],
+  "kernels": [
+   {
+    "entry": "pt_camera",
+    "ok": true,
+    "cached": false,
+    "s": 0.656089,
+    "worker": 0
+   },
+   {
+    "entry": "cam_step",
+    "ok": true,
+    "cached": false,
+    "s": 0.48353,
+    "worker": 0
+   },
+   {
+    "entry": "pt_snap",
+    "ok": true,
+    "cached": false,
+    "s": 0.30928,
+    "worker": 0
+   },
+   {
+    "entry": "bc6h_encode",
+    "ok": true,
+    "cached": false,
+    "s": 0.189426,
+    "worker": 0
+   },
+   {
+    "entry": "modea_shade",
+    "ok": true,
+    "cached": false,
+    "s": 0.146907,
+    "worker": 0
+   },
+   {
+    "entry": "modea_detect",
+    "ok": true,
+    "cached": false,
+    "s": 0.140467,
+    "worker": 0
+   },
+   {
+    "entry": "pt_classall",
+    "ok": true,
+    "cached": false,
+    "s": 0.197483,
+    "worker": 0
+   },
+   {
+    "entry": "pt_clear",
+    "ok": true,
+    "cached": false,
+    "s": 0.198196,
+    "worker": 0
+   },
+   {
+    "entry": "pt_lists",
+    "ok": true,
+    "cached": false,
+    "s": 0.19928,
+    "worker": 0
+   },
+   {
+    "entry": "pt_args",
+    "ok": true,
+    "cached": false,
+    "s": 0.203471,
+    "worker": 0
+   },
+   {
+    "entry": "pt_sample",
+    "ok": true,
+    "cached": false,
+    "s": 2.091129,
+    "worker": 0
+   },
+   {
+    "entry": "pt_reset",
+    "ok": true,
+    "cached": false,
+    "s": 0.205803,
+    "worker": 0
+   },
+   {
+    "entry": "pt_compose",
+    "ok": true,
+    "cached": false,
+    "s": 0.206513,
+    "worker": 0
+   },
+   {
+    "entry": "pt_present",
+    "ok": true,
+    "cached": false,
+    "s": 0.21722,
+    "worker": 0
+   },
+   {
+    "entry": "pt_camera",
+    "ok": true,
+    "cached": false,
+    "s": 0.328491,
+    "worker": 0
+   },
+   {
+    "entry": "cam_step",
+    "ok": true,
+    "cached": false,
+    "s": 0.255194,
+    "worker": 0
+   },
+   {
+    "entry": "pt_snap",
+    "ok": true,
+    "cached": false,
+    "s": 0.223033,
+    "worker": 0
+   },
+   {
+    "entry": "modea_shade",
+    "ok": true,
+    "cached": false,
+    "s": 0.147158,
+    "worker": 0
+   },
+   {
+    "entry": "modea_detect",
+    "ok": true,
+    "cached": false,
+    "s": 0.134214,
+    "worker": 0
+   },
+   {
+    "entry": "pt_classall",
+    "ok": true,
+    "cached": false,
+    "s": 0.201501,
+    "worker": 0
+   },
+   {
+    "entry": "pt_clear",
+    "ok": true,
+    "cached": false,
+    "s": 0.200171,
+    "worker": 0
+   },
+   {
+    "entry": "pt_lists",
+    "ok": true,
+    "cached": false,
+    "s": 0.209797,
+    "worker": 0
+   },
+   {
+    "entry": "pt_args",
+    "ok": true,
+    "cached": false,
+    "s": 0.207568,
+    "worker": 0
+   },
+   {
+    "entry": "pt_sample",
+    "ok": true,
+    "cached": false,
+    "s": 0.615811,
+    "worker": 0
+   },
+   {
+    "entry": "pt_reset",
+    "ok": true,
+    "cached": false,
+    "s": 0.202351,
+    "worker": 0
+   },
+   {
+    "entry": "pt_compose",
+    "ok": true,
+    "cached": false,
+    "s": 0.204177,
+    "worker": 0
+   },
+   {
+    "entry": "pt_present",
+    "ok": true,
+    "cached": false,
+    "s": 0.203063,
+    "worker": 0
+   }
+  ]
+ },
+ {
+  "scene": "S3",
+  "threads": 4,
+  "run": 0,
+  "compile_ms": 2649.0338,
+  "shaders": 27,
+  "env_ms": 49.5734,
+  "graph_ms": 53.1728,
+  "session_s": [
+   0.075247,
+   0.078272,
+   0.076032,
+   0.078123
+  ],
+  "kernels": [
+   {
+    "entry": "pt_camera",
+    "ok": true,
+    "cached": false,
+    "s": 0.903031,
+    "worker": 0
+   },
+   {
+    "entry": "cam_step",
+    "ok": true,
+    "cached": false,
+    "s": 0.654294,
+    "worker": 3
+   },
+   {
+    "entry": "pt_snap",
+    "ok": true,
+    "cached": false,
+    "s": 0.338819,
+    "worker": 0
+   },
+   {
+    "entry": "bc6h_encode",
+    "ok": true,
+    "cached": false,
+    "s": 0.191177,
+    "worker": 3
+   },
+   {
+    "entry": "modea_shade",
+    "ok": true,
+    "cached": false,
+    "s": 0.15349,
+    "worker": 2
+   },
+   {
+    "entry": "modea_detect",
+    "ok": true,
+    "cached": false,
+    "s": 0.14636,
+    "worker": 2
+   },
+   {
+    "entry": "pt_classall",
+    "ok": true,
+    "cached": false,
+    "s": 0.217436,
+    "worker": 3
+   },
+   {
+    "entry": "pt_clear",
+    "ok": true,
+    "cached": false,
+    "s": 0.222196,
+    "worker": 0
+   },
+   {
+    "entry": "pt_lists",
+    "ok": true,
+    "cached": false,
+    "s": 0.216676,
+    "worker": 2
+   },
+   {
+    "entry": "pt_args",
+    "ok": true,
+    "cached": false,
+    "s": 0.213344,
+    "worker": 3
+   },
+   {
+    "entry": "pt_sample",
+    "ok": true,
+    "cached": false,
+    "s": 2.396969,
+    "worker": 1
+   },
+   {
+    "entry": "pt_reset",
+    "ok": true,
+    "cached": false,
+    "s": 0.223848,
+    "worker": 0
+   },
+   {
+    "entry": "pt_compose",
+    "ok": true,
+    "cached": false,
+    "s": 0.22092,
+    "worker": 2
+   },
+   {
+    "entry": "pt_present",
+    "ok": true,
+    "cached": false,
+    "s": 0.221483,
+    "worker": 3
+   },
+   {
+    "entry": "pt_camera",
+    "ok": true,
+    "cached": false,
+    "s": 0.367829,
+    "worker": 3
+   },
+   {
+    "entry": "cam_step",
+    "ok": true,
+    "cached": false,
+    "s": 0.268528,
+    "worker": 2
+   },
+   {
+    "entry": "pt_snap",
+    "ok": true,
+    "cached": false,
+    "s": 0.235333,
+    "worker": 0
+   },
+   {
+    "entry": "modea_shade",
+    "ok": true,
+    "cached": false,
+    "s": 0.144366,
+    "worker": 2
+   },
+   {
+    "entry": "modea_detect",
+    "ok": true,
+    "cached": false,
+    "s": 0.144177,
+    "worker": 3
+   },
+   {
+    "entry": "pt_classall",
+    "ok": true,
+    "cached": false,
+    "s": 0.211784,
+    "worker": 0
+   },
+   {
+    "entry": "pt_clear",
+    "ok": true,
+    "cached": false,
+    "s": 0.206538,
+    "worker": 2
+   },
+   {
+    "entry": "pt_lists",
+    "ok": true,
+    "cached": false,
+    "s": 0.21749,
+    "worker": 3
+   },
+   {
+    "entry": "pt_args",
+    "ok": true,
+    "cached": false,
+    "s": 0.212317,
+    "worker": 0
+   },
+   {
+    "entry": "pt_sample",
+    "ok": true,
+    "cached": false,
+    "s": 0.786324,
+    "worker": 2
+   },
+   {
+    "entry": "pt_reset",
+    "ok": true,
+    "cached": false,
+    "s": 0.210239,
+    "worker": 2
+   },
+   {
+    "entry": "pt_compose",
+    "ok": true,
+    "cached": false,
+    "s": 0.220038,
+    "worker": 3
+   },
+   {
+    "entry": "pt_present",
+    "ok": true,
+    "cached": false,
+    "s": 0.209051,
+    "worker": 0
+   }
+  ]
+ },
+ {
+  "scene": "S3",
+  "threads": 4,
+  "run": 1,
+  "compile_ms": 2607.0057,
+  "shaders": 27,
+  "env_ms": 50.5445,
+  "graph_ms": 47.829,
+  "session_s": [
+   0.075818,
+   0.074943,
+   0.075098,
+   0.076497
+  ],
+  "kernels": [
+   {
+    "entry": "pt_camera",
+    "ok": true,
+    "cached": false,
+    "s": 0.891068,
+    "worker": 0
+   },
+   {
+    "entry": "cam_step",
+    "ok": true,
+    "cached": false,
+    "s": 0.644066,
+    "worker": 3
+   },
+   {
+    "entry": "pt_snap",
+    "ok": true,
+    "cached": false,
+    "s": 0.333716,
+    "worker": 0
+   },
+   {
+    "entry": "bc6h_encode",
+    "ok": true,
+    "cached": false,
+    "s": 0.188644,
+    "worker": 3
+   },
+   {
+    "entry": "modea_shade",
+    "ok": true,
+    "cached": false,
+    "s": 0.152755,
+    "worker": 2
+   },
+   {
+    "entry": "modea_detect",
+    "ok": true,
+    "cached": false,
+    "s": 0.148008,
+    "worker": 3
+   },
+   {
+    "entry": "pt_classall",
+    "ok": true,
+    "cached": false,
+    "s": 0.211812,
+    "worker": 2
+   },
+   {
+    "entry": "pt_clear",
+    "ok": true,
+    "cached": false,
+    "s": 0.213769,
+    "worker": 0
+   },
+   {
+    "entry": "pt_lists",
+    "ok": true,
+    "cached": false,
+    "s": 0.219159,
+    "worker": 3
+   },
+   {
+    "entry": "pt_args",
+    "ok": true,
+    "cached": false,
+    "s": 0.214598,
+    "worker": 2
+   },
+   {
+    "entry": "pt_sample",
+    "ok": true,
+    "cached": false,
+    "s": 2.432362,
+    "worker": 1
+   },
+   {
+    "entry": "pt_reset",
+    "ok": true,
+    "cached": false,
+    "s": 0.216504,
+    "worker": 0
+   },
+   {
+    "entry": "pt_compose",
+    "ok": true,
+    "cached": false,
+    "s": 0.223473,
+    "worker": 3
+   },
+   {
+    "entry": "pt_present",
+    "ok": true,
+    "cached": false,
+    "s": 0.216172,
+    "worker": 2
+   },
+   {
+    "entry": "pt_camera",
+    "ok": true,
+    "cached": false,
+    "s": 0.367475,
+    "worker": 3
+   },
+   {
+    "entry": "cam_step",
+    "ok": true,
+    "cached": false,
+    "s": 0.264029,
+    "worker": 2
+   },
+   {
+    "entry": "pt_snap",
+    "ok": true,
+    "cached": false,
+    "s": 0.22485,
+    "worker": 0
+   },
+   {
+    "entry": "modea_shade",
+    "ok": true,
+    "cached": false,
+    "s": 0.155743,
+    "worker": 3
+   },
+   {
+    "entry": "modea_detect",
+    "ok": true,
+    "cached": false,
+    "s": 0.143789,
+    "worker": 2
+   },
+   {
+    "entry": "pt_classall",
+    "ok": true,
+    "cached": false,
+    "s": 0.211183,
+    "worker": 0
+   },
+   {
+    "entry": "pt_clear",
+    "ok": true,
+    "cached": false,
+    "s": 0.206984,
+    "worker": 3
+   },
+   {
+    "entry": "pt_lists",
+    "ok": true,
+    "cached": false,
+    "s": 0.206015,
+    "worker": 2
+   },
+   {
+    "entry": "pt_args",
+    "ok": true,
+    "cached": false,
+    "s": 0.211742,
+    "worker": 0
+   },
+   {
+    "entry": "pt_sample",
+    "ok": true,
+    "cached": false,
+    "s": 0.787197,
+    "worker": 2
+   },
+   {
+    "entry": "pt_reset",
+    "ok": true,
+    "cached": false,
+    "s": 0.211423,
+    "worker": 3
+   },
+   {
+    "entry": "pt_compose",
+    "ok": true,
+    "cached": false,
+    "s": 0.214348,
+    "worker": 2
+   },
+   {
+    "entry": "pt_present",
+    "ok": true,
+    "cached": false,
+    "s": 0.210896,
+    "worker": 0
+   }
+  ]
+ },
+ {
+  "scene": "S3",
+  "threads": 4,
+  "run": 2,
+  "compile_ms": 2605.2296,
+  "shaders": 27,
+  "env_ms": 43.8757,
+  "graph_ms": 46.8729,
+  "session_s": [
+   0.073641,
+   0.077716,
+   0.075914,
+   0.07572
+  ],
+  "kernels": [
+   {
+    "entry": "pt_camera",
+    "ok": true,
+    "cached": false,
+    "s": 0.894705,
+    "worker": 0
+   },
+   {
+    "entry": "cam_step",
+    "ok": true,
+    "cached": false,
+    "s": 0.666497,
+    "worker": 3
+   },
+   {
+    "entry": "pt_snap",
+    "ok": true,
+    "cached": false,
+    "s": 0.330241,
+    "worker": 0
+   },
+   {
+    "entry": "bc6h_encode",
+    "ok": true,
+    "cached": false,
+    "s": 0.187448,
+    "worker": 3
+   },
+   {
+    "entry": "modea_shade",
+    "ok": true,
+    "cached": false,
+    "s": 0.151439,
+    "worker": 2
+   },
+   {
+    "entry": "modea_detect",
+    "ok": true,
+    "cached": false,
+    "s": 0.149882,
+    "worker": 2
+   },
+   {
+    "entry": "pt_classall",
+    "ok": true,
+    "cached": false,
+    "s": 0.215996,
+    "worker": 3
+   },
+   {
+    "entry": "pt_clear",
+    "ok": true,
+    "cached": false,
+    "s": 0.217251,
+    "worker": 0
+   },
+   {
+    "entry": "pt_lists",
+    "ok": true,
+    "cached": false,
+    "s": 0.218736,
+    "worker": 2
+   },
+   {
+    "entry": "pt_args",
+    "ok": true,
+    "cached": false,
+    "s": 0.214609,
+    "worker": 3
+   },
+   {
+    "entry": "pt_sample",
+    "ok": true,
+    "cached": false,
+    "s": 2.377524,
+    "worker": 1
+   },
+   {
+    "entry": "pt_reset",
+    "ok": true,
+    "cached": false,
+    "s": 0.216895,
+    "worker": 0
+   },
+   {
+    "entry": "pt_compose",
+    "ok": true,
+    "cached": false,
+    "s": 0.22595,
+    "worker": 2
+   },
+   {
+    "entry": "pt_present",
+    "ok": true,
+    "cached": false,
+    "s": 0.218136,
+    "worker": 3
+   },
+   {
+    "entry": "pt_camera",
+    "ok": true,
+    "cached": false,
+    "s": 0.359006,
+    "worker": 3
+   },
+   {
+    "entry": "cam_step",
+    "ok": true,
+    "cached": false,
+    "s": 0.266422,
+    "worker": 2
+   },
+   {
+    "entry": "pt_snap",
+    "ok": true,
+    "cached": false,
+    "s": 0.229509,
+    "worker": 0
+   },
+   {
+    "entry": "modea_shade",
+    "ok": true,
+    "cached": false,
+    "s": 0.150073,
+    "worker": 2
+   },
+   {
+    "entry": "modea_detect",
+    "ok": true,
+    "cached": false,
+    "s": 0.143473,
+    "worker": 3
+   },
+   {
+    "entry": "pt_classall",
+    "ok": true,
+    "cached": false,
+    "s": 0.206372,
+    "worker": 0
+   },
+   {
+    "entry": "pt_clear",
+    "ok": true,
+    "cached": false,
+    "s": 0.205251,
+    "worker": 2
+   },
+   {
+    "entry": "pt_lists",
+    "ok": true,
+    "cached": false,
+    "s": 0.215465,
+    "worker": 3
+   },
+   {
+    "entry": "pt_args",
+    "ok": true,
+    "cached": false,
+    "s": 0.212088,
+    "worker": 0
+   },
+   {
+    "entry": "pt_sample",
+    "ok": true,
+    "cached": false,
+    "s": 0.78176,
+    "worker": 2
+   },
+   {
+    "entry": "pt_reset",
+    "ok": true,
+    "cached": false,
+    "s": 0.212725,
+    "worker": 2
+   },
+   {
+    "entry": "pt_compose",
+    "ok": true,
+    "cached": false,
+    "s": 0.211942,
+    "worker": 3
+   },
+   {
+    "entry": "pt_present",
+    "ok": true,
+    "cached": false,
+    "s": 0.20717,
+    "worker": 0
+   }
+  ]
+ },
+ {
+  "scene": "S3",
+  "threads": 8,
+  "run": 0,
+  "compile_ms": 2507.4816,
+  "shaders": 27,
+  "env_ms": 44.0704,
+  "graph_ms": 46.1478,
+  "session_s": [
+   0.105736,
+   0.107318,
+   0.106047,
+   0.109787,
+   0.110355,
+   0.107539,
+   0.106325,
+   0.106717
+  ],
+  "kernels": [
+   {
+    "entry": "pt_camera",
+    "ok": true,
+    "cached": false,
+    "s": 0.990211,
+    "worker": 3
+   },
+   {
+    "entry": "cam_step",
+    "ok": true,
+    "cached": false,
+    "s": 0.748831,
+    "worker": 5
+   },
+   {
+    "entry": "pt_snap",
+    "ok": true,
+    "cached": false,
+    "s": 0.429248,
+    "worker": 0
+   },
+   {
+    "entry": "bc6h_encode",
+    "ok": true,
+    "cached": false,
+    "s": 0.233874,
+    "worker": 7
+   },
+   {
+    "entry": "modea_shade",
+    "ok": true,
+    "cached": false,
+    "s": 0.199167,
+    "worker": 7
+   },
+   {
+    "entry": "modea_detect",
+    "ok": true,
+    "cached": false,
+    "s": 0.194708,
+    "worker": 6
+   },
+   {
+    "entry": "pt_classall",
+    "ok": true,
+    "cached": false,
+    "s": 0.270783,
+    "worker": 4
+   },
+   {
+    "entry": "pt_clear",
+    "ok": true,
+    "cached": false,
+    "s": 0.270375,
+    "worker": 0
+   },
+   {
+    "entry": "pt_lists",
+    "ok": true,
+    "cached": false,
+    "s": 0.269957,
+    "worker": 7
+   },
+   {
+    "entry": "pt_args",
+    "ok": true,
+    "cached": false,
+    "s": 0.27044,
+    "worker": 6
+   },
+   {
+    "entry": "pt_sample",
+    "ok": true,
+    "cached": false,
+    "s": 2.393999,
+    "worker": 1
+   },
+   {
+    "entry": "pt_reset",
+    "ok": true,
+    "cached": false,
+    "s": 0.243956,
+    "worker": 4
+   },
+   {
+    "entry": "pt_compose",
+    "ok": true,
+    "cached": false,
+    "s": 0.243242,
+    "worker": 0
+   },
+   {
+    "entry": "pt_present",
+    "ok": true,
+    "cached": false,
+    "s": 0.242705,
+    "worker": 7
+   },
+   {
+    "entry": "pt_camera",
+    "ok": true,
+    "cached": false,
+    "s": 0.409695,
+    "worker": 4
+   },
+   {
+    "entry": "cam_step",
+    "ok": true,
+    "cached": false,
+    "s": 0.32904,
+    "worker": 6
+   },
+   {
+    "entry": "pt_snap",
+    "ok": true,
+    "cached": false,
+    "s": 0.238271,
+    "worker": 5
+   },
+   {
+    "entry": "modea_shade",
+    "ok": true,
+    "cached": false,
+    "s": 0.156754,
+    "worker": 6
+   },
+   {
+    "entry": "modea_detect",
+    "ok": true,
+    "cached": false,
+    "s": 0.158813,
+    "worker": 2
+   },
+   {
+    "entry": "pt_classall",
+    "ok": true,
+    "cached": false,
+    "s": 0.233631,
+    "worker": 4
+   },
+   {
+    "entry": "pt_clear",
+    "ok": true,
+    "cached": false,
+    "s": 0.228253,
+    "worker": 0
+   },
+   {
+    "entry": "pt_lists",
+    "ok": true,
+    "cached": false,
+    "s": 0.233758,
+    "worker": 7
+   },
+   {
+    "entry": "pt_args",
+    "ok": true,
+    "cached": false,
+    "s": 0.222504,
+    "worker": 6
+   },
+   {
+    "entry": "pt_sample",
+    "ok": true,
+    "cached": false,
+    "s": 0.837952,
+    "worker": 2
+   },
+   {
+    "entry": "pt_reset",
+    "ok": true,
+    "cached": false,
+    "s": 0.232453,
+    "worker": 5
+   },
+   {
+    "entry": "pt_compose",
+    "ok": true,
+    "cached": false,
+    "s": 0.236289,
+    "worker": 3
+   },
+   {
+    "entry": "pt_present",
+    "ok": true,
+    "cached": false,
+    "s": 0.229489,
+    "worker": 2
+   }
+  ]
+ },
+ {
+  "scene": "S3",
+  "threads": 8,
+  "run": 1,
+  "compile_ms": 2455.0699,
+  "shaders": 27,
+  "env_ms": 52.2272,
+  "graph_ms": 45.5227,
+  "session_s": [
+   0.103566,
+   0.110241,
+   0.106823,
+   0.110475,
+   0.106816,
+   0.111389,
+   0.112174,
+   0.105595
+  ],
+  "kernels": [
+   {
+    "entry": "pt_camera",
+    "ok": true,
+    "cached": false,
+    "s": 0.997006,
+    "worker": 3
+   },
+   {
+    "entry": "cam_step",
+    "ok": true,
+    "cached": false,
+    "s": 0.79213,
+    "worker": 5
+   },
+   {
+    "entry": "pt_snap",
+    "ok": true,
+    "cached": false,
+    "s": 0.424532,
+    "worker": 0
+   },
+   {
+    "entry": "bc6h_encode",
+    "ok": true,
+    "cached": false,
+    "s": 0.245931,
+    "worker": 7
+   },
+   {
+    "entry": "modea_shade",
+    "ok": true,
+    "cached": false,
+    "s": 0.175475,
+    "worker": 7
+   },
+   {
+    "entry": "modea_detect",
+    "ok": true,
+    "cached": false,
+    "s": 0.163861,
+    "worker": 6
+   },
+   {
+    "entry": "pt_classall",
+    "ok": true,
+    "cached": false,
+    "s": 0.249393,
+    "worker": 4
+   },
+   {
+    "entry": "pt_clear",
+    "ok": true,
+    "cached": false,
+    "s": 0.240154,
+    "worker": 7
+   },
+   {
+    "entry": "pt_lists",
+    "ok": true,
+    "cached": false,
+    "s": 0.240714,
+    "worker": 0
+   },
+   {
+    "entry": "pt_args",
+    "ok": true,
+    "cached": false,
+    "s": 0.239033,
+    "worker": 6
+   },
+   {
+    "entry": "pt_sample",
+    "ok": true,
+    "cached": false,
+    "s": 2.340887,
+    "worker": 1
+   },
+   {
+    "entry": "pt_reset",
+    "ok": true,
+    "cached": false,
+    "s": 0.232957,
+    "worker": 4
+   },
+   {
+    "entry": "pt_compose",
+    "ok": true,
+    "cached": false,
+    "s": 0.235286,
+    "worker": 7
+   },
+   {
+    "entry": "pt_present",
+    "ok": true,
+    "cached": false,
+    "s": 0.247178,
+    "worker": 0
+   },
+   {
+    "entry": "pt_camera",
+    "ok": true,
+    "cached": false,
+    "s": 0.410201,
+    "worker": 4
+   },
+   {
+    "entry": "cam_step",
+    "ok": true,
+    "cached": false,
+    "s": 0.335256,
+    "worker": 6
+   },
+   {
+    "entry": "pt_snap",
+    "ok": true,
+    "cached": false,
+    "s": 0.245187,
+    "worker": 6
+   },
+   {
+    "entry": "modea_shade",
+    "ok": true,
+    "cached": false,
+    "s": 0.15659,
+    "worker": 5
+   },
+   {
+    "entry": "modea_detect",
+    "ok": true,
+    "cached": false,
+    "s": 0.15577,
+    "worker": 4
+   },
+   {
+    "entry": "pt_classall",
+    "ok": true,
+    "cached": false,
+    "s": 0.23253,
+    "worker": 7
+   },
+   {
+    "entry": "pt_clear",
+    "ok": true,
+    "cached": false,
+    "s": 0.229779,
+    "worker": 2
+   },
+   {
+    "entry": "pt_lists",
+    "ok": true,
+    "cached": false,
+    "s": 0.227215,
+    "worker": 0
+   },
+   {
+    "entry": "pt_args",
+    "ok": true,
+    "cached": false,
+    "s": 0.227354,
+    "worker": 5
+   },
+   {
+    "entry": "pt_sample",
+    "ok": true,
+    "cached": false,
+    "s": 0.901951,
+    "worker": 2
+   },
+   {
+    "entry": "pt_reset",
+    "ok": true,
+    "cached": false,
+    "s": 0.226975,
+    "worker": 6
+   },
+   {
+    "entry": "pt_compose",
+    "ok": true,
+    "cached": false,
+    "s": 0.228521,
+    "worker": 3
+   },
+   {
+    "entry": "pt_present",
+    "ok": true,
+    "cached": false,
+    "s": 0.221909,
+    "worker": 4
+   }
+  ]
+ },
+ {
+  "scene": "S3",
+  "threads": 8,
+  "run": 2,
+  "compile_ms": 2371.5568,
+  "shaders": 27,
+  "env_ms": 49.5053,
+  "graph_ms": 52.1779,
+  "session_s": [
+   0.097117,
+   0.094704,
+   0.096697,
+   0.097585,
+   0.096506,
+   0.094498,
+   0.091969,
+   0.094796
+  ],
+  "kernels": [
+   {
+    "entry": "pt_camera",
+    "ok": true,
+    "cached": false,
+    "s": 0.990976,
+    "worker": 3
+   },
+   {
+    "entry": "cam_step",
+    "ok": true,
+    "cached": false,
+    "s": 0.791386,
+    "worker": 5
+   },
+   {
+    "entry": "pt_snap",
+    "ok": true,
+    "cached": false,
+    "s": 0.422081,
+    "worker": 0
+   },
+   {
+    "entry": "bc6h_encode",
+    "ok": true,
+    "cached": false,
+    "s": 0.241564,
+    "worker": 7
+   },
+   {
+    "entry": "modea_shade",
+    "ok": true,
+    "cached": false,
+    "s": 0.185341,
+    "worker": 7
+   },
+   {
+    "entry": "modea_detect",
+    "ok": true,
+    "cached": false,
+    "s": 0.175355,
+    "worker": 6
+   },
+   {
+    "entry": "pt_classall",
+    "ok": true,
+    "cached": false,
+    "s": 0.240632,
+    "worker": 4
+   },
+   {
+    "entry": "pt_clear",
+    "ok": true,
+    "cached": false,
+    "s": 0.243016,
+    "worker": 0
+   },
+   {
+    "entry": "pt_lists",
+    "ok": true,
+    "cached": false,
+    "s": 0.243969,
+    "worker": 7
+   },
+   {
+    "entry": "pt_args",
+    "ok": true,
+    "cached": false,
+    "s": 0.24157,
+    "worker": 6
+   },
+   {
+    "entry": "pt_sample",
+    "ok": true,
+    "cached": false,
+    "s": 2.27304,
+    "worker": 1
+   },
+   {
+    "entry": "pt_reset",
+    "ok": true,
+    "cached": false,
+    "s": 0.235051,
+    "worker": 4
+   },
+   {
+    "entry": "pt_compose",
+    "ok": true,
+    "cached": false,
+    "s": 0.252456,
+    "worker": 0
+   },
+   {
+    "entry": "pt_present",
+    "ok": true,
+    "cached": false,
+    "s": 0.240144,
+    "worker": 7
+   },
+   {
+    "entry": "pt_camera",
+    "ok": true,
+    "cached": false,
+    "s": 0.410593,
+    "worker": 4
+   },
+   {
+    "entry": "cam_step",
+    "ok": true,
+    "cached": false,
+    "s": 0.329551,
+    "worker": 6
+   },
+   {
+    "entry": "pt_snap",
+    "ok": true,
+    "cached": false,
+    "s": 0.241301,
+    "worker": 6
+   },
+   {
+    "entry": "modea_shade",
+    "ok": true,
+    "cached": false,
+    "s": 0.154431,
+    "worker": 5
+   },
+   {
+    "entry": "modea_detect",
+    "ok": true,
+    "cached": false,
+    "s": 0.152012,
+    "worker": 4
+   },
+   {
+    "entry": "pt_classall",
+    "ok": true,
+    "cached": false,
+    "s": 0.234984,
+    "worker": 2
+   },
+   {
+    "entry": "pt_clear",
+    "ok": true,
+    "cached": false,
+    "s": 0.23127,
+    "worker": 7
+   },
+   {
+    "entry": "pt_lists",
+    "ok": true,
+    "cached": false,
+    "s": 0.232394,
+    "worker": 0
+   },
+   {
+    "entry": "pt_args",
+    "ok": true,
+    "cached": false,
+    "s": 0.223098,
+    "worker": 5
+   },
+   {
+    "entry": "pt_sample",
+    "ok": true,
+    "cached": false,
+    "s": 0.898412,
+    "worker": 2
+   },
+   {
+    "entry": "pt_reset",
+    "ok": true,
+    "cached": false,
+    "s": 0.232988,
+    "worker": 6
+   },
+   {
+    "entry": "pt_compose",
+    "ok": true,
+    "cached": false,
+    "s": 0.237608,
+    "worker": 3
+   },
+   {
+    "entry": "pt_present",
+    "ok": true,
+    "cached": false,
+    "s": 0.229831,
+    "worker": 4
+   }
+  ]
+ },
+ {
+  "scene": "S3",
+  "threads": 16,
+  "run": 0,
+  "compile_ms": 2505.3363,
+  "shaders": 27,
+  "env_ms": 44.4071,
+  "graph_ms": 51.7753,
+  "session_s": [
+   0.178693,
+   0.178856,
+   0.179387,
+   0.179256,
+   0.161034,
+   0.180916,
+   0.178382,
+   0.176232,
+   0.178746,
+   0.173779,
+   0.179576,
+   0.176528,
+   0.179824,
+   0.179903,
+   0.172952,
+   0.177899
+  ],
+  "kernels": [
+   {
+    "entry": "pt_camera",
+    "ok": true,
+    "cached": false,
+    "s": 1.020444,
+    "worker": 3
+   },
+   {
+    "entry": "cam_step",
+    "ok": true,
+    "cached": false,
+    "s": 0.794402,
+    "worker": 5
+   },
+   {
+    "entry": "pt_snap",
+    "ok": true,
+    "cached": false,
+    "s": 0.479492,
+    "worker": 7
+   },
+   {
+    "entry": "bc6h_encode",
+    "ok": true,
+    "cached": false,
+    "s": 0.284977,
+    "worker": 8
+   },
+   {
+    "entry": "modea_shade",
+    "ok": true,
+    "cached": false,
+    "s": 0.241351,
+    "worker": 9
+   },
+   {
+    "entry": "modea_detect",
+    "ok": true,
+    "cached": false,
+    "s": 0.22584,
+    "worker": 10
+   },
+   {
+    "entry": "pt_classall",
+    "ok": true,
+    "cached": false,
+    "s": 0.303441,
+    "worker": 11
+   },
+   {
+    "entry": "pt_clear",
+    "ok": true,
+    "cached": false,
+    "s": 0.302745,
+    "worker": 12
+   },
+   {
+    "entry": "pt_lists",
+    "ok": true,
+    "cached": false,
+    "s": 0.319576,
+    "worker": 13
+   },
+   {
+    "entry": "pt_args",
+    "ok": true,
+    "cached": false,
+    "s": 0.313984,
+    "worker": 14
+   },
+   {
+    "entry": "pt_sample",
+    "ok": true,
+    "cached": false,
+    "s": 2.31886,
+    "worker": 1
+   },
+   {
+    "entry": "pt_reset",
+    "ok": true,
+    "cached": false,
+    "s": 0.327375,
+    "worker": 0
+   },
+   {
+    "entry": "pt_compose",
+    "ok": true,
+    "cached": false,
+    "s": 0.310804,
+    "worker": 15
+   },
+   {
+    "entry": "pt_present",
+    "ok": true,
+    "cached": false,
+    "s": 0.267745,
+    "worker": 10
+   },
+   {
+    "entry": "pt_camera",
+    "ok": true,
+    "cached": false,
+    "s": 0.480818,
+    "worker": 4
+   },
+   {
+    "entry": "cam_step",
+    "ok": true,
+    "cached": false,
+    "s": 0.381887,
+    "worker": 6
+   },
+   {
+    "entry": "pt_snap",
+    "ok": true,
+    "cached": false,
+    "s": 0.274674,
+    "worker": 9
+   },
+   {
+    "entry": "modea_shade",
+    "ok": true,
+    "cached": false,
+    "s": 0.192754,
+    "worker": 8
+   },
+   {
+    "entry": "modea_detect",
+    "ok": true,
+    "cached": false,
+    "s": 0.158256,
+    "worker": 11
+   },
+   {
+    "entry": "pt_classall",
+    "ok": true,
+    "cached": false,
+    "s": 0.245259,
+    "worker": 12
+   },
+   {
+    "entry": "pt_clear",
+    "ok": true,
+    "cached": false,
+    "s": 0.234833,
+    "worker": 14
+   },
+   {
+    "entry": "pt_lists",
+    "ok": true,
+    "cached": false,
+    "s": 0.238976,
+    "worker": 15
+   },
+   {
+    "entry": "pt_args",
+    "ok": true,
+    "cached": false,
+    "s": 0.238662,
+    "worker": 13
+   },
+   {
+    "entry": "pt_sample",
+    "ok": true,
+    "cached": false,
+    "s": 0.936825,
+    "worker": 2
+   },
+   {
+    "entry": "pt_reset",
+    "ok": true,
+    "cached": false,
+    "s": 0.264685,
+    "worker": 0
+   },
+   {
+    "entry": "pt_compose",
+    "ok": true,
+    "cached": false,
+    "s": 0.245462,
+    "worker": 6
+   },
+   {
+    "entry": "pt_present",
+    "ok": true,
+    "cached": false,
+    "s": 0.24635,
+    "worker": 11
+   }
+  ]
+ },
+ {
+  "scene": "S3",
+  "threads": 16,
+  "run": 1,
+  "compile_ms": 2454.6034,
+  "shaders": 27,
+  "env_ms": 54.631,
+  "graph_ms": 46.5774,
+  "session_s": [
+   0.179427,
+   0.180799,
+   0.18067,
+   0.181962,
+   0.182568,
+   0.178708,
+   0.178912,
+   0.180633,
+   0.180921,
+   0.179655,
+   0.179853,
+   0.173484,
+   0.178551,
+   0.177945,
+   0.173849,
+   0.179024
+  ],
+  "kernels": [
+   {
+    "entry": "pt_camera",
+    "ok": true,
+    "cached": false,
+    "s": 0.955291,
+    "worker": 3
+   },
+   {
+    "entry": "cam_step",
+    "ok": true,
+    "cached": false,
+    "s": 0.787618,
+    "worker": 5
+   },
+   {
+    "entry": "pt_snap",
+    "ok": true,
+    "cached": false,
+    "s": 0.434424,
+    "worker": 7
+   },
+   {
+    "entry": "bc6h_encode",
+    "ok": true,
+    "cached": false,
+    "s": 0.266236,
+    "worker": 8
+   },
+   {
+    "entry": "modea_shade",
+    "ok": true,
+    "cached": false,
+    "s": 0.247996,
+    "worker": 9
+   },
+   {
+    "entry": "modea_detect",
+    "ok": true,
+    "cached": false,
+    "s": 0.232628,
+    "worker": 10
+   },
+   {
+    "entry": "pt_classall",
+    "ok": true,
+    "cached": false,
+    "s": 0.309752,
+    "worker": 11
+   },
+   {
+    "entry": "pt_clear",
+    "ok": true,
+    "cached": false,
+    "s": 0.291726,
+    "worker": 12
+   },
+   {
+    "entry": "pt_lists",
+    "ok": true,
+    "cached": false,
+    "s": 0.306583,
+    "worker": 13
+   },
+   {
+    "entry": "pt_args",
+    "ok": true,
+    "cached": false,
+    "s": 0.322176,
+    "worker": 14
+   },
+   {
+    "entry": "pt_sample",
+    "ok": true,
+    "cached": false,
+    "s": 2.265415,
+    "worker": 1
+   },
+   {
+    "entry": "pt_reset",
+    "ok": true,
+    "cached": false,
+    "s": 0.315979,
+    "worker": 0
+   },
+   {
+    "entry": "pt_compose",
+    "ok": true,
+    "cached": false,
+    "s": 0.308823,
+    "worker": 15
+   },
+   {
+    "entry": "pt_present",
+    "ok": true,
+    "cached": false,
+    "s": 0.273301,
+    "worker": 10
+   },
+   {
+    "entry": "pt_camera",
+    "ok": true,
+    "cached": false,
+    "s": 0.457096,
+    "worker": 4
+   },
+   {
+    "entry": "cam_step",
+    "ok": true,
+    "cached": false,
+    "s": 0.36042,
+    "worker": 6
+   },
+   {
+    "entry": "pt_snap",
+    "ok": true,
+    "cached": false,
+    "s": 0.30266,
+    "worker": 9
+   },
+   {
+    "entry": "modea_shade",
+    "ok": true,
+    "cached": false,
+    "s": 0.188546,
+    "worker": 8
+   },
+   {
+    "entry": "modea_detect",
+    "ok": true,
+    "cached": false,
+    "s": 0.168496,
+    "worker": 12
+   },
+   {
+    "entry": "pt_classall",
+    "ok": true,
+    "cached": false,
+    "s": 0.255396,
+    "worker": 11
+   },
+   {
+    "entry": "pt_clear",
+    "ok": true,
+    "cached": false,
+    "s": 0.243503,
+    "worker": 13
+   },
+   {
+    "entry": "pt_lists",
+    "ok": true,
+    "cached": false,
+    "s": 0.254454,
+    "worker": 15
+   },
+   {
+    "entry": "pt_args",
+    "ok": true,
+    "cached": false,
+    "s": 0.250528,
+    "worker": 14
+   },
+   {
+    "entry": "pt_sample",
+    "ok": true,
+    "cached": false,
+    "s": 0.857329,
+    "worker": 2
+   },
+   {
+    "entry": "pt_reset",
+    "ok": true,
+    "cached": false,
+    "s": 0.250843,
+    "worker": 0
+   },
+   {
+    "entry": "pt_compose",
+    "ok": true,
+    "cached": false,
+    "s": 0.238062,
+    "worker": 6
+   },
+   {
+    "entry": "pt_present",
+    "ok": true,
+    "cached": false,
+    "s": 0.240071,
+    "worker": 7
+   }
+  ]
+ },
+ {
+  "scene": "S3",
+  "threads": 16,
+  "run": 2,
+  "compile_ms": 2493.3417,
+  "shaders": 27,
+  "env_ms": 52.9878,
+  "graph_ms": 53.4197,
+  "session_s": [
+   0.190933,
+   0.192059,
+   0.193619,
+   0.19386,
+   0.191908,
+   0.193914,
+   0.1939,
+   0.185527,
+   0.192364,
+   0.193122,
+   0.189398,
+   0.188609,
+   0.190829,
+   0.19218,
+   0.190505,
+   0.187656
+  ],
+  "kernels": [
+   {
+    "entry": "pt_camera",
+    "ok": true,
+    "cached": false,
+    "s": 0.998083,
+    "worker": 3
+   },
+   {
+    "entry": "cam_step",
+    "ok": true,
+    "cached": false,
+    "s": 0.805436,
+    "worker": 5
+   },
+   {
+    "entry": "pt_snap",
+    "ok": true,
+    "cached": false,
+    "s": 0.46098,
+    "worker": 7
+   },
+   {
+    "entry": "bc6h_encode",
+    "ok": true,
+    "cached": false,
+    "s": 0.283609,
+    "worker": 8
+   },
+   {
+    "entry": "modea_shade",
+    "ok": true,
+    "cached": false,
+    "s": 0.24406,
+    "worker": 9
+   },
+   {
+    "entry": "modea_detect",
+    "ok": true,
+    "cached": false,
+    "s": 0.256275,
+    "worker": 10
+   },
+   {
+    "entry": "pt_classall",
+    "ok": true,
+    "cached": false,
+    "s": 0.311425,
+    "worker": 11
+   },
+   {
+    "entry": "pt_clear",
+    "ok": true,
+    "cached": false,
+    "s": 0.330469,
+    "worker": 12
+   },
+   {
+    "entry": "pt_lists",
+    "ok": true,
+    "cached": false,
+    "s": 0.32068,
+    "worker": 13
+   },
+   {
+    "entry": "pt_args",
+    "ok": true,
+    "cached": false,
+    "s": 0.310701,
+    "worker": 14
+   },
+   {
+    "entry": "pt_sample",
+    "ok": true,
+    "cached": false,
+    "s": 2.293136,
+    "worker": 1
+   },
+   {
+    "entry": "pt_reset",
+    "ok": true,
+    "cached": false,
+    "s": 0.315744,
+    "worker": 0
+   },
+   {
+    "entry": "pt_compose",
+    "ok": true,
+    "cached": false,
+    "s": 0.332693,
+    "worker": 15
+   },
+   {
+    "entry": "pt_present",
+    "ok": true,
+    "cached": false,
+    "s": 0.281419,
+    "worker": 9
+   },
+   {
+    "entry": "pt_camera",
+    "ok": true,
+    "cached": false,
+    "s": 0.478832,
+    "worker": 4
+   },
+   {
+    "entry": "cam_step",
+    "ok": true,
+    "cached": false,
+    "s": 0.373754,
+    "worker": 6
+   },
+   {
+    "entry": "pt_snap",
+    "ok": true,
+    "cached": false,
+    "s": 0.272538,
+    "worker": 10
+   },
+   {
+    "entry": "modea_shade",
+    "ok": true,
+    "cached": false,
+    "s": 0.190817,
+    "worker": 8
+   },
+   {
+    "entry": "modea_detect",
+    "ok": true,
+    "cached": false,
+    "s": 0.176788,
+    "worker": 11
+   },
+   {
+    "entry": "pt_classall",
+    "ok": true,
+    "cached": false,
+    "s": 0.23259,
+    "worker": 14
+   },
+   {
+    "entry": "pt_clear",
+    "ok": true,
+    "cached": false,
+    "s": 0.257025,
+    "worker": 0
+   },
+   {
+    "entry": "pt_lists",
+    "ok": true,
+    "cached": false,
+    "s": 0.239118,
+    "worker": 13
+   },
+   {
+    "entry": "pt_args",
+    "ok": true,
+    "cached": false,
+    "s": 0.239276,
+    "worker": 15
+   },
+   {
+    "entry": "pt_sample",
+    "ok": true,
+    "cached": false,
+    "s": 0.92242,
+    "worker": 2
+   },
+   {
+    "entry": "pt_reset",
+    "ok": true,
+    "cached": false,
+    "s": 0.251297,
+    "worker": 12
+   },
+   {
+    "entry": "pt_compose",
+    "ok": true,
+    "cached": false,
+    "s": 0.255283,
+    "worker": 6
+   },
+   {
+    "entry": "pt_present",
+    "ok": true,
+    "cached": false,
+    "s": 0.256408,
+    "worker": 7
+   }
+  ]
+ }
+]

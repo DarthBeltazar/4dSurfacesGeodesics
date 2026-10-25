@@ -1,0 +1,16 @@
+{
+  "threads": [
+    1,
+    4,
+    8,
+    16
+  ],
+  "scenes": [
+    "two_wormholes",
+    "S3"
+  ],
+  "repeat": 3,
+  "res": "1280x720",
+  "slangc": "2025.17.2",
+  "cpus": 32
+}

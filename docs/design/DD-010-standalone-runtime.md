@@ -196,3 +196,18 @@ zip). Сейчас окно — Python-скрипт `prototype/scripts/app.py`, 
   Windows; входит в ключ кэша), граф режима редактирования — без `vsync`/`fullscreen`.
 - Модель сцены — в double (как Python), во float32 — только при упаковке; `editor.cpp` пока не переведён на неё
   (шаги 3–4).
+
+**Шаг 2 — сделан** (`shader_compiler.{hpp,cpp}`, `export-graph --compile [--threads N] [--spv-dir DIR]`; тест
+`test_compile_matches_slangc`):
+- Slang API в режиме командной строки (`ICompileRequest`: `setCommandLineCompilerMode` +
+  `processCommandLineArguments` с теми же аргументами, что у `compile_shader`, `-o` во временный файл и
+  переименование) — **SPIR-V побитово равен `slangc.exe`** для всех ядер (две горловины, S³, синтетическая сцена).
+- Риск 1 снят: глобальная сессия не потокобезопасна (`slang.h`) — у каждого потока своя, создание 0.07–0.19 с
+  (параллельно). Падений нет при 4–16 потоках.
+- Что не сработало: `getEntryPointCodeBlob` после компиляции в режиме командной строки — падение (код не хранится);
+  без `setCommandLineCompilerMode` файл `-o` не пишется.
+- Время сборки всех 27 ядер обоих графов при пустом кэше ([standalone_compile](../../results/stage-5/2026-10-25_standalone_compile)): 1 поток — 9.7 с,
+  4 — 3.0 с, 8 — 2.5 с, 16 — 2.6 с (две горловины; S³ — 8.7 / 2.6 / 2.5 / 2.5 с). Предел — одно ядро
+  `pt_sample` (~2.3 с, spirv-opt −O2); долгие ядра ставятся в очередь первыми.
+- Риск 3: −O2 работает с `slang.dll`, `slang-glslang.dll`, `slang-glsl-module.dll`, `slang-rt.dll` рядом с exe
+  (копируются при сборке); какие из них можно не поставлять — проверить в DD-012.

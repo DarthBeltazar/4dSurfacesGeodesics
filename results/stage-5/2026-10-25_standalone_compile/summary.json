@@ -1,0 +1,42 @@
+{
+ "two_wormholes_1": {
+  "median_ms": 9710.5468,
+  "min_ms": 9677.7194,
+  "max_ms": 9854.9306
+ },
+ "two_wormholes_4": {
+  "median_ms": 2958.1886,
+  "min_ms": 2942.8387,
+  "max_ms": 2977.4747
+ },
+ "two_wormholes_8": {
+  "median_ms": 2506.5612,
+  "min_ms": 2489.4471,
+  "max_ms": 2532.0631
+ },
+ "two_wormholes_16": {
+  "median_ms": 2578.4857,
+  "min_ms": 2543.757,
+  "max_ms": 2588.9067
+ },
+ "S3_1": {
+  "median_ms": 8660.5437,
+  "min_ms": 8553.2709,
+  "max_ms": 8682.87
+ },
+ "S3_4": {
+  "median_ms": 2607.0057,
+  "min_ms": 2605.2296,
+  "max_ms": 2649.0338
+ },
+ "S3_8": {
+  "median_ms": 2455.0699,
+  "min_ms": 2371.5568,
+  "max_ms": 2507.4816
+ },
+ "S3_16": {
+  "median_ms": 2493.3417,
+  "min_ms": 2454.6034,
+  "max_ms": 2505.3363
+ }
+}
