@@ -43,6 +43,15 @@ std::string scene_header(const Scene& sc, bool dynamic);
 fs::path write_header(const Dirs& d, const Scene& sc, bool dynamic);     // gen/<sha256[:16]>/pt_scene.slang (CRLF, как write_text)
 Defines defines(const Scene& sc, int nj, bool dynamic);
 
+// шейдер графа: что компилировать и куда (shader_compiler.hpp)
+struct ShaderJob {
+    fs::path source;                              // gpu/shaders/<файл>.slang
+    std::string entry;
+    Defines defs;
+    fs::path include;                             // каталог заголовка сцены (может быть пустым)
+    fs::path out;                                 // путь SPIR-V в кэше
+};
+
 // geo4d.gpu.compile_shader: путь SPIR-V в кэше по ключу (sha256 исходников, include, json.dumps([source, entry, defines]))
 class ShaderKeys {
 public:
@@ -88,6 +97,7 @@ struct AppGraph {
     std::vector<std::string> lines;               // app_graph.txt
     std::vector<std::string> dyn_lines;           // app_graph_dyn.txt
     std::map<std::string, Array> arrays;          // имя файла (cam.npy, env_dyn.npy, …) → данные
+    std::vector<ShaderJob> shaders;               // SPIR-V, на которые ссылаются графы (без повторов)
 };
 
 // geo4d.gpu_pt.app_graph(…, editor=…) для app.py без замера: быстрый граф и граф режима редактирования.

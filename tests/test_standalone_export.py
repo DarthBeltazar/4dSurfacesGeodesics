@@ -125,3 +125,19 @@ def test_export_renders_same(tmp_path, scene):
     assert frames[py] and frames[py].keys() == frames[cc].keys()
     for name, a in frames[py].items():
         assert np.array_equal(a, frames[cc][name]), name
+
+
+@pytest.mark.parametrize("scene", ["two_wormholes", "S3", "two_wh_custom"])
+def test_compile_matches_slangc(tmp_path, scene):
+    """DD-010, шаг 2: SPIR-V из Slang API в процессе (`export-graph --compile`, 8 потоков, свой кэш) побитово равен
+    тому, что собрал slangc.exe по `app.py --graph-only` (кэш gpu/build/spv)."""
+    py, cc = _export(tmp_path, scene, ["--res", "320x180"])
+    spv = tmp_path / "spv api"
+    r = subprocess.run([str(gpu.EXE), "export-graph", str(_scene_file(tmp_path, scene)), str(tmp_path / "c2"), "--res",
+                        "320x180", "--compile", "--threads", "8", "--spv-dir", str(spv)],
+                       capture_output=True, text=True, encoding="utf-8", env=ENV)
+    assert r.returncode == 0, r.stderr
+    rep = json.loads(r.stdout)
+    assert rep["shaders"] == len(list(spv.glob("*.spv"))) and all(k["ok"] and not k["cached"] for k in rep["kernels"])
+    for f in spv.glob("*.spv"):
+        assert f.read_bytes() == (gpu.SPV_DIR / f.name).read_bytes(), f.name

@@ -359,6 +359,7 @@ struct GraphCtx {
     const EnvMap& procedural;
     Camera cam;
     double fov;
+    std::vector<ShaderJob>* jobs;
 };
 
 std::vector<std::string> scene_directives(const Scene& sc) {
@@ -406,7 +407,11 @@ std::vector<std::string> build(const GraphCtx& c, bool dynamic, std::map<std::st
     auto df = [&](int nj) { return defines(sc, nj, dynamic); };
     auto with = [](Defines d, const std::string& k, int v) { d.emplace_back(k, std::to_string(v)); return d; };
     auto spv = [&](const std::string& src, const std::string& e, const Defines& d, bool use_inc) {
-        return qpath(c.keys.spv_path(src, e, d, use_inc ? inc : fs::path{}));
+        fs::path out = c.keys.spv_path(src, e, d, use_inc ? inc : fs::path{});
+        bool seen = false;
+        for (auto& j : *c.jobs) seen = seen || j.out == out;
+        if (!seen) c.jobs->push_back({c.d.shaders / src, e, d, use_inc ? inc : fs::path{}, out});
+        return qpath(out);
     };
     std::string ptc = spv("pathtrace.slang", "pt_camera", df(4), true);
     auto pts = [&](const std::string& e) { return spv("pathtrace.slang", e, with(df(0), "PT_STAGE", e == "pt_sample"), true); };
@@ -520,8 +525,9 @@ AppGraph app_graph(const Dirs& d, const Scene& sc, const AppOptions& o, const fs
                    const fs::path& scene_path, const EnvMap& procedural) {
     ShaderKeys keys(d);
     double fov = o.fov != 0 ? o.fov : sc.cam.fov;
-    GraphCtx c{d, keys, sc, o, work_dir, scene_path, procedural, make_camera(sc.mf, sc.cam, o.width, o.height, fov), fov};
     AppGraph g;
+    GraphCtx c{d, keys, sc, o, work_dir, scene_path, procedural, make_camera(sc.mf, sc.cam, o.width, o.height, fov), fov,
+               &g.shaders};
     g.dyn_lines = build(c, true, g.arrays);       // как в Python: граф режима редактирования пишется первым
     g.lines = build(c, false, g.arrays);
     return g;
