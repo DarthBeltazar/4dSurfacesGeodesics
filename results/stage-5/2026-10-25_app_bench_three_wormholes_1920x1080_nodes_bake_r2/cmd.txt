@@ -1,0 +1,1 @@
+.venv/Scripts/python.exe prototype/scripts/app.py --bench --scene scenes/three_wormholes.g4d --res 1920x1080 --bake-params --tag nodes_bake_r2

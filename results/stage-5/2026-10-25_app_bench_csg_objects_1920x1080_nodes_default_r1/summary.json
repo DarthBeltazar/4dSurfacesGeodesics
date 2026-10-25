@@ -1,0 +1,31 @@
+{
+ "moving": {
+  "total_ms": 11.1003,
+  "graph_ms": 3.2572,
+  "denoise_ms": 6.73485,
+  "post_present_ms": 0.8275,
+  "camera": 0.46192,
+  "lists": 0.707616,
+  "pt": 1.13462,
+  "fallback": 0.501408,
+  "compose": 0.296832,
+  "frames": 55
+ },
+ "static": {
+  "total_ms": 8.75005,
+  "graph_ms": 1.0726499999999999,
+  "denoise_ms": 6.7712,
+  "post_present_ms": 0.8166,
+  "pt": 0.631168,
+  "fallback": 0.0548,
+  "compose": 0.278208,
+  "frames": 54
+ },
+ "swapchain": {
+  "extent": [
+   1920,
+   1080
+  ],
+  "format": 44
+ }
+}

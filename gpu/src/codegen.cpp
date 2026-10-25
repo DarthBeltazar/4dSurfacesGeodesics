@@ -219,8 +219,8 @@ std::string param_lit(double v) {
     return v < 0 ? "(" + s + ")" : s;
 }
 
-// Слоты в шейдере (DD-011 §5): строка r — SLOT_ROW(r) (mf_header): в ядрах трассировщика и камеры — копия в
-// groupshared, в остальных — буфер камеры (чтение буфера в горячем коде стоило +27 % кадра, сцена 3, 1080p)
+// Слоты в шейдере (DD-011 §5): строка r — SLOT_ROW(r) = gCam[kSlotBase + r] (mf_header). Числа многообразия по
+// умолчанию запечены: их чтение в горячем коде стоило +31 % кадра (сцена 3, 1080p), см. DD-011, «Итог», шаг 4
 std::string slot_row(int row) { return "SLOT_ROW(" + std::to_string(row) + ")"; }
 std::string sref(const Scene&, int i) { return slot_row(i / 4) + "." + std::string(1, "xyzw"[i % 4]); }
 
@@ -350,7 +350,7 @@ std::string scene_header(const Scene& sc, bool dynamic, bool graph) {
     const bool slots = graph && !sc.bake;
     if (slots && sc.mf_slots && fz.has) {        // DD-011 §5: ρ₀ и центры шаров кривизны — слоты (строки подряд)
         // проверки плоских зон (in_flat и др.) — в циклах интегратора: центры и ρ₀ читаются потоком один раз в массив
-        // static (регистры); чтение буфера на каждой проверке стоило проходу камеры +44 % (сцена 3, 1080p)
+        // static (регистры); чтение буфера на каждой проверке стоило проходу камеры +61 % (сцена 3, 1080p)
         const Manifold& m = sc.mf;
         const std::string nb = std::to_string(fz.centers.size()), nb1 = std::to_string(fz.centers.size() + 1);
         std::string load = "static float4 sPtFlat[" + nb1 + "];\nstatic bool sPtFlatOk = false;\n"
