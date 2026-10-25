@@ -34,15 +34,18 @@ ImVec4 type_color(const std::string& t) {
 
 constexpr int kOut = 255;                         // номер порта выхода; входы — 0…254
 
-// значок порта: кружок цвета типа, у входа-списка (объекты сцены) — квадрат
-void pin_mark(const ImVec4& c, bool multi) {
-    const float h = ImGui::GetTextLineHeight();
-    const ImVec2 p = ImGui::GetCursorScreenPos();
-    ImGui::Dummy(ImVec2(h, h));
-    const ImVec2 m(p.x + 0.5f * h, p.y + 0.5f * h);
+// порт в точке m: кружок цвета типа (у входа-списка — квадрат); зона порта и конец связи — эта точка
+constexpr float kPinR = 4.5f;                     // радиус точки порта, пиксели холста
+void pin_at(ed::PinId id, ed::PinKind kind, const ImVec2& m, const ImVec4& c, bool multi) {
+    ImGui::SetCursorScreenPos(ImVec2(m.x - kPinR, m.y - kPinR));
+    ed::BeginPin(id, kind);
+    ImGui::Dummy(ImVec2(2 * kPinR, 2 * kPinR));
+    ed::PinRect(ImVec2(m.x - kPinR - 2, m.y - kPinR - 2), ImVec2(m.x + kPinR + 2, m.y + kPinR + 2));
+    ed::PinPivotRect(m, m);
+    ed::EndPin();
     const ImU32 col = ImGui::ColorConvertFloat4ToU32(c);
-    if (multi) ImGui::GetWindowDrawList()->AddRectFilled(ImVec2(m.x - 0.3f * h, m.y - 0.3f * h), ImVec2(m.x + 0.3f * h, m.y + 0.3f * h), col);
-    else ImGui::GetWindowDrawList()->AddCircleFilled(m, 0.3f * h, col);
+    if (multi) ImGui::GetWindowDrawList()->AddRectFilled(ImVec2(m.x - kPinR, m.y - kPinR), ImVec2(m.x + kPinR, m.y + kPinR), col);
+    else ImGui::GetWindowDrawList()->AddCircleFilled(m, kPinR, col);
 }
 
 std::pair<std::string, std::string> split_port(const std::string& s) {
@@ -126,7 +129,8 @@ void NodeEditor::redo() {
     place_ = true;
 }
 
-// раскладка: столбцы по глубине (число связей до ноды «Сцена»), справа налево; строки — по порядку в документе
+// раскладка сверху вниз: уровень — число связей до ноды «Сцена» (она внизу); внутри уровня ноды стоят над своими
+// потребителями (среднее x их нод-получателей) — так связи меньше пересекаются
 void NodeEditor::layout_missing() {
     std::map<std::string, int> depth;
     for (auto& n : nodes())
@@ -141,13 +145,61 @@ void NodeEditor::layout_missing() {
         }
         if (!ch) break;
     }
-    std::map<int, int> rows;
+    std::map<int, std::vector<std::string>> levels;
+    int maxd = 0;
     for (auto& n : nodes()) {
         const std::string id = n.value("id", std::string());
         const int d = depth.count(id) ? depth[id] : 0;
-        const int r = rows[d]++;
+        levels[d].push_back(id);
+        maxd = std::max(maxd, d);
+    }
+    const float dx = 170.0f, dy = 95.0f, gap = 30.0f;
+    std::map<std::string, float> x;
+    for (int d = 0; d <= maxd; ++d) {
+        auto& L = levels[d];
+        std::map<std::string, float> key;
+        for (size_t r = 0; r < L.size(); ++r) {
+            float sum = 0;
+            int cnt = 0;
+            for (auto& l : links())
+                if (split_port(l.value("from", std::string())).first == L[r]) {
+                    const std::string t = split_port(l.value("to", std::string())).first;
+                    if (x.count(t)) { sum += x[t]; ++cnt; }
+                }
+            key[L[r]] = cnt ? sum / cnt : dx * float(r);
+        }
+        std::stable_sort(L.begin(), L.end(), [&](const std::string& a, const std::string& b) { return key[a] < key[b]; });
+        // ширина ноды — по заголовку (символов UTF-8 × ~9 px + отступы); ноды уровня — подряд с зазором, по центру
+        // над потребителями
+        std::vector<float> w(L.size());
+        float total = 0, mean = 0;
+        for (size_t r = 0; r < L.size(); ++r) {
+            std::string title = L[r];
+            for (auto& n : nodes())
+                if (n.value("id", std::string()) == L[r])
+                    if (const NodeDef* d = node_library().find(n.value("type", std::string()))) title = d->title;
+            size_t chars = 0;
+            for (unsigned char c : title) chars += (c & 0xC0) != 0x80;
+            w[r] = std::max(60.0f, 9.0f * float(chars) + 24.0f);
+            total += w[r] + (r ? gap : 0.0f);
+            mean += key[L[r]];
+        }
+        mean = L.empty() ? 0 : mean / float(L.size());
+        float cur = mean - 0.5f * total;
+        for (size_t r = 0; r < L.size(); ++r) {
+            x[L[r]] = cur + 0.5f * w[r];                     // x — центр ноды
+            cur += w[r] + gap;
+        }
+    }
+    for (auto& n : nodes()) {
+        const std::string id = n.value("id", std::string());
         if (n.contains("ui") && n["ui"].contains("pos")) continue;
-        n["ui"]["pos"] = {-340.0 * d, 150.0 * r};
+        const int d = depth.count(id) ? depth[id] : 0;
+        std::string title = id;
+        if (const NodeDef* df = node_library().find(n.value("type", std::string()))) title = df->title;
+        size_t chars = 0;
+        for (unsigned char c : title) chars += (c & 0xC0) != 0x80;
+        n["ui"]["pos"] = {std::round(x[id] - 0.5f * std::max(60.0f, 9.0f * float(chars) + 24.0f)), -dy * d};
     }
 }
 
@@ -394,6 +446,11 @@ NodeEditor::Change NodeEditor::draw(bool enabled, const float* cam_x, const floa
     ImGui::BeginChild("canvas", ImVec2(std::max(100.0f, avail.x - insp_w), 0));
     ed::SetCurrentEditor(ed_);
     ed::Begin("graph");
+    ed::PushStyleVar(ed::StyleVar_NodePadding, ImVec4(6, 3, 6, 3));
+    ed::PushStyleVar(ed::StyleVar_NodeRounding, 4.0f);
+    ed::PushStyleVar(ed::StyleVar_SourceDirection, ImVec2(0.0f, 1.0f));   // поток сверху вниз
+    ed::PushStyleVar(ed::StyleVar_TargetDirection, ImVec2(0.0f, -1.0f));
+    ed::PushStyleVar(ed::StyleVar_LinkStrength, 60.0f);
     struct PinRef { std::string node, port, type; bool out; bool multi; };
     std::map<uintptr_t, PinRef> pins;
     for (auto& n : nodes()) {
@@ -406,27 +463,29 @@ NodeEditor::Change NodeEditor::draw(bool enabled, const float* cam_x, const floa
         const bool err = id == error_node_;
         if (err) ed::PushStyleColor(ed::StyleColor_NodeBorder, ImVec4(1, 0.25f, 0.25f, 1));
         ed::BeginNode(ed::NodeId(k));
-        ImGui::TextUnformatted(def->title.c_str());
-        ImGui::SameLine();
-        ImGui::TextDisabled("%s", id.c_str());
-        for (size_t j = 0; j < def->inputs.size() && j < size_t(kOut); ++j) {
-            const auto& in = def->inputs[j];
-            const uintptr_t pid = uintptr_t(k) * 256 + j;
-            pins[pid] = {id, in.name, in.type, false, in.multi};
-            ed::BeginPin(ed::PinId(pid), ed::PinKind::Input);
-            pin_mark(type_color(in.type), in.multi);
-            ImGui::SameLine();
-            ImGui::TextUnformatted(in.name.c_str());
-            ed::EndPin();
-        }
-        if (!def->output.empty()) {
-            const uintptr_t pid = uintptr_t(k) * 256 + kOut;
-            pins[pid] = {id, "out", def->output, true, false};
-            ed::BeginPin(ed::PinId(pid), ed::PinKind::Output);
-            ImGui::TextDisabled("%s", def->output.c_str());
-            ImGui::SameLine();
-            pin_mark(type_color(def->output), false);
-            ed::EndPin();
+        {
+            const size_t ni = std::min(def->inputs.size(), size_t(kOut));
+            const ImVec2 o = ImGui::GetCursorScreenPos();
+            const float tw = ImGui::CalcTextSize(def->title.c_str()).x;
+            const float w = std::max({tw, 3.0f * kPinR * float(ni), 40.0f});
+            const float row = ni ? 2 * kPinR + 4 : 0;         // ряд точек входов
+            for (size_t j = 0; j < ni; ++j) {
+                const auto& in = def->inputs[j];
+                const uintptr_t pid = uintptr_t(k) * 256 + j;
+                pins[pid] = {id, in.name, in.type, false, in.multi};
+                pin_at(ed::PinId(pid), ed::PinKind::Input, ImVec2(o.x + w * (float(j) + 0.5f) / float(ni), o.y + kPinR),
+                       type_color(in.type), in.multi);
+            }
+            ImGui::SetCursorScreenPos(ImVec2(o.x + 0.5f * (w - tw), o.y + row));
+            ImGui::TextUnformatted(def->title.c_str());
+            const float yb = ImGui::GetCursorScreenPos().y;
+            if (!def->output.empty()) {
+                const uintptr_t pid = uintptr_t(k) * 256 + kOut;
+                pins[pid] = {id, "out", def->output, true, false};
+                pin_at(ed::PinId(pid), ed::PinKind::Output, ImVec2(o.x + 0.5f * w, yb + kPinR), type_color(def->output), false);
+            }
+            ImGui::SetCursorScreenPos(ImVec2(o.x, def->output.empty() ? yb : yb + 2 * kPinR + 2));
+            ImGui::Dummy(ImVec2(w, 0));                          // ширина ноды — по заголовку и числу входов
         }
         ed::EndNode();
         if (err) ed::PopStyleColor();
@@ -500,6 +559,15 @@ NodeEditor::Change NodeEditor::draw(bool enabled, const float* cam_x, const floa
     // контекстное меню холста: добавить ноду (группы библиотеки, поиск по имени)
     const ImVec2 mouse = ImGui::GetMousePos();
     ed::Suspend();
+    if (ed::PinId hp = ed::GetHoveredPin(); hp && pins.count(hp.Get())) {
+        const PinRef& r = pins[hp.Get()];
+        ImGui::SetTooltip("%s.%s — %s%s", r.node.c_str(), r.port.c_str(), r.type.c_str(), r.multi ? " (список)" : "");
+    } else if (ed::NodeId hn = ed::GetHoveredNode()) {
+        for (auto& [sid, v] : nid_)
+            if (uintptr_t(v) == hn.Get())
+                for (auto& x : nodes())
+                    if (x.value("id", std::string()) == sid) ImGui::SetTooltip("%s · %s", sid.c_str(), x.value("type", std::string()).c_str());
+    }
     if (enabled && ed::ShowBackgroundContextMenu()) {
         ImGui::OpenPopup("add_node");
         search_[0] = 0;
@@ -554,6 +622,7 @@ NodeEditor::Change NodeEditor::draw(bool enabled, const float* cam_x, const floa
         if (p.x < 1e30f) n["ui"]["pos"] = {std::round(p.x), std::round(p.y)};
     }
     if (fit_ > 0 && --fit_ == 0) ed::NavigateToContent(0.0f);
+    ed::PopStyleVar(5);
     ed::End();
     ed::SetCurrentEditor(nullptr);
     ImGui::EndChild();
