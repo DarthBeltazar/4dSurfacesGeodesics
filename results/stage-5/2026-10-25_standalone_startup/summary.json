@@ -1,0 +1,12 @@
+{
+ "cold_wall_s": 4.22005259999969,
+ "cold_compile_ms": 2535.4,
+ "warm_wall_s": 0.7454259999994974,
+ "warm_build_ms": 86.6,
+ "python_warm_wall_s": 2.9346130000012636,
+ "python_warm_graph_s": 2.2886288999998214,
+ "resize_rebuild_ms": 62.2,
+ "resize_switch_ms": 152.1,
+ "structural_rebuild_ms": 1858.9,
+ "structural_switch_ms": 130.0
+}
