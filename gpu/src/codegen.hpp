@@ -38,6 +38,9 @@ struct Dirs {
     fs::path root, shaders, gen, spv;
 };
 Dirs default_dirs(const char* argv0);
+// пользовательский кэш (SPIR-V установленной программы, VkPipelineCache): GEO4D_CACHE_DIR или %LOCALAPPDATA%\geo4d\cache
+// (Linux/macOS — $XDG_CACHE_HOME/geo4d или ~/.cache/geo4d)
+fs::path user_cache_dir();
 
 std::string scene_header(const Scene& sc, bool dynamic);
 fs::path write_header(const Dirs& d, const Scene& sc, bool dynamic);     // gen/<sha256[:16]>/pt_scene.slang (CRLF, как write_text)

@@ -6,6 +6,8 @@
 
 #include <array>
 #include <atomic>
+#include <chrono>
+#include <functional>
 #include <memory>
 #include <string>
 #include <thread>
@@ -139,6 +141,11 @@ struct FrameInfo {
 
 enum class RebuildKind { Manifold, Structure, Resolution };
 
+// Перегенерация в процессе (DD-010, окно без Python): сцена (JSON) и аргументы как у app.py (--res, --cube, --vsync)
+// → граф в каталоге out_dir (memfs: <out_dir>/app_graph.txt). false — ошибка, сообщение в err.
+using RebuildFn = std::function<bool(const std::string& scene_json, const std::vector<std::string>& args,
+                                     const std::string& out_dir, std::string& err)>;
+
 class Editor {
 public:
     explicit Editor(const EditorConfig& cfg);
@@ -175,8 +182,14 @@ public:
     // то же многообразие и объекты, новое разрешение рендера (аргумент --res перегенераций меняется насовсем)
     void rebuild_resolution(const CameraState& cam, uint32_t w, uint32_t h, bool wait);
     RebuildKind last_rebuild_kind() const { return rebuild_kind_; }
+    double last_rebuild_ms() const { return rebuild_ms_; }     // от запуска перегенерации до готового графа
     const std::vector<std::pair<int, int>>& requested_structure() const { return requested_; }
     bool rebuilding() const { return worker_ != nullptr; }
+    // перегенерация функцией в процессе вместо Python (директива rebuild не нужна); args — как у app.py
+    void set_inproc_rebuild(RebuildFn fn, std::vector<std::string> args) {
+        rebuild_fn_ = std::move(fn);
+        inproc_args_ = std::move(args);
+    }
 
 private:
     EditorConfig cfg_;
@@ -191,6 +204,11 @@ private:
     std::atomic<bool> done_{false};
     int rc_ = 0;
     std::string log_path_, graph_out_;
+    RebuildFn rebuild_fn_;
+    std::vector<std::string> inproc_args_;        // --res меняется насовсем (rebuild_resolution)
+    std::string rebuild_err_;
+    std::chrono::steady_clock::time_point rebuild_t0_{};
+    double rebuild_ms_ = 0;
 
     RebuildKind rebuild_kind_ = RebuildKind::Manifold;
     std::vector<std::pair<int, int>> requested_;

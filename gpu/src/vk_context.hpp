@@ -104,6 +104,9 @@ public:
     Pipeline create_pipeline(const std::vector<uint32_t>& spirv, const std::string& entry,
                              const std::vector<VkDescriptorType>& types, uint32_t push_bytes);
     void destroy_pipeline(Pipeline& p);
+    // VkPipelineCache с диска (DD-010): повторная сборка конвейеров — из кэша драйвера и этого файла; сохраняется в
+    // деструкторе (атомарно: временный файл и переименование)
+    void use_pipeline_cache(const std::string& path);
 
     // Одна диспетчеризация repeat раз; возвращает время каждой (нс) по timestamp queries.
     std::vector<double> dispatch(const Pipeline& p, const std::vector<Binding>& bindings, const void* push,
@@ -127,6 +130,8 @@ private:
     bool ext_mem_ = false;
     bool dyn_render_ = false;
     VkPhysicalDeviceProperties props_{};
+    VkPipelineCache pcache_ = VK_NULL_HANDLE;
+    std::string pcache_path_;
 
     VkCommandBuffer begin_cmd();
     void submit_wait(VkCommandBuffer cb);

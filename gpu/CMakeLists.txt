@@ -17,7 +17,11 @@ add_executable(geo4d_gpu
   src/codegen.cpp
   src/export_graph.cpp
   src/shader_compiler.cpp
+  src/memfs.cpp
 )
+if(WIN32)
+  target_sources(geo4d_gpu PRIVATE src/geo4d.manifest)     # UTF-8 как кодовая страница процесса (DD-010)
+endif()
 # exe всегда в корне каталога сборки (gpu/build/geo4d_gpu[.exe]) — его ищет geo4d.gpu.EXE
 set_target_properties(geo4d_gpu PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}")
 
@@ -103,7 +107,7 @@ if(GEO4D_APP)
                              PRIVATE "${GEO4D_VULKAN_INC}" "${GEO4D_VOLK_INC}")
   target_compile_definitions(geo4d_imgui PUBLIC IMGUI_IMPL_VULKAN_USE_VOLK PRIVATE VK_NO_PROTOTYPES)
   target_link_libraries(geo4d_imgui PUBLIC SDL3::SDL3)
-  target_sources(geo4d_gpu PRIVATE src/app.cpp src/editor.cpp)
+  target_sources(geo4d_gpu PRIVATE src/app.cpp src/editor.cpp src/standalone.cpp)
   target_link_libraries(geo4d_gpu PRIVATE SDL3::SDL3 geo4d_imgui)
   target_compile_definitions(geo4d_gpu PRIVATE GEO4D_APP=1)
   if(WIN32)       # SDL3.dll рядом с exe

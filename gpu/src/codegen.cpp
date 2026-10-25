@@ -167,6 +167,17 @@ Dirs default_dirs(const char* argv0) {
     return d;
 }
 
+fs::path user_cache_dir() {
+    if (const char* c = std::getenv("GEO4D_CACHE_DIR")) return from_u8(c);
+#ifdef _WIN32
+    if (const char* l = std::getenv("LOCALAPPDATA")) return from_u8(l) / "geo4d" / "cache";
+#else
+    if (const char* x = std::getenv("XDG_CACHE_HOME")) return from_u8(x) / "geo4d";
+    if (const char* h = std::getenv("HOME")) return from_u8(h) / ".cache" / "geo4d";
+#endif
+    return fs::temp_directory_path() / "geo4d-cache";
+}
+
 // ---- заголовок и дефайны -----------------------------------------------------------------------------------
 
 std::string scene_header(const Scene& sc, bool dynamic) {

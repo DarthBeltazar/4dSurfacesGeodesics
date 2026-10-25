@@ -646,8 +646,9 @@ void Editor::save(const std::string& path, const CameraState& cam) {
 
 void Editor::start_rebuild(const CameraState& cam, RebuildKind rk) {
     const bool same_manifold = rk != RebuildKind::Manifold;
-    if (cfg_.python.empty()) { status_ = "перегенерация недоступна (нет директивы rebuild)"; return; }
+    if (cfg_.python.empty() && !rebuild_fn_) { status_ = "перегенерация недоступна (нет директивы rebuild)"; return; }
     ++rebuild_n_;
+    rebuild_t0_ = std::chrono::steady_clock::now();
     std::string base = cfg_.work_dir + "/edit_" + std::to_string(rebuild_n_);
     std::string json = base + ".json";
     graph_out_ = base;
@@ -661,6 +662,19 @@ void Editor::start_rebuild(const CameraState& cam, RebuildKind rk) {
     {
         std::ofstream f(json, std::ios::binary);
         f << scene_json(kind, params, env, objs_, cam, cfg_.fov, cfg_.speed);
+    }
+    if (rebuild_fn_) {                              // в процессе (DD-010): кодген и компиляция в потоке
+        done_ = false;
+        status_ = rk == RebuildKind::Structure    ? "сборка быстрых шейдеров (новая структура объектов)…"
+                  : rk == RebuildKind::Resolution ? "граф под новое разрешение…"
+                                                  : "сборка шейдеров и графа…";
+        worker_ = std::make_unique<std::thread>([this, fn = rebuild_fn_, json, base, args = inproc_args_]() {
+            std::string err;
+            rc_ = fn(json, args, base, err) ? 0 : 1;
+            rebuild_err_ = err;
+            done_ = true;
+        });
+        return;
     }
     auto q = [](const std::string& s) { return "\"" + s + "\""; };
     // -X utf8: лог Python (сообщение об ошибке в окне) — в UTF-8 и при перенаправлении в файл на Windows
@@ -697,7 +711,7 @@ void Editor::rebuild_structure(const CameraState& cam, bool wait) {
 
 void Editor::rebuild_resolution(const CameraState& cam, uint32_t w, uint32_t h, bool wait) {
     const std::string res = std::to_string(w) + "x" + std::to_string(h);
-    auto& a = cfg_.rebuild_args;
+    auto& a = rebuild_fn_ ? inproc_args_ : cfg_.rebuild_args;
     auto it = std::find(a.begin(), a.end(), "--res");
     if (it != a.end() && it + 1 != a.end()) *(it + 1) = res;
     else { a.push_back("--res"); a.push_back(res); }
@@ -709,11 +723,16 @@ std::string Editor::poll_rebuild() {
     if (!worker_ || !done_) return "";
     worker_->join();
     worker_.reset();
+    rebuild_ms_ = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - rebuild_t0_).count();
     if (rc_ == 0) {
         status_ = rebuild_kind_ == RebuildKind::Structure    ? "быстрый режим: шейдеры с новой структурой объектов"
                   : rebuild_kind_ == RebuildKind::Resolution ? "разрешение рендера обновлено"
                                                              : "многообразие обновлено";
         return graph_out_ + "/app_graph.txt";
+    }
+    if (rebuild_fn_) {
+        status_ = "ошибка перегенерации (сцена не изменена):\n" + rebuild_err_.substr(0, 600);
+        return "";
     }
     std::ifstream f(log_path_);
     std::string all((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());

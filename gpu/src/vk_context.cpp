@@ -12,6 +12,8 @@
 #endif
 
 #include <chrono>
+#include <filesystem>
+#include <fstream>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -195,6 +197,22 @@ VkContext::VkContext(const std::vector<const char*>& instance_exts, bool swapcha
 VkContext::~VkContext() {
     if (device_) {
         vkDeviceWaitIdle(device_);
+        if (pcache_) {
+            size_t n = 0;
+            vkGetPipelineCacheData(device_, pcache_, &n, nullptr);
+            std::vector<char> data(n);
+            if (n && vkGetPipelineCacheData(device_, pcache_, &n, data.data()) == VK_SUCCESS) {
+                std::string tmp = pcache_path_ + ".tmp" + std::to_string(reinterpret_cast<uintptr_t>(this));
+                {
+                    std::ofstream f(tmp, std::ios::binary);
+                    f.write(data.data(), std::streamsize(n));
+                }
+                std::error_code ec;
+                std::filesystem::rename(tmp, pcache_path_, ec);
+                if (ec) std::filesystem::remove(tmp, ec);
+            }
+            vkDestroyPipelineCache(device_, pcache_, nullptr);
+        }
         vkDestroyQueryPool(device_, qpool_, nullptr);
         vkDestroyDescriptorPool(device_, dpool_, nullptr);
         vkDestroyCommandPool(device_, pool_, nullptr);
@@ -202,6 +220,27 @@ VkContext::~VkContext() {
         vkDestroyDevice(device_, nullptr);
     }
     if (instance_) vkDestroyInstance(instance_, nullptr);
+}
+
+void VkContext::use_pipeline_cache(const std::string& path) {
+    if (pcache_) return;
+    pcache_path_ = path;
+    std::vector<char> data;
+    if (std::ifstream f{path, std::ios::binary | std::ios::ate}) {
+        data.resize(size_t(f.tellg()));
+        f.seekg(0);
+        f.read(data.data(), std::streamsize(data.size()));
+    }
+    std::error_code ec;
+    std::filesystem::create_directories(std::filesystem::path(path).parent_path(), ec);
+    VkPipelineCacheCreateInfo ci{VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO};
+    ci.initialDataSize = data.size();                // чужой или повреждённый кэш драйвер отбрасывает сам
+    ci.pInitialData = data.empty() ? nullptr : data.data();
+    if (vkCreatePipelineCache(device_, &ci, nullptr, &pcache_) != VK_SUCCESS) {
+        ci.initialDataSize = 0;
+        ci.pInitialData = nullptr;
+        if (vkCreatePipelineCache(device_, &ci, nullptr, &pcache_) != VK_SUCCESS) pcache_ = VK_NULL_HANDLE;
+    }
 }
 
 std::string VkContext::device_name() const { return props_.deviceName; }
@@ -372,7 +411,7 @@ Pipeline VkContext::create_pipeline(const std::vector<uint32_t>& spirv, const st
     cpi.layout = p.layout;
     if (exec_props_) cpi.flags = VK_PIPELINE_CREATE_CAPTURE_STATISTICS_BIT_KHR;
     const auto t_pipe = std::chrono::steady_clock::now();
-    check(vkCreateComputePipelines(device_, VK_NULL_HANDLE, 1, &cpi, nullptr, &p.pipe), "vkCreateComputePipelines");
+    check(vkCreateComputePipelines(device_, pcache_, 1, &cpi, nullptr, &p.pipe), "vkCreateComputePipelines");
     if (std::getenv("GEO4D_PIPE_TIME"))     // время сборки конвейера драйвером (проба быстрой перекомпиляции)
         std::fprintf(stderr, "pipe_time %s %zu %.3f\n", entry.c_str(), spirv.size() * 4,
                      std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t_pipe).count());

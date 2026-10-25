@@ -5,6 +5,7 @@
 //   geo4d_gpu denoise <job>   — денойзер OptiX (см. denoise.cpp)
 //   geo4d_gpu app <graph>     — интерактивное окно (см. app.cpp, DD-007)
 //   geo4d_gpu export-graph <сцена.json> <каталог> [...] — граф окна без Python (см. export_graph.cpp, DD-010)
+//   geo4d_gpu [сцена.json] [--res WxH] [...] — окно без Python (см. standalone.cpp, DD-010)
 #include <cstdio>
 #include <exception>
 #include <iostream>
@@ -14,6 +15,7 @@
 #include "graph.hpp"
 #ifdef GEO4D_APP
 #include "app.hpp"
+#include "standalone.hpp"
 #endif
 #ifdef GEO4D_OPTIX
 #include "denoise.hpp"
@@ -23,6 +25,9 @@
 
 int main(int argc, char** argv) {
     try {
+#ifdef GEO4D_APP
+        if (is_standalone_args(argc, argv)) return run_standalone(argc, argv);
+#endif
         if (argc < 2) {
             std::fprintf(stderr, "использование: geo4d_gpu info | run <job.txt> | graph <graph.txt> | denoise <job.txt> | app <graph.txt> | export-graph <сцена.json> <каталог>\n");
             return 2;

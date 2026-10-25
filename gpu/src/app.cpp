@@ -62,6 +62,8 @@
 #endif
 #include "editor.hpp"
 #include "graph_program.hpp"
+#include "codegen.hpp"
+#include "memfs.hpp"
 #include "npy.hpp"
 
 namespace {
@@ -207,12 +209,12 @@ const char* kFonts[] = {"C:/Windows/Fonts/segoeui.ttf", "C:/Windows/Fonts/arial.
 
 }  // namespace
 
-int run_app(const std::string& graph_path) {
+int run_app(const std::string& graph_path, RebuildFn rebuild, std::vector<std::string> rebuild_args) {
     // директивы приложения — до создания контекста (нужны размер окна и флаги)
     uint32_t W = 0, H = 0, win_w = 0, win_h = 0;
     bool hidden = false, vsync = false, batch = false, editor_on = false, ui_forced = false, fullscreen = false;
     {
-        std::ifstream f(graph_path);
+        std::istringstream f(memfs::read_text(graph_path));
         for (std::string line; std::getline(f, line);) {
             std::istringstream ss(line);
             std::string cmd;
@@ -244,6 +246,7 @@ int run_app(const std::string& graph_path) {
     int rc = 0;
     {
         VkContext ctx(iexts, true);
+        ctx.use_pipeline_cache(geo4d::u8(geo4d::user_cache_dir() / "pipelines.bin"));
         const bool overlay = editor_on && (ui_forced || interactive) && ctx.dynamic_rendering();
         VkSurfaceKHR surf;
         if (!SDL_Vulkan_CreateSurface(win, ctx.instance(), nullptr, &surf))
@@ -370,6 +373,7 @@ int run_app(const std::string& graph_path) {
         if (editor_on) {
             editor = std::make_unique<Editor>(parse_editor_config(prog->extra()));
             editor->set_config(parse_editor_config(prog->extra()), read_rows());
+            if (rebuild) editor->set_inproc_rebuild(rebuild, rebuild_args);
             baked_struct = structure(editor->objects());
             baked_mf = editor->current_manifold_key();
         }
@@ -963,6 +967,7 @@ int run_app(const std::string& graph_path) {
                     throw std::runtime_error("remanifold: перегенерация не удалась");
                 }
                 if (pending_exit && next_graph.empty() && !editor->rebuilding()) pending_exit = false;   // ошибка Python
+                const auto t_switch = std::chrono::steady_clock::now();
                 if (!next_graph.empty()) {             // перезагрузка графа без закрытия окна
                     const std::string dir = next_graph.substr(0, next_graph.rfind('/'));
                     const std::string next_dyn = dir + "/app_graph_dyn.txt";
@@ -991,6 +996,10 @@ int run_app(const std::string& graph_path) {
                         baked_mf = editor->current_manifold_key();
                         pending_exit = false;
                     }
+                    // замер (DD-010): перегенерация (Python или в процессе) и смена графа (буферы, конвейеры, денойзер)
+                    std::printf("graph_switch {\"kind\": %d, \"rebuild_ms\": %.1f, \"switch_ms\": %.1f}\n",
+                                int(editor->last_rebuild_kind()), editor->last_rebuild_ms(), ms_since(t_switch));
+                    std::fflush(stdout);
                 }
             }
             last_ms = total_ms;

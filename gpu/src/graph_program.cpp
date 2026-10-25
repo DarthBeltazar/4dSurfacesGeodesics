@@ -7,7 +7,7 @@
 //   dispatch <конвейер> <gx> <gy> <gz> | indirect <конвейер> <буфер> <смещение байт>
 //   loop <n> ... endloop (без вложенности) | mark <метка>
 //   остальное (repeat, output, report, app, denoise, ...) — в extra() для вызывающего
-// Пути с пробелами — в кавычках (words.hpp).
+// Пути с пробелами — в кавычках (words.hpp). Граф и .npy — из памяти (memfs, окно без Python) или с диска.
 #include "graph_program.hpp"
 
 #include <cstring>
@@ -15,6 +15,7 @@
 #include <sstream>
 #include <stdexcept>
 
+#include "memfs.hpp"
 #include "npy.hpp"
 #include "words.hpp"
 
@@ -33,11 +34,11 @@ std::vector<uint32_t> load_spirv(const std::string& path) {
 }  // namespace
 
 GraphProgram::GraphProgram(VkContext& ctx, const std::string& path) : ctx_(ctx) {
-    std::ifstream jf(path);
-    if (!jf) throw std::runtime_error("нет файла графа: " + path);
+    std::istringstream jf(memfs::read_text(path));
     std::map<std::string, std::pair<std::string, std::string>> pipe_src;
     std::string section, line;
     while (std::getline(jf, line)) {
+        if (!line.empty() && line.back() == '\r') line.pop_back();
         if (line.empty() || line[0] == '#') continue;
         std::istringstream ss(protect_quotes(line));
         std::string cmd;
@@ -59,7 +60,7 @@ GraphProgram::GraphProgram(VkContext& ctx, const std::string& path) : ctx_(ctx) 
                 std::string p;
                 ss >> p;
                 p = unprotect(p);
-                NpyArray a = npy_read(p);
+                NpyArray a = memfs::read_npy(p);
                 if (a.dtype == "<f8") throw std::runtime_error("float64 на вход GPU не подаётся: " + p);
                 bufs_[name] = ctx.create_buffer(a.data.size(), false);
                 Buffer h = ctx.create_buffer(a.data.size(), true);
@@ -74,7 +75,7 @@ GraphProgram::GraphProgram(VkContext& ctx, const std::string& path) : ctx_(ctx) 
             if (fmt == "bc6h") ss >> enc;
             p = unprotect(p);
             enc = unprotect(enc);
-            NpyArray a = npy_read(p);
+            NpyArray a = memfs::read_npy(p);
             size_t C = a.shape[4], n = a.count() / C;
             std::vector<float> rgba(n * 4, 1.0f);
             const float* src = reinterpret_cast<const float*>(a.data.data());
