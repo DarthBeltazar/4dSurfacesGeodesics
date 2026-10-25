@@ -75,8 +75,16 @@ README = """geo4d — редактор сцен искривлённых про�
 Альфа-версия: проверено на одной машине (Windows 11, RTX 4080 SUPER). Сообщения об ошибках — в issues на GitHub.
 
 Сторонние компоненты: Slang (slangc, Apache-2.0 WITH LLVM-exception, https://github.com/shader-slang/slang),
-SDL3 (zlib), Dear ImGui (MIT), volk (MIT), Vulkan Memory Allocator (MIT), рантайм Microsoft Visual C++
-(распространяемые файлы Visual Studio 2022). Лицензия проекта — LICENSE (GPL-3.0-or-later).
+SDL3 (zlib), Dear ImGui (MIT), volk (MIT), Vulkan Memory Allocator (MIT), заголовки NVIDIA OptiX (лицензия NVIDIA SDK),
+рантайм Microsoft Visual C++ (распространяемые файлы Visual Studio 2022).
+
+Лицензия — GNU GPL v3 или более поздняя (LICENSE). Исходный код этой сборки:
+  https://github.com/DarthBeltazar/4dSurfacesGeodesics/tree/{commit}
+
+Дополнительное разрешение по разделу 7 GNU GPL v3: если вы изменяете эту программу или любое основанное на ней
+произведение, связывая или объединяя его с NVIDIA OptiX SDK (заголовки optix-dev) или драйверными библиотеками
+NVIDIA CUDA (или их изменёнными версиями), содержащими части, на которые распространяются условия их лицензий,
+правообладатели этой программы дают вам дополнительное разрешение распространять полученное произведение.
 """
 
 
@@ -85,6 +93,12 @@ def main():
     ap.add_argument("--version", default="0.1.0-alpha")
     ap.add_argument("--no-spv", action="store_true", help="без заранее скомпилированных шейдеров")
     a = ap.parse_args()
+    commit = subprocess.run(["git", "rev-parse", "HEAD"], cwd=ROOT, check=True, capture_output=True,
+                            text=True).stdout.strip()
+    if subprocess.run(["git", "status", "--porcelain", "--untracked-files=no"], cwd=ROOT, check=True,
+                      capture_output=True, text=True).stdout.strip():
+        print("ВНИМАНИЕ: незакоммиченные правки — исходники сборки не совпадут с коммитом в README.txt (GPL)",
+              file=sys.stderr)
     name = f"geo4d-editor-{a.version}-win64"
     out = ROOT / "dist" / name
     if out.exists():
@@ -109,7 +123,7 @@ def main():
     for f in ["requirements.txt", "LICENSE"]:
         shutil.copy2(ROOT / f, out)
     (out / "run_editor.cmd").write_bytes(RUN_CMD.replace("\n", "\r\n").encode("ascii"))
-    (out / "README.txt").write_bytes(README.format(version=a.version).replace("\n", "\r\n").encode("utf-8-sig"))
+    (out / "README.txt").write_bytes(README.format(version=a.version, commit=commit).replace("\n", "\r\n").encode("utf-8-sig"))
     if not a.no_spv:          # шейдеры всех сцен — в кэш архива (ключ кэша — содержимое, не пути)
         env = dict(os.environ, GEO4D_SLANGC=str(out / "slang" / "slangc.exe"), PYTHONIOENCODING="utf-8")
         env.pop("GEO4D_GPU_EXE", None)
