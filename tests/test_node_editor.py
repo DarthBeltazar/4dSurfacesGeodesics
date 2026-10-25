@@ -72,3 +72,20 @@ def test_rejected_edits(tmp_path, ops, msg):
     doc["graphs"]["main"]["nodes"].append({"id": "nm", "type": "mat.diffuse"})
     r = _window(tmp_path / "x", doc, 3, [], ops)
     assert r.returncode != 0 and msg in r.stderr, r.stderr
+
+
+def test_click_on_object_selects_its_node(tmp_path):
+    """Клик по объекту в кадре (ядро pt_pick, G-буфер одного пикселя) выделяет его ноду «Объект»; клик по фону —
+    взгляд мышью. Окно 1280×720 с оверлеем (раскладка DD-011 §8): лампа сцены с тремя горловинами — около (465, 172)."""
+    d = tmp_path / "w"
+    d.mkdir()
+    np.savetxt(d / "s.txt", np.zeros((10, 6)), fmt="%.6f")
+    (d / "extra.txt").write_text(f"hidden\nui\nbench {gpu.qpath(d / 's.txt')} {gpu.qpath(d / 'f.json')}\n"
+                                 "mouse 2 465 172\nmouse 3 465 172 click\nmouse 6 300 80 click\n", encoding="utf-8")
+    r = subprocess.run([str(gpu.EXE), str(Path(__file__).resolve().parents[1] / "scenes" / "three_wormholes.g4d"),
+                        "--res", "1280x720", "--cube", "64", "--work-dir", str(d / "work"), "--extra", str(d / "extra.txt")],
+                       capture_output=True, text=True, encoding="utf-8")
+    out = _ok(r)
+    assert "pick 3 obj 0 node o1" in out
+    grab = {int(l.split()[1]): int(l.split()[3]) for l in out.splitlines() if l.startswith("mouse ")}
+    assert grab[4] == 0 and grab[7] == 1

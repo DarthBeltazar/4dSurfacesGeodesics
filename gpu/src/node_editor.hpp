@@ -43,6 +43,8 @@ public:
     void undo();
     void redo();
     const std::string& selected() const { return sel_; }
+    // нода «Объект» (out.object) объекта сцены k — порядок связей входа scene.objects; пусто — нет
+    std::string object_node(int k) const;
     void select(const std::string& id) { sel_ = id; select_req_ = true; }
 
 private:

@@ -764,6 +764,23 @@ int run_app(const std::string& graph_path, RebuildFn rebuild, std::vector<std::s
         // DD-011 §8: докспейс на всё окно (граф по умолчанию — снизу); кадр рисуется в центральном узле (пиксели)
         bool dock_built = false;
         int32_t view[4] = {0, 0, 0, 0};                // x, y, w, h; w = 0 — всё окно
+        int32_t img_rect[4] = {0, 0, 0, 0};            // где кадр лежал в образе swapchain в прошлом кадре (пиксели)
+        // DD-011 §8: объект под точкой окна (точки ImGui) — ядро pt_pick (первичная геодезическая одного пикселя, G-буфер);
+        // −1 — фон или нет ядра
+        auto pick_at = [&](float mx, float my) -> int {
+            if (!prog->has_section("pick") || !prog->has_buffer("GB") || img_rect[2] <= 0 || img_rect[3] <= 0) return -1;
+            const ImVec2 fs = ImGui::GetIO().DisplayFramebufferScale;
+            const double u = (mx * fs.x - img_rect[0]) / img_rect[2], v = (my * fs.y - img_rect[1]) / img_rect[3];
+            if (!(u >= 0 && u < 1 && v >= 0 && v < 1)) return -1;
+            const uint32_t i = uint32_t(v * H) * W + uint32_t(u * W);
+            prog->set_push_u32("pick", 19, i);         // PTParams.list_off
+            prog->run("pick");
+            Buffer h = ctx.create_buffer(32, true);
+            ctx.copy_buffer(prog->buffer("GB"), h, 32, size_t(i) * 32, 0);
+            const float obj = static_cast<const float*>(h.mapped)[3];
+            ctx.destroy_buffer(h);
+            return obj >= 0 ? int(obj) : -1;
+        };
         // разрешение рендера (DD-009): пресет из панели; доли окна пересчитываются после изменения размера окна
         int res_choice = -1;
         auto last_resize = std::chrono::steady_clock::now();
@@ -940,10 +957,20 @@ int run_app(const std::string& graph_path, RebuildFn rebuild, std::vector<std::s
                 }
                 if (click_pending) {
                     click_pending = false;
-                    if (!ImGui::GetIO().WantCaptureMouse) {            // нажатие не над панелью — взгляд мышью
-                        ImGui::GetIO().AddMouseButtonEvent(ImGuiMouseButton_Left, false);
-                        grab = true;
-                        SDL_SetWindowRelativeMouseMode(win, true);
+                    if (!ImGui::GetIO().WantCaptureMouse) {            // нажатие не над панелью
+                        // по объекту — выделить его ноду в редакторе нод (DD-011 §8), по фону — взгляд мышью
+                        const ImVec2 mp = ImGui::GetIO().MousePos;
+                        const int k = editor ? pick_at(mp.x, mp.y) : -1;
+                        const std::string node = k >= 0 ? panel.object_node(k) : std::string();
+                        if (!node.empty()) {
+                            panel.select(node);
+                            std::printf("pick %u obj %d node %s\n", frame, k, node.c_str());
+                            std::fflush(stdout);
+                        } else {
+                            ImGui::GetIO().AddMouseButtonEvent(ImGuiMouseButton_Left, false);
+                            grab = true;
+                            SDL_SetWindowRelativeMouseMode(win, true);
+                        }
                     }
                 }
                 if (show_ui) {
@@ -1066,6 +1093,9 @@ int run_app(const std::string& graph_path, RebuildFn rebuild, std::vector<std::s
             const bool full = rx == 0 && ry == 0 && rw == int32_t(sc.extent.width) && rh == int32_t(sc.extent.height);
             if ((W == sc.extent.width && H == sc.extent.height && full) || !can_blit) {     // размеры равны — копия как есть
                 reg.imageExtent = {std::min(W, sc.extent.width), std::min(H, sc.extent.height), 1};
+                img_rect[0] = img_rect[1] = 0;
+                img_rect[2] = int32_t(W);
+                img_rect[3] = int32_t(H);
                 vkCmdCopyBufferToImage(cb, prog->buffer(d.present_buf).buf, sc.images[idx], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &reg);
             } else {               // кадр → образ W×H → blit в прямоугольник с теми же пропорциями, поля — чёрные
                 if (scale_img.w != W || scale_img.h != H || scale_img.format != sc.format) {
@@ -1092,6 +1122,10 @@ int run_app(const std::string& graph_path, RebuildFn rebuild, std::vector<std::s
                 const double k = std::min(double(rw) / W, double(rh) / H);
                 const int32_t dw = std::max(1, int32_t(std::lround(W * k))), dh = std::max(1, int32_t(std::lround(H * k)));
                 const int32_t ox = rx + (rw - dw) / 2, oy = ry + (rh - dh) / 2;
+                img_rect[0] = ox;
+                img_rect[1] = oy;
+                img_rect[2] = dw;
+                img_rect[3] = dh;
                 VkImageBlit bl{};
                 bl.srcSubresource = bl.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
                 bl.srcOffsets[1] = {int32_t(W), int32_t(H), 1};

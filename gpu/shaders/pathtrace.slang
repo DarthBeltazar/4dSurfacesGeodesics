@@ -798,11 +798,9 @@ void pt_classall(uint3 id : SV_DispatchThreadID)
 // (Jet7, без полей Якоби, отскоков и фолбэка), затенение «фонарь у камеры»: альбедо·(0.2 + 0.8|cos|), где cos — между
 // касательной нормалью объекта и лучом; уход — фон по направлению выхода без фильтра; потолок шагов — пурпурный.
 // Пишет gFrame и класс 1 (pt_present показывает gFrame).
-[shader("compute")] [numthreads(64, 1, 1)]
-void pt_preview(uint3 id : SV_DispatchThreadID)
+// первичная геодезическая пикселя i (предпросмотр и выбор кликом): цвет «фонаря у камеры» и G-буфер
+float3 preview_pixel(uint i, out float4 gb0, out float4 gb1)
 {
-    uint i = id.x;
-    if (i >= pp.n) return;
     Cam c = load_cam(gCam);
     uint W = uint(c.width);
     float2 uv = pixel_uv(c, i % W, i / W);
@@ -827,11 +825,34 @@ void pt_preview(uint3 id : SV_DispatchThreadID)
         col = alb * (0.2 + 0.8 * abs(dot(ngk, v)));
         nrm = ngk;
     }
-    gFrame[i] = float4(col, 1);
-    gGB[2 * i] = float4(s, stats.y, float(seg), seg == SEG_HIT ? float(k) : -1.0);   // stats.y — проходы Jet7
-    gGB[2 * i + 1] = nrm;
+    gb0 = float4(s, stats.y, float(seg), seg == SEG_HIT ? float(k) : -1.0);   // stats.y — проходы Jet7
+    gb1 = nrm;
+    return col;
+}
+
+[shader("compute")] [numthreads(64, 1, 1)]
+void pt_preview(uint3 id : SV_DispatchThreadID)
+{
+    uint i = id.x;
+    if (i >= pp.n) return;
+    float4 gb0, gb1;
+    gFrame[i] = float4(preview_pixel(i, gb0, gb1), 1);
+    gGB[2 * i] = gb0;
+    gGB[2 * i + 1] = gb1;
     gClass[i] = 1;
     gFlag[i] = 0;
+}
+
+// выбор объекта кликом (DD-011 §8): пиксель pp.list_off, G-буфер — только его (кадр и накопление не трогаются)
+[shader("compute")] [numthreads(1, 1, 1)]
+void pt_pick(uint3 id : SV_DispatchThreadID)
+{
+    uint i = pp.list_off;
+    if (i >= pp.n) return;
+    float4 gb0, gb1;
+    preview_pixel(i, gb0, gb1);
+    gGB[2 * i] = gb0;
+    gGB[2 * i + 1] = gb1;
 }
 
 // кадр для денойзера: фон — режим A, остальное — среднее трассировщика; AOV — средние (у фона — цвет фона, нормаль 0)

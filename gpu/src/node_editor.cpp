@@ -319,6 +319,17 @@ NodeEditor::Change NodeEditor::inspector(bool enabled) {
     return ch;
 }
 
+std::string NodeEditor::object_node(int k) const {
+    if (!doc_.contains("graphs")) return "";
+    std::string scene;
+    for (auto& n : doc_["graphs"]["main"]["nodes"])
+        if (n.value("type", std::string()) == "out.scene") scene = n.value("id", std::string());
+    int i = 0;
+    for (auto& l : doc_["graphs"]["main"].value("links", nlohmann::json::array()))
+        if (l.value("to", std::string()) == scene + ".objects" && i++ == k) return split_port(l.value("from", std::string())).first;
+    return "";
+}
+
 NodeEditor::Change NodeEditor::draw(bool enabled) {
     Change ch;
     if (!ImGui::Begin("Граф")) {

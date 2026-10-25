@@ -680,6 +680,7 @@ std::vector<std::string> build(const GraphCtx& c, bool dynamic, std::map<std::st
     if (preview) {
         L.push_back("buffer GB zero " + std::to_string(32 * N));
         L.push_back("pipeline preview " + pts("pt_preview") + " pt_preview " + kPtBind + " GB");
+        L.push_back("pipeline pick " + pts("pt_pick") + " pt_pick " + kPtBind + " GB");   // выбор объекта кликом
     }
     PushItems cm(7, {'f', 0.0});
     cm.push_back({'f', 0.05});
@@ -696,7 +697,10 @@ std::vector<std::string> build(const GraphCtx& c, bool dynamic, std::map<std::st
     L.push_back(push_line("compose", push_items(sc, p, N, env_n)));
     L.push_back(push_line("classall", push_items(sc, p, N, env_n)));
     L.push_back(push_line("present", push_items(sc, p, N, env_n, 0, 1.0, 0, 0, 1, 1)));
-    if (preview) L.push_back(push_line("preview", push_items(sc, p, N, env_n)));
+    if (preview) {
+        L.push_back(push_line("preview", push_items(sc, p, N, env_n)));
+        L.push_back(push_line("pick", push_items(sc, p, N, env_n)));
+    }
     auto body = [&](bool bg) {
         std::vector<std::string> b = bg ? std::vector<std::string>{"dispatch camera " + G + " 1 1", "mark camera",
                                                                   "dispatch shade " + G + " 1 1", "dispatch detect " + G + " 1 1"}
@@ -718,7 +722,8 @@ std::vector<std::string> build(const GraphCtx& c, bool dynamic, std::map<std::st
     }
     if (preview)
         L.insert(L.end(), {"section preview_move", "mark start", "dispatch camstep 1 1 1", "dispatch preview " + G + " 1 1",
-                           "mark preview", "section preview", "mark start", "dispatch preview " + G + " 1 1", "mark preview"});
+                           "mark preview", "section preview", "mark start", "dispatch preview " + G + " 1 1", "mark preview",
+                           "section pick", "dispatch pick 1 1 1"});
     L.insert(L.end(), {"section snap", "dispatch snap 1 1 1", "section static", "mark start", "indirect ptA Args 0", "mark pt",
                        "indirect ptB Args 12", "mark fallback", "dispatch compose " + G + " 1 1", "mark compose",
                        "section post", "dispatch present " + G + " 1 1",
@@ -815,6 +820,7 @@ std::vector<std::string> build_preview(const GraphCtx& c, std::map<std::string, 
     for (auto& [n, b] : bufs) L.push_back(std::string("buffer ") + n + " zero " + std::to_string(b));
     L.push_back("pipeline camstep " + spv("cam_step", with(dfm, "CAM_STEP", 1)) + " cam_step cam");
     L.push_back("pipeline preview " + spv("pt_preview", with(df, "PT_STAGE", 0)) + " pt_preview " + kPtBind + " GB");
+    L.push_back("pipeline pick " + spv("pt_pick", with(df, "PT_STAGE", 0)) + " pt_pick " + kPtBind + " GB");
     L.push_back("pipeline present " + spv("pt_present", with(base, "PT_STAGE", 0)) + " pt_present " + kPtBind);
     PTParams p;
     const int env_n = env.table_n;
@@ -823,8 +829,10 @@ std::vector<std::string> build_preview(const GraphCtx& c, std::map<std::string, 
     cm.push_back({'u', 16});
     L.push_back(push_line("camstep", cm));
     L.push_back(push_line("preview", push_items(sc, p, N, env_n)));
+    L.push_back(push_line("pick", push_items(sc, p, N, env_n)));
     L.push_back(push_line("present", push_items(sc, p, N, env_n, 0, 1.0, 0, 0, 1, 1)));
-    L.insert(L.end(), {"section move", "mark start", "dispatch camstep 1 1 1", "dispatch preview " + G + " 1 1", "mark preview",
+    L.insert(L.end(), {"section pick", "dispatch pick 1 1 1",
+                       "section move", "mark start", "dispatch camstep 1 1 1", "dispatch preview " + G + " 1 1", "mark preview",
                        "section edit", "mark start", "dispatch preview " + G + " 1 1", "mark preview",
                        "section static", "mark start",
                        "section post", "dispatch present " + G + " 1 1",
