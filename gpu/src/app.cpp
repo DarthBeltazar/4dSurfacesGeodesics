@@ -27,7 +27,7 @@
 //   loadscene <кадр> <сцена.json>    в сценарии: открыть сцену, как кнопкой «Открыть» (сразу, режим редактирования)
 //   resize <кадр> <W> <H>            в сценарии: новое разрешение рендера, как в панели «Рендер» (ждёт перегенерацию)
 //   editgraph <граф>                 граф режима редактирования (шейдеры без зашитой структуры объектов, DD-008)
-//   slots <буфер> <строка> <строк>   слоты параметров графа сцены (DD-011 §5) в буфере камеры
+//   slots <буфер> <строка> <строк> [mf]   слоты параметров графа сцены (DD-011 §5) в буфере камеры; mf — и числа многообразия
 //   slotkey <sha256>                 ключ структуры быстрого графа (codegen.hpp::structure_key): правка параметра с тем же
 //                                    ключом — запись строк без перекомпиляции, иначе — перегенерация
 //   setparam <кадр> <нода> <параметр> <числа…>   в сценарии: правка параметра ноды графа, как панелью «Параметры»
@@ -174,6 +174,7 @@ struct AppDirs {
     float speed = 1.0f;
     int obj_base = -1, mf_base = -1;
     int slot_base = -1, slot_rows = 0;                                          // DD-011 §5
+    bool slot_mf = false;                                                       // числа многообразия — тоже слоты
     std::string slotkey;
     struct SetParam { uint32_t frame; std::string node, param; std::vector<double> v; };
     std::vector<SetParam> setparams;
@@ -202,7 +203,7 @@ AppDirs parse_dirs(const GraphProgram& prog) {
         else if (w[0] == "record") { d.record_path = w.at(1); d.record_period = uint32_t(std::stoul(w.at(2))); }
         else if (w[0] == "objrows") { d.objbuf = w.at(1); d.obj_base = std::stoi(w.at(2)); }
         else if (w[0] == "mfrows") d.mf_base = std::stoi(w.at(2));
-        else if (w[0] == "slots") { d.slot_base = std::stoi(w.at(2)); d.slot_rows = std::stoi(w.at(3)); }
+        else if (w[0] == "slots") { d.slot_base = std::stoi(w.at(2)); d.slot_rows = std::stoi(w.at(3)); d.slot_mf = w.size() > 4 && w[4] == "mf"; }
         else if (w[0] == "slotkey") d.slotkey = w.at(1);
         else if (w[0] == "setparam") {
             AppDirs::SetParam s{uint32_t(std::stoul(w.at(1))), w.at(2), w.at(3), {}};
@@ -539,6 +540,7 @@ int run_app(const std::string& graph_path, RebuildFn rebuild, std::vector<std::s
             geo4d::Scene s;
             try {
                 s = geo4d::scene_from_document(panel.doc(), panel.path(), true);
+                s.mf_slots = d.slot_mf;                // как у собранного графа (ключ структуры)
             } catch (const std::exception& e) {
                 panel.set_status(std::string(e.what()) + " — не применено");
                 std::printf("params_apply {\"error\": 1}\n");

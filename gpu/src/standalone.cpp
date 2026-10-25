@@ -123,6 +123,7 @@ AppOptions parse_args(const std::vector<std::string>& args, AppOptions o, int* t
         else if (a == "--fullscreen") o.fullscreen = true;
         else if (a == "--legacy-codegen") o.legacy_codegen = true;   // виды scenes.slang и MF_* (как Python)
         else if (a == "--bake-params") o.bake_params = true;         // числа графа — литералами (DD-011 §5)
+        else if (a == "--manifold-slots") o.manifold_slots = true;   // числа многообразия — слоты (DD-011 §5)
         else if (a == "--threads" && threads) *threads = std::stoi(next());
         else if (a == "--work-dir" && work) *work = next();
         else if (a == "--graph-only" && graph_only) *graph_only = next();
@@ -179,6 +180,7 @@ int run_standalone(int argc, char** argv) {
     if (o.vsync) rargs.push_back("--vsync");
     if (o.legacy_codegen) rargs.push_back("--legacy-codegen");
     if (o.bake_params) rargs.push_back("--bake-params");
+    if (o.manifold_slots) rargs.push_back("--manifold-slots");
     RebuildFn fn = [builder, o](const std::string& json, const std::vector<std::string>& a, const std::string& out,
                                 std::string& e) {
         AppOptions oo = parse_args(a, AppOptions{});

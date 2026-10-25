@@ -133,9 +133,9 @@ def load(path, mips=None):
 
 
 def resolve(name_or_path):
-    """Имя сцены из scenes/ или путь к JSON."""
+    """Имя сцены из scenes/ или путь к JSON (version 1) или к графу `.g4d` (DD-011)."""
     p = Path(name_or_path)
-    return p if p.suffix == ".json" else SCENES_DIR / f"{name_or_path}.json"
+    return p if p.suffix in (".json", ".g4d") else SCENES_DIR / f"{name_or_path}.json"
 
 
 def _l(a):

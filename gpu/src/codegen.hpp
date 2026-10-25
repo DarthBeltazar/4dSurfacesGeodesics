@@ -115,6 +115,7 @@ struct AppOptions {
     bool vsync = false, fullscreen = false;
     bool legacy_codegen = false;                  // виды scenes.slang и MF_* (как Python) вместо формул графа
     bool bake_params = false;                     // числа графа — литералами вместо слотов (DD-011 §5: сверка, замер)
+    bool manifold_slots = false;                  // числа многообразия — слоты (правка без перекомпиляции, кадр дороже)
 };
 
 struct AppGraph {

@@ -2,6 +2,8 @@
 
 - та же структура с другими числами — тот же текст шейдеров и ключ структуры (slotkey), другие только строки буфера;
 - кадр со слотами = кадр с запечёнными числами (--bake-params) в пределах округления float32 (как DD-009);
+- числа многообразия — слоты только с --manifold-slots (по умолчанию запечены: цена кадра, DD-011 §5) — без флага
+  их правка меняет ключ структуры (перегенерация);
 - правка параметра (директива setparam — код панели «Параметры») = холодный старт изменённой сцены, побитово;
 - структурная правка (целый параметр: ось поворота) — перегенерация быстрого графа по документу, затем числа снова
   правятся без перекомпиляции; недопустимое значение (b ≥ ρ₀) не применяется."""
@@ -51,6 +53,7 @@ def set_param(doc, node, param, value):
 
 
 DOCS = {"throats": lambda: sheets_doc(), "csg": csg_doc}
+MF = ["--manifold-slots"]                         # числа многообразия — слоты (по умолчанию запечены)
 
 
 def _export(tmp_path, doc, name, *opts):
@@ -80,8 +83,8 @@ def _run(tmp_path, doc, name, frames, dumps, extra="", opts=()):
                                                     ("csg", "u", "k", 0.12), ("csg", "xr", "angle", 50.0)])
 def test_same_structure_same_shaders(tmp_path, name, node, param, value):
     doc = DOCS[name]()
-    a = _export(tmp_path, doc, "a")
-    b = _export(tmp_path, set_param(doc, node, param, value), "b")
+    a = _export(tmp_path, doc, "a", *MF)
+    b = _export(tmp_path, set_param(doc, node, param, value), "b", *MF)
     ta, tb = ((g / "app_graph.txt").read_text(encoding="utf-8").replace(str(g.parent), "<D>").replace(g.parent.as_posix(), "<D>")
               for g in (a, b))
     key = lambda t: [l for l in t.splitlines() if l.startswith("slotkey")]
@@ -94,6 +97,10 @@ def test_same_structure_same_shaders(tmp_path, name, node, param, value):
     c = _export(tmp_path, set_param(doc, node, param, value), "c", "--bake-params")
     tc = (c / "app_graph.txt").read_text(encoding="utf-8")
     assert not key(tc) and "slots " not in tc
+    # по умолчанию числа многообразия запечены: их правка — другая структура, числа объектов — та же
+    d0, d1 = _export(tmp_path, doc, "d0"), _export(tmp_path, set_param(doc, node, param, value), "d1")
+    k0, k1 = (key((g / "app_graph.txt").read_text(encoding="utf-8")) for g in (d0, d1))
+    assert (k0 == k1) == (name == "csg")
 
 
 @pytest.mark.gpu
@@ -107,7 +114,7 @@ def test_slots_match_bake(tmp_path, name):
         doc = json.loads((tmp_path / "tw.g4d").read_text(encoding="utf-8"))
     else:
         doc = DOCS[name]()
-    a, _ = _run(tmp_path, doc, "slots", 21, [20])
+    a, _ = _run(tmp_path, doc, "slots", 21, [20], opts=MF)
     b, _ = _run(tmp_path, doc, "bake", 21, [20], opts=["--bake-params"])
     fa, fb = (np.load(d / "Frame_20.npy")[..., :3] for d in (a, b))
     assert np.isfinite(fa).all() and np.abs(fb).mean() > 0
@@ -125,9 +132,10 @@ def test_setparam_equals_cold_start(tmp_path, name, node, param, value):
     W листов уводит M от камеры — камера проецируется на CPU (от float32-камеры окна: совпадение — до округления)."""
     doc = DOCS[name]()
     v = value if isinstance(value, list) else [value]
-    hot, out = _run(tmp_path, doc, "hot", 8, [7], extra=f"setparam 2 {node} {param} " + " ".join(map(str, v)) + "\n")
+    hot, out = _run(tmp_path, doc, "hot", 8, [7], extra=f"setparam 2 {node} {param} " + " ".join(map(str, v)) + "\n",
+                    opts=MF)
     assert 'params_apply {"instant": 1' in out and "standalone_build" in out and out.count("standalone_build") == 1
-    cold, _ = _run(tmp_path, set_param(doc, node, param, value), "cold", 6, [5])
+    cold, _ = _run(tmp_path, set_param(doc, node, param, value), "cold", 6, [5], opts=MF)
     if param == "W":
         a, b = np.load(hot / "cam_7.npy"), np.load(cold / "cam_5.npy")
         assert np.max(np.abs(a[:4] - b[:4])) < 1e-5 and np.array_equal(a[4:], b[4:])
@@ -151,5 +159,9 @@ def test_structural_param_rebuilds_then_slots_again(tmp_path):
     assert out.count('params_apply {"instant": 1') == 2      # правка k после сборки + повтор документа после смены графа
     fr = np.load(hot / "Frame_11.npy")
     assert np.isfinite(fr).all() and np.abs(fr[..., :3]).mean() > 0
-    _, out = _run(tmp_path, sheets_doc(), "bad", 4, [3], extra="setparam 1 t0 b 3.0\n")
+    # по умолчанию число многообразия запечено: его правка — перегенерация, затем граф с новым b
+    d, out = _run(tmp_path, sheets_doc(), "mf", 6, [5], extra="setparam 2 t1 b 0.65\n")
+    assert 'params_apply {"instant": 0' in out and out.count("standalone_build") == 2
+    assert np.isfinite(np.load(d / "Frame_5.npy")).all()
+    _, out = _run(tmp_path, sheets_doc(), "bad", 4, [3], extra="setparam 1 t0 b 3.0\n", opts=MF)
     assert 'params_apply {"error": 1}' in out and "standalone_build" in out and out.count("standalone_build") == 1

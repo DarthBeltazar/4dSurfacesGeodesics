@@ -1,0 +1,199 @@
+{
+ "format": "geo4d",
+ "version": 2,
+ "graphs": {
+  "main": {
+   "nodes": [
+    {
+     "id": "m",
+     "type": "mf.hyperplane",
+     "params": {}
+    },
+    {
+     "id": "scene",
+     "type": "out.scene",
+     "params": {}
+    },
+    {
+     "id": "grey",
+     "type": "mat.diffuse",
+     "params": {
+      "albedo": [
+       0.7,
+       0.6,
+       0.5
+      ]
+     }
+    },
+    {
+     "id": "a",
+     "type": "obj.ball4",
+     "params": {
+      "c": [
+       0,
+       0,
+       0,
+       0.3
+      ],
+      "r": 0.8
+     }
+    },
+    {
+     "id": "b",
+     "type": "obj.ball4",
+     "params": {
+      "c": [
+       1.0,
+       0.3,
+       0,
+       0.3
+      ],
+      "r": 0.6
+     }
+    },
+    {
+     "id": "u",
+     "type": "obj.union",
+     "params": {
+      "k": 0.3
+     }
+    },
+    {
+     "id": "o0",
+     "type": "out.object",
+     "params": {
+      "name": "объект 0"
+     }
+    },
+    {
+     "id": "xt",
+     "type": "obj.torus",
+     "params": {
+      "c": [
+       0.5,
+       1.5,
+       0.0,
+       0.0
+      ],
+      "R": 0.7,
+      "r": 0.2
+     }
+    },
+    {
+     "id": "xr",
+     "type": "xf.rotate",
+     "params": {
+      "i": 1,
+      "j": 2,
+      "angle": 35.0,
+      "center": [
+       0.5,
+       0,
+       0,
+       0
+      ]
+     }
+    },
+    {
+     "id": "xs",
+     "type": "xf.scale",
+     "params": {
+      "s": 1.5,
+      "center": [
+       0.0,
+       0.2,
+       0.0,
+       0.0
+      ]
+     }
+    },
+    {
+     "id": "o1",
+     "type": "out.object",
+     "params": {
+      "name": "объект 1"
+     }
+    },
+    {
+     "id": "on",
+     "type": "xf.on_M",
+     "params": {}
+    }
+   ],
+   "links": [
+    {
+     "from": "m.out",
+     "to": "scene.manifold"
+    },
+    {
+     "from": "a.out",
+     "to": "u.a"
+    },
+    {
+     "from": "b.out",
+     "to": "u.b"
+    },
+    {
+     "from": "u.out",
+     "to": "on.shape"
+    },
+    {
+     "from": "grey.out",
+     "to": "o0.material"
+    },
+    {
+     "from": "o0.out",
+     "to": "scene.objects"
+    },
+    {
+     "from": "xt.out",
+     "to": "xr.shape"
+    },
+    {
+     "from": "xr.out",
+     "to": "xs.shape"
+    },
+    {
+     "from": "xs.out",
+     "to": "o1.shape"
+    },
+    {
+     "from": "grey.out",
+     "to": "o1.material"
+    },
+    {
+     "from": "o1.out",
+     "to": "scene.objects"
+    },
+    {
+     "from": "on.out",
+     "to": "o0.shape"
+    }
+   ]
+  }
+ },
+ "camera": {
+  "x": [
+   0.0,
+   -5.0,
+   0.6,
+   0.0
+  ],
+  "f": [
+   0.0,
+   1.0,
+   -0.1,
+   0.0
+  ],
+  "up": [
+   0.0,
+   0.0,
+   1.0,
+   0.0
+  ],
+  "fov": 70.0
+ },
+ "settings": {
+  "speed": 1.0
+ }
+}

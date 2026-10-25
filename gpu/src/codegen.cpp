@@ -219,11 +219,17 @@ std::string param_lit(double v) {
     return v < 0 ? "(" + s + ")" : s;
 }
 
+// Слоты в шейдере (DD-011 §5): строка r — SLOT_ROW(r) (mf_header): в ядрах трассировщика и камеры — копия в
+// groupshared, в остальных — буфер камеры (чтение буфера в горячем коде стоило +27 % кадра, сцена 3, 1080p)
+std::string slot_row(int row) { return "SLOT_ROW(" + std::to_string(row) + ")"; }
+std::string sref(const Scene&, int i) { return slot_row(i / 4) + "." + std::string(1, "xyzw"[i % 4]); }
+
 // строка obj_g для объекта из формулы его ноды (DD-011 §4): параметры — поля строк объекта (rows), int-параметры
 // формы ({axis}) подставляются в текст как координата
+
 std::map<std::string, std::string> slot_params(const Scene& sc) {
     std::map<std::string, std::string> pm;
-    for (size_t i = 0; i < sc.slots.v.size(); ++i) pm["$" + std::to_string(i)] = slot_ref(int(i));
+    for (size_t i = 0; i < sc.slots.v.size(); ++i) pm["$" + std::to_string(i)] = sref(sc, int(i));
     return pm;
 }
 
@@ -279,9 +285,10 @@ std::string mf_header(const Scene& sc) {
     const std::string formula = !sc.mf.formula.empty() ? sc.mf.formula : def ? def->formula : "";
     if (!def || formula.empty()) throw std::runtime_error("нет формулы ноды многообразия «" + sc.mf_node + "»");
     const Manifold& m = sc.mf;
-    // число графа: слот (DD-011 §5) или литерал (bake — побитово как формулы scenes.slang)
-    const bool slots = !sc.bake;
-    auto num = [&](int slot, double v) { return slots && slot >= 0 ? slot_ref(slot) : param_lit(v); };
+    // число многообразия: слот (DD-011 §5, только с mf_slots) или литерал. Слоты многообразия стоили +5…10 % кадра в
+    // движении и ~+10 % в покое (сцена 3, 1080p; бюджет +5 %) — по умолчанию числа запечены, правка = перегенерация
+    const bool slots = !sc.bake && sc.mf_slots;
+    auto num = [&](int slot, double v) { return slots && slot >= 0 ? sref(sc, slot) : param_lit(v); };
     std::vector<std::string> names;
     std::map<std::string, std::string> pm;
     for (auto& [n, v] : sc.mf_values) {
@@ -299,17 +306,17 @@ std::string mf_header(const Scene& sc) {
         for (size_t i = 0; i < m.flat.centers.size(); ++i) {
             const auto& c = m.flat.centers[i];
             std::string t = slots && m.ball_slot >= 0
-                                ? "length(p.xyz - gCam[" + std::to_string(kSlotBase + m.ball_slot / 4 + int(i)) + "].xyz)"
+                                ? "length(p.xyz - " + slot_row(m.ball_slot / 4 + int(i)) + ".xyz)"
                                 : "length(p.xyz - float3(" + param_lit(c[0]) + ", " + param_lit(c[1]) + ", " + param_lit(c[2]) + "))";
             mn = mn.empty() ? t : "min(" + mn + ", " + t + ")";
         }
         hcap = "max(" + mn + " - " + num(m.rho0_slot, m.flat.rho0) + ", 0.25 * " + scale + ")";
     }
     std::string head = "// Сгенерировано из графа сцены (DD-011, нода " + def->type + ") — не редактировать.\n";
-    if (slots)                                    // числа — слоты в буфере камеры (привязка 0 у всех ядер окна)
-        head += "#define MF_SLOTS 1\n"
-                "#ifndef GCAM_DECLARED\n#define GCAM_DECLARED\n[[vk::binding(0, 0)]] RWStructuredBuffer<float4> gCam;\n#endif\n"
-                "#define SCALE (" + scale + ")\n";
+    if (!sc.bake)                                 // слоты — строки буфера камеры (привязка 0 у всех ядер окна)
+        head += "#ifndef GCAM_DECLARED\n#define GCAM_DECLARED\n[[vk::binding(0, 0)]] RWStructuredBuffer<float4> gCam;\n#endif\n"
+                "#define SLOT_ROW(r) gCam[" + std::to_string(kSlotBase) + " + (r)]\n";
+    if (slots) head += "#define MF_SLOTS 1\n#define SCALE (" + scale + ")\n";
     else head += "static const float SCALE = " + scale + ";\n";
     return head + "__generic<T : IReal> T sdf(T x, T y, T z, T w) { return " + sdf + "; }\n"
                   "float hcap(float4 p) { return " + hcap + "; }\n";
@@ -324,7 +331,8 @@ std::string structure_key(const Scene& sc) {
     // push-константы многообразия (push_items), фон и плоские зоны (секции графа, директива flat)
     h.update("s_max=" + pyrepr(m.has_s_max ? m.s_max : -1.0) + ";ell_max=" + pyrepr(m.has_ell_max ? m.ell_max : -1.0) +
              ";env=" + sc.env + ";flat=" + std::to_string(m.flat.has) + ";exit=" + std::to_string(m.exit) +
-             ";nslot=" + std::to_string(sc.slots.v.size()) + ";bake=" + std::to_string(sc.bake));
+             ";nslot=" + std::to_string(sc.slots.v.size()) + ";bake=" + std::to_string(sc.bake) +
+             ";mfslots=" + std::to_string(sc.mf_slots));
     return h.hexdigest();
 }
 
@@ -339,12 +347,21 @@ std::string scene_header(const Scene& sc, bool dynamic, bool graph) {
         return join(L, "\n") + "\n";
     }
     const FlatZones& fz = sc.mf.flat;
-    if (graph && !sc.bake && fz.has) {            // DD-011 §5: ρ₀ и центры шаров кривизны — слоты (как DD-009)
+    const bool slots = graph && !sc.bake;
+    if (slots && sc.mf_slots && fz.has) {        // DD-011 §5: ρ₀ и центры шаров кривизны — слоты (строки подряд)
+        // проверки плоских зон (in_flat и др.) — в циклах интегратора: центры и ρ₀ читаются потоком один раз в массив
+        // static (регистры); чтение буфера на каждой проверке стоило проходу камеры +44 % (сцена 3, 1080p)
         const Manifold& m = sc.mf;
-        L.insert(L.end(), {"#define PT_FLAT_DYNAMIC 1", "#define PT_HAS_FLAT 1", "#define PT_NBALL " + std::to_string(fz.centers.size()),
-                           "#define PT_RHO0 (" + slot_ref(m.rho0_slot) + ")",
-                           m.ball_slot >= 0 ? "float3 pt_ball_c(int i) { return gCam[" + std::to_string(kSlotBase + m.ball_slot / 4) + " + i].xyz; }"
-                                            : "float3 pt_ball_c(int i) { return float3(0); }"});
+        const std::string nb = std::to_string(fz.centers.size()), nb1 = std::to_string(fz.centers.size() + 1);
+        std::string load = "static float4 sPtFlat[" + nb1 + "];\nstatic bool sPtFlatOk = false;\n"
+                           "void pt_flat_load() { if (sPtFlatOk) return; sPtFlatOk = true; sPtFlat[" + nb + "] = float4(" +
+                           sref(sc, m.rho0_slot) + ");";
+        if (m.ball_slot >= 0)
+            load += " [ForceUnroll] for (int i = 0; i < " + nb + "; i++) sPtFlat[i] = SLOT_ROW(" + std::to_string(m.ball_slot / 4) + " + i);";
+        load += " }";
+        L.insert(L.end(), {"#define PT_FLAT_DYNAMIC 1", "#define PT_HAS_FLAT 1", "#define PT_NBALL " + nb, load,
+                           "float pt_rho0() { pt_flat_load(); return sPtFlat[" + nb + "].x; }", "#define PT_RHO0 (pt_rho0())",
+                           "float3 pt_ball_c(int i) { pt_flat_load(); return sPtFlat[i].xyz; }"});
     } else {
     L.push_back("#define PT_FLAT_DYNAMIC 0");
     if (fz.has) {
@@ -699,7 +716,7 @@ std::vector<std::string> build(const GraphCtx& c, bool dynamic, std::map<std::st
                        "seedpipes " + std::to_string(kISeed) + " ptA ptB", "speed " + pyrepr(sc.speed),
                        "objrows cam " + std::to_string(kObjBase), "mfrows cam " + std::to_string(kMfBase)});
     if (!srows.empty())                           // правка числа графа — запись строк (структура — ключ)
-        L.insert(L.end(), {"slots cam " + std::to_string(kSlotBase) + " " + std::to_string(srows.size() / 4),
+        L.insert(L.end(), {"slots cam " + std::to_string(kSlotBase) + " " + std::to_string(srows.size() / 4) + (sc.mf_slots ? " mf" : ""),
                            "slotkey " + structure_key(sc)});
     auto sd = scene_directives(sc);
     L.insert(L.end(), sd.begin(), sd.end());
@@ -720,6 +737,7 @@ AppGraph app_graph(const Dirs& d, const Scene& sc0, const AppOptions& o, const f
                    const fs::path& scene_path, const EnvMap& procedural) {
     Scene sc = sc0;
     sc.bake = sc.bake || o.bake_params;
+    sc.mf_slots = sc.mf_slots || o.manifold_slots;
     ShaderKeys keys(d);
     double fov = o.fov != 0 ? o.fov : sc.cam.fov;
     AppGraph g;
