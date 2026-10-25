@@ -537,7 +537,7 @@ UiActions Editor::draw(const FrameInfo& fi, const CameraState& cam, bool& use_de
             if (ImGui::Checkbox("полноэкранный режим (F11)", &fs)) act.toggle_fullscreen = true;
             ImGui::TextDisabled("окно %u×%u", fi.ww, fi.wh);
         }
-        ImGui::TextDisabled("WASD, Q/E — полёт; ЛКМ по фону — взгляд мышью, по объекту — его нода; C/Z — крен");
+        ImGui::TextDisabled("WASD, Q/E — полёт; ЛКМ — взгляд мышью; СКМ по объекту — его нода; C/Z — крен");
     }
     if (rebuilding()) ImGui::TextColored(ImVec4(1, 0.8f, 0.3f, 1), "идёт сборка шейдеров…");
     if (!status_.empty()) ImGui::TextWrapped("%s", status_.c_str());

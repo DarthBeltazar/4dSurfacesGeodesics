@@ -75,20 +75,21 @@ def test_rejected_edits(tmp_path, ops, msg):
 
 
 def test_click_on_object_selects_its_node(tmp_path):
-    """Клик по объекту в кадре (ядро pt_pick, G-буфер одного пикселя) выделяет его ноду «Объект»; клик по фону —
-    взгляд мышью. Окно 1280×720 с оверлеем (раскладка DD-011 §8): лампа сцены с тремя горловинами — около (465, 172)."""
+    """Средняя кнопка по объекту в кадре (ядро pt_pick, G-буфер одного пикселя) выделяет его ноду «Объект», по фону —
+    ничего; левая — всегда взгляд мышью (и когда объект на весь кадр). Окно 1280×720 с оверлеем (раскладка DD-011 §8):
+    лампа сцены с тремя горловинами — около (465, 172)."""
     d = tmp_path / "w"
     d.mkdir()
     np.savetxt(d / "s.txt", np.zeros((10, 6)), fmt="%.6f")
     (d / "extra.txt").write_text(f"hidden\nui\nbench {gpu.qpath(d / 's.txt')} {gpu.qpath(d / 'f.json')}\n"
-                                 "mouse 2 465 172\nmouse 3 465 172 click\nmouse 6 300 80 click\n", encoding="utf-8")
+                                 "mouse 2 465 172\nmouse 3 465 172 mclick\nmouse 5 300 80 mclick\nmouse 7 465 172 click\n", encoding="utf-8")
     r = subprocess.run([str(gpu.EXE), str(Path(__file__).resolve().parents[1] / "scenes" / "three_wormholes.g4d"),
                         "--res", "1280x720", "--cube", "64", "--work-dir", str(d / "work"), "--extra", str(d / "extra.txt")],
                        capture_output=True, text=True, encoding="utf-8")
     out = _ok(r)
-    assert "pick 3 obj 0 node o1" in out
+    assert "pick 3 obj 0 node o1" in out and "pick 5 obj -1 node -" in out
     grab = {int(l.split()[1]): int(l.split()[3]) for l in out.splitlines() if l.startswith("mouse ")}
-    assert grab[4] == 0 and grab[7] == 1
+    assert grab[4] == 0 and grab[6] == 0 and grab[8] == 1        # СКМ не захватывает мышь, ЛКМ по объекту — захват
 
 
 def test_open_rejects_invalid_scene(tmp_path):

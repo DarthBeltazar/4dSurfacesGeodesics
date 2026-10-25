@@ -19,7 +19,7 @@
 //   window <w> <h>                   размер окна в сценарии (проверка масштабирования кадра в образ swapchain)
 //   ui                               оверлей и в режиме замера/дампа (снимок окна с панелями — проверка оверлея)
 //   bench <сценарий> <json>          движение из файла (строка на кадр: a b c ψ θ φ за кадр), журнал времени, выход
-//   mouse <кадр> <x> <y> [click]     в сценарии: события мыши SDL (движение в точку окна, щелчок ЛКМ) перед кадром;
+//   mouse <кадр> <x> <y> [click|mclick]   в сценарии: события мыши SDL (движение в точку окна, щелчок ЛКМ или СКМ) перед кадром;
 //                                    хост печатает «mouse <кадр> grab <0|1> imgui <WantCaptureMouse>» (проверка панелей)
 //   resize <кадр> <W> <H>            в сценарии: новое разрешение рендера, как в панели «Рендер» (ждёт перегенерацию)
 //   slots <буфер> <строка> <строк> [mf]   слоты параметров графа сцены (DD-011 §5) в буфере камеры; mf — и числа многообразия
@@ -630,6 +630,7 @@ int run_app(const std::string& graph_path, RebuildFn rebuild, std::vector<std::s
         if (!d.bench_out.empty()) { log.open(d.bench_out); log << "[\n"; }
         bool quit = false, grab = false, minimized = false, toggle_preview_req = false;
         bool click_pending = false;                    // ЛКМ при панелях: панель или сцена — решает ImGui этого кадра
+        bool pick_pending = false;                     // СКМ: выбор объекта под курсором (DD-011 §8)
         // DD-011 §8: докспейс на всё окно (граф по умолчанию — снизу); кадр рисуется в центральном узле (пиксели)
         bool dock_built = false;
         int32_t view[4] = {0, 0, 0, 0};                // x, y, w, h; w = 0 — всё окно
@@ -678,7 +679,7 @@ int run_app(const std::string& graph_path, RebuildFn rebuild, std::vector<std::s
                             SDL_Event b{};
                             b.type = down ? SDL_EVENT_MOUSE_BUTTON_DOWN : SDL_EVENT_MOUSE_BUTTON_UP;
                             b.button.windowID = SDL_GetWindowID(win);
-                            b.button.button = SDL_BUTTON_LEFT;
+                            b.button.button = w[2] == "mclick" ? SDL_BUTTON_MIDDLE : SDL_BUTTON_LEFT;
                             b.button.down = down;
                             b.button.clicks = 1;
                             b.button.x = ev.motion.x;
@@ -704,6 +705,9 @@ int run_app(const std::string& graph_path, RebuildFn rebuild, std::vector<std::s
                         grab = !grab;
                         SDL_SetWindowRelativeMouseMode(win, grab);
                     } else click_pending = true;
+                } else if (e.type == SDL_EVENT_MOUSE_BUTTON_DOWN && e.button.button == SDL_BUTTON_MIDDLE && !grab &&
+                           overlay && show_ui) {
+                    pick_pending = true;                // объект под курсором — после ImGui::NewFrame (не над панелью)
                 } else if (e.type == SDL_EVENT_MOUSE_MOTION && grab) { mdx += e.motion.xrel; mdy += e.motion.yrel; }
                 else if (e.type == SDL_EVENT_KEY_DOWN && e.key.key == SDLK_F11 && !e.key.repeat && interactive)
                     SDL_SetWindowFullscreen(win, !(SDL_GetWindowFlags(win) & SDL_WINDOW_FULLSCREEN));
@@ -807,20 +811,21 @@ int run_app(const std::string& graph_path, RebuildFn rebuild, std::vector<std::s
                 }
                 if (click_pending) {
                     click_pending = false;
-                    if (!ImGui::GetIO().WantCaptureMouse) {            // нажатие не над панелью
-                        // по объекту — выделить его ноду в редакторе нод (DD-011 §8), по фону — взгляд мышью
+                    if (!ImGui::GetIO().WantCaptureMouse) {            // нажатие не над панелью — взгляд мышью
+                        ImGui::GetIO().AddMouseButtonEvent(ImGuiMouseButton_Left, false);
+                        grab = true;
+                        SDL_SetWindowRelativeMouseMode(win, true);
+                    }
+                }
+                if (pick_pending) {                    // СКМ по кадру: выделить ноду объекта под курсором (DD-011 §8)
+                    pick_pending = false;
+                    if (!ImGui::GetIO().WantCaptureMouse && editor) {
                         const ImVec2 mp = ImGui::GetIO().MousePos;
-                        const int k = editor ? pick_at(mp.x, mp.y) : -1;
+                        const int k = pick_at(mp.x, mp.y);
                         const std::string node = k >= 0 ? panel.object_node(k) : std::string();
-                        if (!node.empty()) {
-                            panel.select(node);
-                            std::printf("pick %u obj %d node %s\n", frame, k, node.c_str());
-                            std::fflush(stdout);
-                        } else {
-                            ImGui::GetIO().AddMouseButtonEvent(ImGuiMouseButton_Left, false);
-                            grab = true;
-                            SDL_SetWindowRelativeMouseMode(win, true);
-                        }
+                        if (!node.empty()) panel.select(node);
+                        std::printf("pick %u obj %d node %s\n", frame, k, node.empty() ? "-" : node.c_str());
+                        std::fflush(stdout);
                     }
                 }
                 if (show_ui) {
