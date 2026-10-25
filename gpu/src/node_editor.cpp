@@ -557,7 +557,6 @@ NodeEditor::Change NodeEditor::draw(bool enabled, const float* cam_x, const floa
         ed::EndDelete();
     }
     // контекстное меню холста: добавить ноду (группы библиотеки, поиск по имени)
-    const ImVec2 mouse = ImGui::GetMousePos();
     ed::Suspend();
     if (ed::PinId hp = ed::GetHoveredPin(); hp && pins.count(hp.Get())) {
         const PinRef& r = pins[hp.Get()];
@@ -572,9 +571,9 @@ NodeEditor::Change NodeEditor::draw(bool enabled, const float* cam_x, const floa
         ImGui::OpenPopup("add_node");
         search_[0] = 0;
     }
-    static ImVec2 at;
+    static ImVec2 at;                              // где открыто меню — там и встанет нода (экран → холст)
     if (ImGui::BeginPopup("add_node")) {
-        if (ImGui::IsWindowAppearing()) { at = mouse; ImGui::SetKeyboardFocusHere(); }
+        if (ImGui::IsWindowAppearing()) { at = ImGui::GetMousePosOnOpeningCurrentPopup(); ImGui::SetKeyboardFocusHere(); }
         ImGui::InputText("поиск", search_, sizeof(search_));
         std::map<std::string, std::vector<const NodeDef*>> groups;
         const std::string q = search_;

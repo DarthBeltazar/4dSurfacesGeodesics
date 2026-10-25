@@ -19,7 +19,7 @@
 //   window <w> <h>                   размер окна в сценарии (проверка масштабирования кадра в образ swapchain)
 //   ui                               оверлей и в режиме замера/дампа (снимок окна с панелями — проверка оверлея)
 //   bench <сценарий> <json>          движение из файла (строка на кадр: a b c ψ θ φ за кадр), журнал времени, выход
-//   mouse <кадр> <x> <y> [click|mclick]   в сценарии: события мыши SDL (движение в точку окна, щелчок ЛКМ или СКМ) перед кадром;
+//   mouse <кадр> <x> <y> [click|mclick|rclick]   в сценарии: события мыши SDL (движение в точку окна, щелчок ЛКМ, СКМ или ПКМ) перед кадром;
 //                                    хост печатает «mouse <кадр> grab <0|1> imgui <WantCaptureMouse>» (проверка панелей)
 //   resize <кадр> <W> <H>            в сценарии: новое разрешение рендера, как в панели «Рендер» (ждёт перегенерацию)
 //   slots <буфер> <строка> <строк> [mf]   слоты параметров графа сцены (DD-011 §5) в буфере камеры; mf — и числа многообразия
@@ -679,7 +679,7 @@ int run_app(const std::string& graph_path, RebuildFn rebuild, std::vector<std::s
                             SDL_Event b{};
                             b.type = down ? SDL_EVENT_MOUSE_BUTTON_DOWN : SDL_EVENT_MOUSE_BUTTON_UP;
                             b.button.windowID = SDL_GetWindowID(win);
-                            b.button.button = w[2] == "mclick" ? SDL_BUTTON_MIDDLE : SDL_BUTTON_LEFT;
+                            b.button.button = w[2] == "mclick" ? SDL_BUTTON_MIDDLE : w[2] == "rclick" ? SDL_BUTTON_RIGHT : SDL_BUTTON_LEFT;
                             b.button.down = down;
                             b.button.clicks = 1;
                             b.button.x = ev.motion.x;
