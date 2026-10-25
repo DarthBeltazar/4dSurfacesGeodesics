@@ -39,7 +39,7 @@ using Defines = std::vector<std::pair<std::string, std::string>>;   // имя �
 //  - дерево разработки: корень — GEO4D_ROOT или exe → gpu/build → корень; кэш — gpu/build/spv и gpu/build/gen
 //    (общий с geo4d.gpu.compile_shader).
 struct Dirs {
-    fs::path root, shaders, scenes, gen, spv;
+    fs::path root, shaders, scenes, nodes, gen, spv;
     bool installed = false;
 };
 Dirs default_dirs(const char* argv0);

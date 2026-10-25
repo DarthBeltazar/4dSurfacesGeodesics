@@ -1,0 +1,21 @@
+[
+ {"type": "obj.ball4", "group": "Объекты", "title": "4D-шар", "output": "shape",
+  "params": [{"name": "c", "type": "vec4", "default": [0.0, 0.0, 0.0, 0.0]},
+             {"name": "r", "type": "float", "default": 0.5, "min": 0.01, "max": 20.0}],
+  "formula": "length(x - c.x, y - c.y, z - c.z, w - c.w) - r", "legacy_kind": "ball4",
+  "rows": {"c": "c", "r": "s.y"}},
+ {"type": "obj.torus", "group": "Объекты", "title": "Тор в листе", "output": "shape",
+  "params": [{"name": "c", "type": "vec4", "default": [0.0, 0.0, 0.0, 0.0]},
+             {"name": "R", "type": "float", "default": 1.0, "min": 0.01, "max": 20.0},
+             {"name": "r", "type": "float", "default": 0.15, "min": 0.01, "max": 20.0}],
+  "formula": "length(length(x - c.x, y - c.y) - R, z - c.z, w - c.w) - r", "legacy_kind": "torus",
+  "rows": {"c": "c", "R": "s.y", "r": "s.z"}},
+ {"type": "obj.halfspace", "group": "Объекты", "title": "Полупространство", "output": "shape",
+  "params": [{"name": "axis", "type": "int", "default": 2, "min": 0, "max": 3, "structural": true},
+             {"name": "offset", "type": "float", "default": 0.0, "min": -100.0, "max": 100.0},
+             {"name": "sign", "type": "float", "default": 1.0, "min": -1.0, "max": 1.0}],
+  "formula": "sign * ({axis} - offset)", "legacy_kind": "plane",
+  "rows": {"offset": "s.z", "sign": "s.w"}},
+ {"type": "xf.on_M", "group": "Преобразования", "title": "Поставить на M", "output": "shape",
+  "inputs": [{"name": "shape", "type": "shape"}], "params": []}
+]

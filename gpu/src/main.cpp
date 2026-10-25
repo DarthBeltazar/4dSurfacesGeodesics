@@ -7,13 +7,16 @@
 //   geo4d_gpu export-graph <сцена.json> <каталог> [...] — граф окна без Python (см. export_graph.cpp, DD-010)
 //   geo4d_gpu [сцена.json] [--res WxH] [...] — окно без Python (см. standalone.cpp, DD-010)
 //   geo4d_gpu eval <вход.json> <выход.json> — формулы языка нод: значения, производные, Slang (expr.cpp, DD-011)
+//   geo4d_gpu migrate <сцена.json> <сцена.g4d> — сцена version 1 → граф (scene_graph.cpp, DD-011)
 #include <cstdio>
 #include <exception>
 #include <iostream>
 #include <string>
 
 #include "export_graph.hpp"
+#include "codegen.hpp"
 #include "expr.hpp"
+#include "scene_graph.hpp"
 #include "graph.hpp"
 #ifdef GEO4D_APP
 #include "app.hpp"
@@ -27,6 +30,11 @@
 
 int main(int argc, char** argv) {
     try {
+        // библиотека нод (DD-011) — рядом с exe или в дереве разработки; грузится при первом обращении
+        try {
+            geo4d::set_node_library_dir(geo4d::u8(geo4d::default_dirs(argv[0]).nodes));
+        } catch (const std::exception&) {
+        }
 #ifdef GEO4D_APP
         if (is_standalone_args(argc, argv)) return run_standalone(argc, argv);
 #endif
@@ -37,6 +45,7 @@ int main(int argc, char** argv) {
         std::string cmd = argv[1];
         if (cmd == "export-graph") return run_export_graph(argc, argv);     // без Vulkan
         if (cmd == "eval") return geo4d::run_eval(argc, argv);               // язык выражений (DD-011), без Vulkan
+        if (cmd == "migrate") return geo4d::run_migrate(argc, argv);         // сцена version 1 → .g4d (DD-011)
 #ifdef GEO4D_OPTIX
         if (cmd == "denoise" && argc >= 3) return run_denoise(argv[2]);     // без Vulkan
 #endif

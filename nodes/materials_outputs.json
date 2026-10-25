@@ -1,0 +1,20 @@
+[
+ {"type": "mat.diffuse", "group": "Материалы", "title": "Диффузный", "output": "material", "material": "diffuse",
+  "params": [{"name": "albedo", "type": "color", "default": [0.8, 0.8, 0.8]},
+             {"name": "rough", "type": "float", "default": 0.3, "min": 0.0, "max": 1.0, "hidden": true},
+             {"name": "emit", "type": "color", "default": [0.0, 0.0, 0.0], "hidden": true}]},
+ {"type": "mat.metal", "group": "Материалы", "title": "Металл", "output": "material", "material": "metal",
+  "params": [{"name": "albedo", "type": "color", "default": [0.9, 0.9, 0.9]},
+             {"name": "rough", "type": "float", "default": 0.2, "min": 0.0, "max": 1.0},
+             {"name": "emit", "type": "color", "default": [0.0, 0.0, 0.0], "hidden": true}]},
+ {"type": "mat.emit", "group": "Материалы", "title": "Излучатель", "output": "material", "material": "emit",
+  "params": [{"name": "emit", "type": "color", "default": [10.0, 10.0, 10.0]},
+             {"name": "albedo", "type": "color", "default": [0.8, 0.8, 0.8], "hidden": true},
+             {"name": "rough", "type": "float", "default": 0.3, "min": 0.0, "max": 1.0, "hidden": true}]},
+ {"type": "out.object", "group": "Выходы", "title": "Объект", "output": "object",
+  "inputs": [{"name": "shape", "type": "shape"}, {"name": "material", "type": "material"}],
+  "params": [{"name": "name", "type": "string", "default": "объект"}]},
+ {"type": "out.scene", "group": "Выходы", "title": "Сцена", "output": "",
+  "inputs": [{"name": "manifold", "type": "manifold"}, {"name": "objects", "type": "object", "multi": true}],
+  "params": []}
+]

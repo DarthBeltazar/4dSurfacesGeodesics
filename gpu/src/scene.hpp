@@ -5,6 +5,7 @@
 #pragma once
 
 #include <array>
+#include <map>
 #include <string>
 #include <utility>
 #include <vector>
@@ -28,6 +29,8 @@ struct Object {
     double offset = 0, sign = 1;
     bool on_M = false;
     Material mat;
+    std::string node;                             // тип ноды формы в графе (DD-011): формула и строки — из библиотеки
+    std::map<std::string, double> values;         // её параметры (векторы — компонентами c.x …)
     double bound() const;                         // радиус ограничивающей сферы (inf — полупространство)
 };
 
@@ -78,9 +81,12 @@ struct Scene {
     std::vector<Object> objs;
     CameraHints cam;                              // x — уже на M
     double speed = 1;
+    std::string mf_node;                          // тип ноды многообразия в графе (DD-011)
+    std::map<std::string, double> mf_values;      // её параметры (векторы — компонентами c1.x …)
 };
 
-// geo4d.scenefile.load; project = false — центры on_M и точка камеры как в файле (редактор проецирует их на GPU)
+// файл сцены (`.g4d` version 2 или scenes/*.json version 1 — переводится в граф, DD-011) → модель окна;
+// project = false — центры on_M и точка камеры как в файле (редактор проецирует их на GPU)
 Scene load_scene(const std::string& path, bool project = true);
 
 // f многообразия и ∇f в точке (double; формулы geo4d.shapes)

@@ -183,12 +183,14 @@ Dirs default_dirs(const char* argv0) {
         d.root = exe_dir;
         d.shaders = exe_dir / "shaders";
         d.scenes = exe_dir / "scenes";
+        d.nodes = exe_dir / "nodes";
         d.gen = user_cache_dir() / "gen";
         d.spv = user_cache_dir() / "spv";
         return d;
     } else d.root = exe_dir.parent_path().parent_path();
     d.shaders = d.root / "gpu" / "shaders";
     d.scenes = d.root / "scenes";
+    d.nodes = d.root / "nodes";
     d.gen = d.root / "gpu" / "build" / "gen";
     d.spv = d.root / "gpu" / "build" / "spv";
     return d;

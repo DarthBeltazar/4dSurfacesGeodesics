@@ -141,6 +141,7 @@ def test_installed_layout(tmp_path):
     shutil.copy2(gpu.EXE, exe)
     shutil.copytree(ROOT / "gpu" / "shaders", inst / "shaders")
     shutil.copytree(ROOT / "scenes", inst / "scenes")
+    shutil.copytree(ROOT / "nodes", inst / "nodes")                 # библиотека нод (DD-011)
     before = sorted(p.relative_to(inst) for p in inst.rglob("*"))
     td = tmp_path / "run"
     td.mkdir()

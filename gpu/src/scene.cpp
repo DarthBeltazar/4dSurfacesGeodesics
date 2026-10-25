@@ -1,5 +1,6 @@
 // Модель сцены окна (DD-010) — см. scene.hpp.
 #include "scene.hpp"
+#include "scene_graph.hpp"
 
 #include <nlohmann/json.hpp>
 
@@ -75,21 +76,6 @@ D eval(const Manifold& m, const std::array<D, 4>& p) {
         return p[3] * p[3] - (compact_h(r1, b, rho0, W) + compact_h(r2, b, rho0, W) - W * W);
     }
     return p[3];                                  // гиперплоскость w = 0
-}
-
-double num(const nlohmann::json& j, const char* key, double dflt) {
-    auto it = j.find(key);
-    return it == j.end() ? dflt : it->get<double>();
-}
-
-template <size_t N>
-std::array<double, N> vec(const nlohmann::json& j, const char* key, std::array<double, N> dflt) {
-    auto it = j.find(key);
-    if (it == j.end()) return dflt;
-    if (!it->is_array() || it->size() != N) throw std::runtime_error(std::string("сцена: ") + key + " — ожидался вектор из " + std::to_string(N) + " чисел");
-    std::array<double, N> r;
-    for (size_t i = 0; i < N; ++i) r[i] = (*it)[i].get<double>();
-    return r;
 }
 
 }  // namespace
@@ -290,55 +276,7 @@ Scene load_scene(const std::string& path, bool project) {
     } catch (const nlohmann::json::exception& e) {
         throw std::runtime_error(path + ": " + e.what());
     }
-    Scene sc;
-    sc.path = path;
-    const auto& md = d.at("manifold");
-    Params ov;
-    if (auto it = md.find("params"); it != md.end())
-        for (auto& [k, v] : it->items()) {
-            std::vector<double> vals;
-            if (v.is_array()) for (auto& a : v) vals.push_back(a.get<double>());
-            else vals.push_back(v.get<double>());
-            ov.emplace_back(k, vals);
-        }
-    sc.mf = make_manifold(md.at("kind").get<std::string>(), ov);
-    if (auto it = d.find("env"); it != d.end() && !it->is_null()) sc.env_field = it->get<std::string>();
-    sc.env = !sc.env_field.empty() ? sc.env_field : (sc.mf.compact ? "none" : "procedural");
-    if (auto it = d.find("objects"); it != d.end())
-        for (auto& o : *it) {
-            Object ob;
-            ob.kind = o.at("kind").get<std::string>();
-            ob.name = o.contains("name") ? o["name"].get<std::string>() : ob.kind;
-            ob.on_M = o.contains("on_M") && o["on_M"].get<bool>();
-            if (auto mt = o.find("material"); mt != o.end()) {
-                ob.mat.kind = mt->value("kind", std::string("diffuse"));
-                ob.mat.albedo = vec<3>(*mt, "albedo", ob.mat.albedo);
-                ob.mat.rough = num(*mt, "rough", 0.3);
-                ob.mat.emit = vec<3>(*mt, "emit", ob.mat.emit);
-            }
-            if (ob.kind == "plane") {
-                ob.axis = o.at("axis").get<int>();
-                ob.offset = o.at("offset").get<double>();
-                ob.sign = num(o, "sign", 1.0);
-            } else if (ob.kind == "ball4" || ob.kind == "torus") {
-                Vec4 c = vec<4>(o, "center", Vec4{0, 0, 0, 0});
-                if (!o.contains("center")) throw std::runtime_error("сцена: у объекта нет center");
-                ob.center = ob.on_M && project ? geo4d::project(sc.mf, c) : c;
-                if (ob.kind == "ball4") ob.r = o.at("r").get<double>();
-                else { ob.R = o.at("R").get<double>(); ob.r = o.at("r").get<double>(); }
-            } else throw std::runtime_error("нет вида объекта " + ob.kind);
-            sc.objs.push_back(ob);
-        }
-    nlohmann::json c = d.contains("camera") ? d["camera"] : nlohmann::json::object();
-    sc.cam.x = vec<4>(c, "x", Vec4{0, 0, 0, 0});
-    if (project) sc.cam.x = geo4d::project(sc.mf, sc.cam.x);
-    sc.cam.f = vec<4>(c, "f", Vec4{0, 1, 0, 0});
-    sc.cam.up = vec<4>(c, "up", Vec4{0, 0, 1, 0});
-    sc.cam.has_right = c.contains("right");
-    if (sc.cam.has_right) sc.cam.right = vec<4>(c, "right", Vec4{0, 0, 0, 0});
-    sc.cam.fov = num(c, "fov", 75.0);
-    sc.speed = num(d, "speed", 1.0);
-    return sc;
+    return scene_from_document(d, path, project);    // version 1 — через перевод в граф (DD-011)
 }
 
 }  // namespace geo4d
