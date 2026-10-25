@@ -58,7 +58,7 @@ def test_standalone_equals_python_app(tmp_path):
     scene = ROOT / "scenes" / "two_wormholes.json"
     py = tmp_path / "py"
     r = subprocess.run([sys.executable, "-X", "utf8", str(APP), "--scene", str(scene), "--res", "96x54", "--cube", "64",
-                        "--graph-only", str(py)], capture_output=True, text=True, encoding="utf-8", env=ENV)
+                        "--graph-only", str(py), "--python-graph"], capture_output=True, text=True, encoding="utf-8", env=ENV)
     assert r.returncode == 0, r.stderr
     g = py / "app_graph.txt"
     g.write_text(g.read_text(encoding="utf-8") + _script(py, 8, [7]), encoding="utf-8")

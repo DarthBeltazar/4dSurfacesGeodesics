@@ -22,7 +22,8 @@ PYTHONIOENCODING=utf-8 .venv/Scripts/python prototype/scripts/<name>.py   # expe
 GPU (Vulkan SDK 1.4.328.1 with slangc/volk/VMA, MSVC 2022; CMake/Ninja are taken from CLion):
 
 ```sh
-gpu\build.cmd                                         # → gpu/build/geo4d_gpu.exe (info | run | graph | denoise | app)
+gpu\build.cmd                                         # → gpu/build/geo4d_gpu.exe (info | run | graph | denoise | app | export-graph)
+gpu/build/geo4d_gpu.exe scenes/two_wormholes.json --res 1280x720   # окно без Python (DD-010); app.py — обёртка
 ./gpu/build.sh                                        # Linux/macOS (ADR-0008); deps via FetchContent if no SDK
 .venv/Scripts/python -m pytest tests -q -m gpu       # GPU tests, ~5 min; skipped if the exe or slangc is missing
 ```

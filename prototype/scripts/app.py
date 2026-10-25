@@ -1,10 +1,12 @@
-"""Этап 5 (DD-007): интерактивное окно — генерирует сцену, шейдеры и граф, запускает `geo4d_gpu app`.
+"""Этап 5 (DD-007) / DD-010: окно — обёртка над `geo4d_gpu [сцена.json]` (граф, шейдеры и перегенерации — в C++,
+без Python). Python-генерация графа (как до DD-010) — флагом --python-graph: эталон для тестов и проба интерпретатора.
 
     python prototype/scripts/app.py --scene two_wormholes --res 1280x720
     python prototype/scripts/app.py --scene two_wormholes --res 1920x1080 --fullscreen   # на весь экран (F11)
     python prototype/scripts/app.py --scene S3 --res 960x540
     python prototype/scripts/app.py --bench --scene two_wormholes --res 1920x1080   # замер: сценарий, скрытое окно
     python prototype/scripts/app.py --graph-only gpu/build-debug/app/two_wormholes  # только граф — запуск хоста из IDE
+То же без Python: gpu/build/geo4d_gpu[.exe] scenes/two_wormholes.json --res 1920x1080 --fullscreen
 
 Управление: W/S, A/D — вперёд/вбок; Q/E — вниз/вверх; ЛКМ — захват мыши (взгляд); стрелки; C/Z — крен; Shift — ×4;
 R — денойзер вкл/выкл; F1 — панели редактора; Tab — режим редактирования; F11 — полноэкранный режим; Esc — выход.
@@ -12,7 +14,7 @@ R — денойзер вкл/выкл; F1 — панели редактора; 
 пропорций; другое разрешение рендера (доля окна или фиксированное) выбирается в панели «Рендер» (DD-009). Сцены — файлы scenes/*.json (DD-008): two_wormholes,
 ellis, S3, spheritorus, torisphere, tiger (T³), hyperplane, или путь к своему JSON. Редактор в окне правит объекты
 сразу; другую сцену («Открыть») или другое многообразие («Применить») — тоже сразу, в режиме редактирования (шейдеры
-с многообразием из строк, DD-009), а быстрые шейдеры перегенерирует при выходе из него (этот же скрипт с --graph-only).
+с многообразием из строк, DD-009), а быстрые шейдеры собирает при выходе из него (в процессе, DD-010).
 
 Замер (--bench): 60 кадров покоя на стартовом виде (накопление), затем 60 кадров полёта (у сцены 3 — сквозь
 горловину c₁ на нижний лист); журнал времени — results/stage-5/<дата>_app_bench_<сцена>_<разрешение>/frames.json."""
@@ -71,16 +73,23 @@ def main():
                          "двух горловин исполняется из программы geo4d.bytecode, NREG — размер массива регистров")
     ap.add_argument("--probe-variant", default="", help="вариант пробы: const — программа константным массивом в шейдере")
     ap.add_argument("--dump", default="", help="кадры для сохранения через запятую (в каталог результатов замера)")
+    ap.add_argument("--python-graph", action="store_true",
+                    help="граф строит Python (как до DD-010), окно — `geo4d_gpu app <граф>`: эталон для тестов")
     ap.add_argument("--graph-only", metavar="DIR", default="",
                     help="записать граф и его входные данные в DIR и выйти (запуск/отладка `geo4d_gpu app DIR/app_graph.txt` из IDE)")
     a = ap.parse_args()
     W, H = (int(v) for v in a.res.split("x"))
-    mips = procedural_env_cached(a.cube)
-    sc, c0, speed = SF.load(SF.resolve(a.scene), mips)
-    name = SF.resolve(a.scene).stem
-    cam_fov = a.fov or c0["fov"]
-    cam = make_camera(sc.shape, c0["x"], c0["f"], c0["up"], c0["right"], fov=cam_fov, width=W, height=H)
+    scene_path = SF.resolve(a.scene).resolve()
+    name = scene_path.stem
+    speed = float(json.loads(scene_path.read_text(encoding="utf-8")).get("speed", 1.0))
+    legacy = a.python_graph or a.probe_interp            # граф строит Python (до DD-010)
+    if legacy:
+        mips = procedural_env_cached(a.cube)
+        sc, c0, speed = SF.load(scene_path, mips)
+        cam_fov = a.fov or c0["fov"]
+        cam = make_camera(sc.shape, c0["x"], c0["f"], c0["up"], c0["right"], fov=cam_fov, width=W, height=H)
     out = None
+    switch = ()
     with tempfile.TemporaryDirectory() as tmp:
         td = Path(a.graph_only).resolve() if a.graph_only else Path(tmp)
         td.mkdir(parents=True, exist_ok=True)
@@ -97,39 +106,70 @@ def main():
                 script += [[0.05 * speed, 0, 0, 0.005, 0.002, 0]] * a.frames
             np.savetxt(td / "script.txt", np.array(script), fmt="%.6f")
             bench = (td / "script.txt", out / "frames.json")
+            if a.edit_mode:
+                switch = (1, len(script) - 3)
         dumps = [(int(f), (out or td).as_posix()) for f in a.dump.split(",") if f] if a.bench else ()
-        editor = None
-        if not a.bench or a.edit_mode:          # редактор сцен (DD-008): окно перегенерирует граф этим же скриптом
-            scene_path = SF.resolve(a.scene).resolve()
-            editor = dict(scene=scene_path.as_posix(), work_dir=td.as_posix(), fov=cam_fov,
-                          env=json.loads(scene_path.read_text(encoding="utf-8")).get("env"),
-                          python=Path(sys.executable).as_posix(), script=Path(__file__).resolve().as_posix(),
-                          args=["--res", a.res, "--cube", str(a.cube)] + (["--vsync"] if a.vsync else []))
-        prog = None
-        if a.probe_interp:
-            from geo4d import bytecode
-            prm = sc.shape.params
-            if sc.shape.name == "two_compact_wh":
-                rows = bytecode.two_compact_program(prm["c1"], prm["c2"], prm["b"], prm["rho0"], prm["W"])
-            elif sc.shape.name == "S3":
-                rows = bytecode.s3_program(prm["R"])
-            else:
-                raise SystemExit("проба интерпретатора — только для двух горловин и S³")
-            prog = (rows, a.probe_interp, a.probe_variant)
-            assert a.probe_interp >= prog[0][0, 1], f"программе нужно {int(prog[0][0, 1])} регистров"
-        graph = G.app_graph(sc, cam, td, speed=speed, hidden=a.bench and not a.visible, vsync=a.vsync, bench=bench,
-                            dumps=dumps, editor=editor, fullscreen=a.fullscreen and not a.bench, dyn_mips=mips, prog=prog)
-        switch = ()
-        if a.bench and a.edit_mode:
-            switch = (1, len(script) - 3)
-            graph.write_text(graph.read_text(encoding="utf-8") + f"editmode {switch[0]} on\neditmode {switch[1]} off\n",
-                             encoding="utf-8")
-        if a.graph_only:
-            print(f"граф: {graph}\nзапуск: {gpu.EXE} app {graph}")
-            return
-        r = subprocess.run([str(gpu.EXE), "app", str(graph)], capture_output=a.bench, text=True)
-        if r.returncode != 0:
-            raise RuntimeError(f"geo4d_gpu app: {r.stdout}\n{r.stderr}")
+        rebuild_args = ["--res", a.res, "--cube", str(a.cube)] + (["--vsync"] if a.vsync else [])
+        if not legacy:
+            # DD-010: всё в geo4d_gpu; сценарий замера — директивами через --extra (как ниже их дописывает Python)
+            cmd = [str(gpu.EXE), str(scene_path)] + rebuild_args + (["--fov", str(a.fov)] if a.fov else [])
+            if a.fullscreen and not a.bench:
+                cmd.append("--fullscreen")
+            if a.graph_only:
+                r = subprocess.run(cmd + ["--graph-only", str(td)], capture_output=True, text=True, encoding="utf-8")
+                if r.returncode != 0:
+                    raise RuntimeError(f"geo4d_gpu: {r.stdout}\n{r.stderr}")
+                # перегенерация в хосте `geo4d_gpu app <граф>` (отладка, тесты окна) — этим же скриптом
+                q = gpu.qpath
+                line = " ".join(["rebuild", q(Path(sys.executable).as_posix()), q(Path(__file__).resolve().as_posix())]
+                                + rebuild_args)
+                for g in ("app_graph.txt", "app_graph_dyn.txt"):
+                    (td / g).write_text((td / g).read_text(encoding="utf-8") + line + "\n", encoding="utf-8")
+                print(f"граф: {td / 'app_graph.txt'}\nзапуск: {gpu.EXE} app {td / 'app_graph.txt'}")
+                return
+            extra = []
+            if a.bench:
+                extra += ([] if a.visible else ["hidden"]) + [f"bench {gpu.qpath(bench[0])} {gpu.qpath(bench[1])}"]
+                extra += [f"dump {k} {gpu.qpath(d)}" for k, d in dumps]
+                if switch:
+                    extra += [f"editmode {switch[0]} on", f"editmode {switch[1]} off"]
+            if extra:
+                (td / "extra.txt").write_text("\n".join(extra) + "\n", encoding="utf-8")
+                cmd += ["--extra", str(td / "extra.txt")]
+            r = subprocess.run(cmd + ["--work-dir", str(td / "work")], capture_output=a.bench, text=True, encoding="utf-8")
+            if r.returncode != 0:
+                raise RuntimeError(f"geo4d_gpu: {r.stdout}\n{r.stderr}")
+        else:
+            editor = None
+            if not a.bench or a.edit_mode:          # редактор сцен (DD-008): окно перегенерирует граф этим же скриптом
+                editor = dict(scene=scene_path.as_posix(), work_dir=td.as_posix(), fov=cam_fov,
+                              env=json.loads(scene_path.read_text(encoding="utf-8")).get("env"),
+                              python=Path(sys.executable).as_posix(), script=Path(__file__).resolve().as_posix(),
+                              args=rebuild_args + ["--python-graph"])
+            prog = None
+            if a.probe_interp:
+                from geo4d import bytecode
+                prm = sc.shape.params
+                if sc.shape.name == "two_compact_wh":
+                    rows = bytecode.two_compact_program(prm["c1"], prm["c2"], prm["b"], prm["rho0"], prm["W"])
+                elif sc.shape.name == "S3":
+                    rows = bytecode.s3_program(prm["R"])
+                else:
+                    raise SystemExit("проба интерпретатора — только для двух горловин и S³")
+                prog = (rows, a.probe_interp, a.probe_variant)
+                assert a.probe_interp >= prog[0][0, 1], f"программе нужно {int(prog[0][0, 1])} регистров"
+            graph = G.app_graph(sc, cam, td, speed=speed, hidden=a.bench and not a.visible, vsync=a.vsync, bench=bench,
+                                dumps=dumps, editor=editor, fullscreen=a.fullscreen and not a.bench, dyn_mips=mips,
+                                prog=prog)
+            if switch:
+                graph.write_text(graph.read_text(encoding="utf-8") + f"editmode {switch[0]} on\neditmode {switch[1]} off\n",
+                                 encoding="utf-8")
+            if a.graph_only:
+                print(f"граф: {graph}\nзапуск: {gpu.EXE} app {graph}")
+                return
+            r = subprocess.run([str(gpu.EXE), "app", str(graph)], capture_output=a.bench, text=True)
+            if r.returncode != 0:
+                raise RuntimeError(f"geo4d_gpu app: {r.stdout}\n{r.stderr}")
     if out is not None:
         fr = json.loads((out / "frames.json").read_text(encoding="utf-8"))
         mv = [f for f in fr[1:] if f["moving"] and f["frame"] not in switch][5:]

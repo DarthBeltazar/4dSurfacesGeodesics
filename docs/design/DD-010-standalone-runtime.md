@@ -235,6 +235,15 @@ zip). Сейчас окно — Python-скрипт `prototype/scripts/app.py`, 
   | тёплый старт | 2.9 с (`app.py --graph-only` 2.3 с + окно) | 0.75 с (граф 87 мс) | ≤ 1 с |
   | смена разрешения 1280×720 → 1920×1080 | 2.3 с | 0.21 с (граф 62 мс + смена 152 мс) | ≤ 0.5 с |
   | выход из режима редактирования с новой структурой (кэш SPIR-V пуст) | 9.0–9.4 с | 2.0 с (сборка 1.86 с + смена 0.13 с) | ≤ 3 с |
-- Осталось: шаг 4 (`app.py` — обёртка над новым входом, перевод тестов окна), шаг 5 (удалить Python-перегенерацию,
-  `read_scene_json` и `pack_rows`/`manifold_info` редактора в пользу `scene`/`codegen`, README, `ide_configs.py`),
-  поиск `shaders/` и `scenes/` рядом с exe (риск 8).
+
+**Шаг 4 — сделан:**
+- `app.py` — обёртка над `geo4d_gpu [сцена]`: окно, `--bench` (сценарий — `--extra`), `--graph-only` (граф из C++ +
+  директива `rebuild` этим же скриптом — для `geo4d_gpu app <граф>` в отладке и тестах). Python-генерация графа —
+  `--python-graph` (эталон в `test_standalone_export`/`test_standalone_window`, проба интерпретатора).
+- Тесты окна (`test_app_window`, `test_app_topology`, `test_scene_editor`, `test_gpu_app`) не менялись: их
+  перегенерации (`rebuild` → `app.py --graph-only`) теперь строят граф в C++, холодные эталоны — по-прежнему графы
+  Python; все побитовые сверки проходят (70 passed вместе с тестами нового пути).
+- `ide_configs.py`: конфигурации «geo4d_gpu: <сцена> (без Python)» — запуск и отладка окна прямо в CLion.
+- Осталось (шаг 5): директива `rebuild` (внешний процесс) остаётся только для `geo4d_gpu app <граф>`; убрать
+  `read_scene_json` и `pack_rows`/`manifold_info` редактора в пользу `scene`/`codegen`; README; поиск `shaders/` и
+  `scenes/` рядом с exe (риск 8).

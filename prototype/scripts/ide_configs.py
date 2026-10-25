@@ -98,6 +98,8 @@ py("video_1080p", "Ролик: сквозь горловину 1080p, 64 spp", "
 py("graph_two_wormholes", "Граф для хоста: две червоточины", "Хост (C++)", "prototype/scripts/app.py",
    "--graph-only gpu/build-debug/app/two_wormholes --res 1280x720")
 host("host_info", "geo4d_gpu info", "info")
+for key, title, res in SCENES:                    # DD-010: окно без Python — запуск и отладка самого хоста
+    host(f"host_window_{key}", f"geo4d_gpu: {title} (без Python)", f"$PROJECT_DIR$/scenes/{key}.json --res {res}")
 host("host_app_two_wormholes", "geo4d_gpu app: две червоточины (отладка хоста)",
      "app $PROJECT_DIR$/gpu/build-debug/app/two_wormholes/app_graph.txt", before=["Граф для хоста: две червоточины"])
 pytest("tests_all", "Тесты: все (~15 мин)", "-q")

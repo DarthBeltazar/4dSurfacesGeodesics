@@ -74,7 +74,7 @@ def main():
             d = td / f"py_{k}"
             t = time.perf_counter()
             r = subprocess.run([sys.executable, "-X", "utf8", str(ROOT / "prototype/scripts/app.py"), "--scene", str(scene),
-                                "--res", RES, "--graph-only", str(d)], capture_output=True, text=True, encoding="utf-8",
+                                "--res", RES, "--graph-only", str(d), "--python-graph"], capture_output=True, text=True, encoding="utf-8",
                                env=warm_env)
             assert r.returncode == 0, r.stderr
             t_graph = time.perf_counter() - t

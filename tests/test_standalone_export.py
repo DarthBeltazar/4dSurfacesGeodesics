@@ -70,7 +70,7 @@ def _export(tmp_path, scene, args):
     out = tmp_path / "out dir"
     py, cc = out / "py", out / "c"
     sf = _scene_file(tmp_path, scene)
-    r = subprocess.run([sys.executable, "-X", "utf8", str(APP), "--scene", str(sf), "--graph-only", str(py)] + args,
+    r = subprocess.run([sys.executable, "-X", "utf8", str(APP), "--scene", str(sf), "--graph-only", str(py), "--python-graph"] + args,
                        capture_output=True, text=True, encoding="utf-8", env=ENV)
     assert r.returncode == 0, r.stderr
     r = subprocess.run([str(gpu.EXE), "export-graph", str(sf), str(cc)] + args,
