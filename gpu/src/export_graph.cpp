@@ -19,6 +19,8 @@
 
 #include <nlohmann/json.hpp>
 
+#include <cmath>
+
 using namespace geo4d;
 
 namespace {
@@ -149,6 +151,35 @@ int run_eval_graph(int argc, char** argv) {
     out["meta"] = {{"kind", m.kind}, {"scale", m.scale}, {"exit", m.exit}, {"compact", m.compact},
                    {"flat", m.flat.has}, {"sheets", m.flat.sheets}, {"centers", centers}, {"rho0", m.flat.rho0},
                    {"s_max", m.has_s_max ? m.s_max : 1000.0}, {"legacy", m.legacy()}};
+    // объекты: g и ∇g в тех же точках, ограничивающая сфера
+    nlohmann::json objs = nlohmann::json::array();
+    for (auto& o : sc.objs) {
+        ExprPtr ge = o.expr;
+        std::map<std::string, double> gv;
+        if (!ge) {
+            const NodeDef* def = node_library().find(o.node);
+            std::string fs = def->formula;
+            for (auto& p : def->params)
+                if (p.type == "int") {
+                    const std::string key = "{" + p.name + "}";
+                    for (size_t at; (at = fs.find(key)) != std::string::npos;)
+                        fs.replace(at, key.size(), std::string(1, "xyzw"[int(o.values.at(p.name)) & 3]));
+                }
+            std::vector<std::string> names;
+            for (auto& [k, x] : o.values) names.push_back(k);
+            ge = parse_expr(fs, names);
+            gv = o.values;
+        }
+        nlohmann::json of = nlohmann::json::array(), og = nlohmann::json::array();
+        for (auto& pt : in.value("points", nlohmann::json::array())) {
+            EvalResult r = eval_expr(ge, gv, Vec4{pt[0].get<double>(), pt[1].get<double>(), pt[2].get<double>(), pt[3].get<double>()});
+            of.push_back(r.f);
+            og.push_back(r.g);
+        }
+        objs.push_back({{"name", o.name}, {"kind", o.kind}, {"f", of}, {"g", og}, {"center", o.center},
+                        {"radius", std::isinf(o.bound()) ? -1.0 : o.bound()}});
+    }
+    out["objects"] = objs;
     out["mf_scene"] = mf_header(sc);
     out["include"] = u8(write_header(d, sc, false, true));
     std::ofstream(argv[4], std::ios::binary) << out.dump();

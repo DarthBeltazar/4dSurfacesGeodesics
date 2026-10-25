@@ -32,6 +32,7 @@ struct Object {
     bool on_M = false;
     Material mat;
     std::string node;                             // тип ноды формы в графе (DD-011): формула и строки — из библиотеки
+    ExprPtr expr;                                 // составная форма (kind "graph", M36): g целиком, числа подставлены
     std::map<std::string, double> values;         // её параметры (векторы — компонентами c.x …)
     double bound() const;                         // радиус ограничивающей сферы (inf — полупространство)
 };
@@ -89,6 +90,8 @@ struct Scene {
     std::vector<Object> objs;
     CameraHints cam;                              // x — уже на M
     double speed = 1;
+    // сцена выразима в version 1 и в шейдерах режима редактирования DD-008/009 (вид scenes.slang, объекты трёх видов)
+    bool dynamic_ok() const;
     std::string mf_node;                          // тип ноды многообразия в графе (DD-011)
     std::map<std::string, double> mf_values;      // её параметры (векторы — компонентами c1.x …)
 };

@@ -222,6 +222,9 @@ std::string param_lit(double v) {
 // строка obj_g для объекта из формулы его ноды (DD-011 §4): параметры — поля строк объекта (rows), int-параметры
 // формы ({axis}) подставляются в текст как координата
 std::string object_g_line(const Object& o, size_t k) {
+    const std::string ks0 = std::to_string(k);
+    if (o.kind == "graph")                        // составная форма (M36): выражение целиком, числа подставлены
+        return "    if (k == " + ks0 + ") { return " + emit_slang(o.expr, {}) + "; }";
     const NodeDef* def = node_library().find(o.node);
     if (!def || def->formula.empty()) throw std::runtime_error("нет формулы ноды «" + o.node + "»");
     std::string f = def->formula;
@@ -419,7 +422,10 @@ std::vector<float> object_rows(const Scene& sc) {
         const Object& o = sc.objs[k];
         int b = 9 + 6 * int(k);
         auto set = [&](int i, double a, double bb, double c, double d) { row(i)[0] = a; row(i)[1] = bb; row(i)[2] = c; row(i)[3] = d; };
-        if (o.kind == "ball4") {
+        if (o.kind == "graph") {                  // составная форма: центр и радиус ограничивающей сферы (M36)
+            std::copy(o.center.begin(), o.center.end(), row(b));
+            set(b + 1, 3, std::min(o.r, 1e30), 0, 0);
+        } else if (o.kind == "ball4") {
             std::copy(o.center.begin(), o.center.end(), row(b));
             set(b + 1, 0, o.r, 0, 0);
         } else if (o.kind == "torus") {
@@ -531,7 +537,7 @@ std::vector<std::string> build(const GraphCtx& c, bool dynamic, std::map<std::st
     if (!dynamic && sc.env == "none") { none = constant_env(0.0f, 8); env = &none; }
     // DD-011: многообразие и объекты быстрого графа — из формул графа сцены (режим A тоже берёт mf_scene.slang)
     // многообразие без вида scenes.slang (листы с горловинами, формула) — только из графа
-    const bool graph = !dynamic && !sc.mf_node.empty() && (!c.o.legacy_codegen || !sc.mf.legacy());
+    const bool graph = !dynamic && !sc.mf_node.empty() && (!c.o.legacy_codegen || !sc.dynamic_ok());
     fs::path inc = write_header(c.d, sc, dynamic, graph);
     auto df = [&](int nj) { return defines(sc, nj, dynamic, graph); };
     auto with = [](Defines d, const std::string& k, int v) { d.emplace_back(k, std::to_string(v)); return d; };
@@ -641,7 +647,8 @@ std::vector<std::string> build(const GraphCtx& c, bool dynamic, std::map<std::st
     auto ed = editor_directives(c);
     L.insert(L.end(), ed.begin(), ed.end());
     if (!dynamic) {                               // граф режима редактирования — без vsync/fullscreen, как в Python
-        if (sc.mf.legacy()) L.push_back("editgraph " + qpath(c.td / "app_graph_dyn.txt"));   // DD-009: только виды scenes.slang
+        if (sc.dynamic_ok()) L.push_back("editgraph " + qpath(c.td / "app_graph_dyn.txt"));   // DD-009: только виды scenes.slang
+        else L.push_back("graphdoc");             // сцена не выразима в version 1: редактор сохраняет и перегенерирует граф
         if (c.o.vsync) L.push_back("vsync");
         if (c.o.fullscreen) L.push_back("fullscreen");
     }
@@ -657,7 +664,7 @@ AppGraph app_graph(const Dirs& d, const Scene& sc, const AppOptions& o, const fs
     AppGraph g;
     GraphCtx c{d, keys, sc, o, work_dir, scene_path, procedural, make_camera(sc.mf, sc.cam, o.width, o.height, fov), fov,
                &g.shaders};
-    if (sc.mf.legacy()) g.dyn_lines = build(c, true, g.arrays);   // как в Python: граф режима редактирования — первым
+    if (sc.dynamic_ok()) g.dyn_lines = build(c, true, g.arrays);  // как в Python: граф режима редактирования — первым
     g.lines = build(c, false, g.arrays);
     return g;
 }

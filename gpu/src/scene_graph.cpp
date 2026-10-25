@@ -2,6 +2,8 @@
 #include "scene_graph.hpp"
 
 #include <algorithm>
+#include <functional>
+#include <limits>
 #include <cmath>
 #include <cstdio>
 #include <filesystem>
@@ -339,6 +341,119 @@ Scene scene_from_document(const nlohmann::json& doc0, const std::string& path, b
     sc.env_field = settings.contains("env") && !settings["env"].is_null() ? settings["env"].get<std::string>() : "";
     sc.env = !sc.env_field.empty() ? sc.env_field : (sc.mf.compact ? "none" : "procedural");
     sc.speed = settings.value("speed", 1.0);
+    // составная форма (M36): выражение g и ограничивающая сфера {g < δ} (радиус inf — не ограничена)
+    struct Bound { Vec4 c{0, 0, 0, 0}; double r = std::numeric_limits<double>::infinity(); };
+    struct Shape { ExprPtr g; std::function<Bound(double)> bound; };
+    const double kLn2 = 0.69314718055994531;
+    std::function<Shape(const std::string&)> shape_of = [&](const std::string& id) -> Shape {
+        const N& n = nodes[id];
+        const std::string& t = n.def->type;
+        auto v = node_values(*n.def, *n.params);
+        auto num = [](double x) { return mk_num(x); };
+        if (!n.def->legacy_kind.empty()) {        // примитив: формула библиотеки с числами
+            std::string f = n.def->formula;
+            std::vector<std::string> names;
+            for (auto& p : n.def->params) {
+                if (p.type == "int") {
+                    const std::string key = "{" + p.name + "}";
+                    for (size_t at; (at = f.find(key)) != std::string::npos;)
+                        f.replace(at, key.size(), std::string(1, "xyzw"[int(v.at(p.name)) & 3]));
+                }
+            }
+            for (auto& [k, x] : v) names.push_back(k);
+            ExprPtr g = bind_params(parse_expr(f, names), v);
+            Bound b;
+            if (t == "obj.ball4" || t == "obj.torus") {
+                b.c = {v.at("c.x"), v.at("c.y"), v.at("c.z"), v.at("c.w")};
+                const double r0 = t == "obj.ball4" ? v.at("r") : v.at("R") + v.at("r");
+                return {g, [b, r0](double d) { Bound q = b; q.r = r0 + d; return q; }};
+            }
+            return {g, [](double) { return Bound{}; }};          // полупространство не ограничено
+        }
+        if (t == "obj.union" || t == "obj.intersect" || t == "obj.subtract") {
+            Shape a = shape_of(source(id, "a")), bb = shape_of(source(id, "b"));
+            const double k = v.at("k");
+            if (!(k > 0)) fail(id, "нужно k > 0");
+            ExprPtr g;
+            if (t == "obj.union") g = mk_call("smin", {a.g, bb.g, num(k)});
+            else {
+                // smax_k(a, b) − k·ln 2 = −smin_k(−a, −b) − k·ln 2; вычитание — пересечение с −b
+                ExprPtr nb = t == "obj.subtract" ? bb.g : mk_op(Expr::Neg, bb.g);
+                g = mk_op(Expr::Sub, mk_op(Expr::Neg, mk_call("smin", {mk_op(Expr::Neg, a.g), nb, num(k)})), num(k * kLn2));
+            }
+            auto fa = a.bound, fb = bb.bound;
+            std::function<Bound(double)> bf;
+            if (t == "obj.union")
+                bf = [fa, fb, k, kLn2](double d) {
+                    Bound p = fa(d + k * kLn2), q = fb(d + k * kLn2);
+                    if (std::isinf(p.r) || std::isinf(q.r)) return Bound{};
+                    double dd = 0;
+                    for (int i = 0; i < 4; ++i) dd += (q.c[i] - p.c[i]) * (q.c[i] - p.c[i]);
+                    dd = std::sqrt(dd);
+                    if (dd + q.r <= p.r) return p;
+                    if (dd + p.r <= q.r) return q;
+                    Bound e;
+                    e.r = 0.5 * (dd + p.r + q.r);
+                    for (int i = 0; i < 4; ++i) e.c[i] = p.c[i] + (e.r - p.r) / dd * (q.c[i] - p.c[i]);
+                    return e;
+                };
+            else if (t == "obj.intersect")
+                bf = [fa, fb, k, kLn2](double d) {
+                    Bound p = fa(d + k * kLn2), q = fb(d + k * kLn2);
+                    return p.r <= q.r ? p : q;
+                };
+            else bf = [fa, k, kLn2](double d) { return fa(d + k * kLn2); };
+            return {g, bf};
+        }
+        if (t == "xf.translate" || t == "xf.rotate" || t == "xf.scale") {
+            Shape s = shape_of(source(id, "shape"));
+            std::array<ExprPtr, 4> c;
+            for (int i = 0; i < 4; ++i) c[i] = mk_coord(i);
+            if (t == "xf.translate") {
+                Vec4 tv{v.at("t.x"), v.at("t.y"), v.at("t.z"), v.at("t.w")};
+                for (int i = 0; i < 4; ++i) c[i] = mk_op(Expr::Sub, mk_coord(i), num(tv[i]));
+                auto f = s.bound;
+                return {substitute_coords(s.g, c), [f, tv](double d) {
+                            Bound b = f(d);
+                            for (int i = 0; i < 4; ++i) b.c[i] += tv[i];
+                            return b;
+                        }};
+            }
+            Vec4 ctr{v.at("center.x"), v.at("center.y"), v.at("center.z"), v.at("center.w")};
+            if (t == "xf.rotate") {
+                const int i = int(v.at("i")), j = int(v.at("j"));
+                if (i < 0 || i > 3 || j < 0 || j > 3 || i == j) fail(id, "оси поворота i, j — разные из 0…3");
+                const double a = v.at("angle") * (3.14159265358979323846 / 180.0), ca = std::cos(a), sa = std::sin(a);
+                // аргумент дочерней формы: R⁻¹(x − center) + center (R — поворот на +angle в плоскости i, j)
+                auto q = [&](int k) { return mk_op(Expr::Sub, mk_coord(k), num(ctr[k])); };
+                c[i] = mk_op(Expr::Add, mk_op(Expr::Add, mk_op(Expr::Mul, num(ca), q(i)), mk_op(Expr::Mul, num(sa), q(j))), num(ctr[i]));
+                c[j] = mk_op(Expr::Add, mk_op(Expr::Sub, mk_op(Expr::Mul, num(ca), q(j)), mk_op(Expr::Mul, num(sa), q(i))), num(ctr[j]));
+                auto f = s.bound;
+                return {substitute_coords(s.g, c), [f, i, j, ca, sa, ctr](double d) {
+                            Bound b = f(d);
+                            if (std::isinf(b.r)) return b;
+                            const double ui = b.c[i] - ctr[i], uj = b.c[j] - ctr[j];
+                            b.c[i] = ctr[i] + ca * ui - sa * uj;
+                            b.c[j] = ctr[j] + sa * ui + ca * uj;
+                            return b;
+                        }};
+            }
+            const double sc_ = v.at("s");
+            if (!(sc_ > 0)) fail(id, "нужно s > 0");
+            for (int k = 0; k < 4; ++k)
+                c[k] = mk_op(Expr::Add, mk_op(Expr::Div, mk_op(Expr::Sub, mk_coord(k), num(ctr[k])), num(sc_)), num(ctr[k]));
+            auto f = s.bound;
+            return {mk_op(Expr::Mul, num(sc_), substitute_coords(s.g, c)), [f, sc_, ctr](double d) {
+                        Bound b = f(d / sc_);
+                        if (std::isinf(b.r)) return b;
+                        for (int k = 0; k < 4; ++k) b.c[k] = ctr[k] + sc_ * (b.c[k] - ctr[k]);
+                        b.r *= sc_;
+                        return b;
+                    }};
+        }
+        if (t == "xf.on_M") fail(id, "«Поставить на M» — только последним перед «Объектом»");
+        fail(id, "форма типа «" + t + "» не поддерживается");
+    };
     // объекты — в порядке связей входа scene.objects
     auto it = in.find({out_scene, "objects"});
     for (const std::string& oid : it == in.end() ? std::vector<std::string>{} : it->second) {
@@ -352,7 +467,25 @@ Scene scene_from_document(const nlohmann::json& doc0, const std::string& path, b
             sid = source(sid, "shape");
         }
         const N& sn = nodes[sid];
-        if (sn.def->legacy_kind.empty()) fail(sid, "форма этого типа пока не собирается в окне (DD-011, шаг 3)");
+        if (sn.def->legacy_kind.empty()) {        // составная форма (M36): выражение целиком, сфера — по графу
+            Shape s = shape_of(sid);
+            Bound b = s.bound(0.0);
+            ob.kind = "graph";
+            ob.node = sn.def->type;
+            ob.expr = s.g;
+            ob.r = b.r;
+            ob.center = b.c;
+            if (ob.on_M) {                        // сдвиг всей формы: центр сферы — на M
+                if (std::isinf(b.r)) fail(sid, "«Поставить на M» — только для ограниченной формы");
+                if (project) {
+                    Vec4 pc = geo4d::project(sc.mf, b.c);
+                    std::array<ExprPtr, 4> c;
+                    for (int i = 0; i < 4; ++i) c[i] = mk_op(Expr::Sub, mk_coord(i), mk_num(pc[i] - b.c[i]));
+                    ob.expr = substitute_coords(s.g, c);
+                    ob.center = pc;
+                }
+            }
+        } else {
         auto v = node_values(*sn.def, *sn.params);
         ob.kind = sn.def->legacy_kind;
         ob.node = sn.def->type;
@@ -366,6 +499,7 @@ Scene scene_from_document(const nlohmann::json& doc0, const std::string& path, b
             ob.center = ob.on_M && project ? geo4d::project(sc.mf, c) : c;
             if (ob.kind == "ball4") ob.r = v.at("r");
             else { ob.R = v.at("R"); ob.r = v.at("r"); }
+        }
         }
         const std::string matid = source(oid, "material");
         const N& mat = nodes[matid];

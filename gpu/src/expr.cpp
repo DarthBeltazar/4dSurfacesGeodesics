@@ -4,6 +4,7 @@
 #include <nlohmann/json.hpp>
 
 #include <cctype>
+#include <cstdio>
 #include <cmath>
 #include <fstream>
 #include <functional>
@@ -410,6 +411,78 @@ struct Evaluator {
 };
 
 }  // namespace
+
+// ---- построение выражений ------------------------------------------------------------------------------------
+
+ExprPtr mk_num(double v) {
+    auto e = std::make_shared<Expr>();
+    e->kind = Expr::Num;
+    e->value = v;
+    char b[64];
+    std::snprintf(b, sizeof(b), "%.17g", v);
+    e->text = b;
+    if (e->text.find_first_of(".eEn") == std::string::npos) e->text += ".0";
+    if (v < 0) {                                  // отрицательное число — унарный минус над положительным
+        auto n = mk_num(-v);
+        return mk_op(Expr::Neg, n);
+    }
+    return e;
+}
+
+ExprPtr mk_op(Expr::Kind k, ExprPtr a, ExprPtr b) {
+    auto e = std::make_shared<Expr>();
+    e->kind = k;
+    e->args.push_back(a);
+    if (b) e->args.push_back(b);
+    for (auto& x : e->args) e->field = e->field || x->field;
+    return e;
+}
+
+ExprPtr mk_call(const std::string& name, std::vector<ExprPtr> args) {
+    auto e = std::make_shared<Expr>();
+    e->kind = Expr::Call;
+    e->text = name;
+    e->args = std::move(args);
+    for (auto& x : e->args) e->field = e->field || x->field;
+    return e;
+}
+
+ExprPtr mk_coord(int i) {
+    auto e = std::make_shared<Expr>();
+    e->kind = Expr::Coord;
+    e->coord = i;
+    e->text = std::string(1, "xyzw"[i]);
+    e->field = true;
+    return e;
+}
+
+ExprPtr bind_params(const ExprPtr& e, const std::map<std::string, double>& values) {
+    if (e->kind == Expr::Param) {
+        auto it = values.find(e->text);
+        if (it == values.end()) throw ExprError("нет значения параметра «" + e->text + "»", e->pos);
+        return mk_num(it->second);
+    }
+    if (e->args.empty()) return e;
+    auto c = std::make_shared<Expr>(*e);
+    c->field = false;
+    for (auto& a : c->args) {
+        a = bind_params(a, values);
+        c->field = c->field || a->field;
+    }
+    return c;
+}
+
+ExprPtr substitute_coords(const ExprPtr& e, const std::array<ExprPtr, 4>& coords) {
+    if (e->kind == Expr::Coord) return coords[e->coord];
+    if (e->args.empty()) return e;
+    auto c = std::make_shared<Expr>(*e);
+    c->field = false;
+    for (auto& a : c->args) {
+        a = substitute_coords(a, coords);
+        c->field = c->field || a->field;
+    }
+    return c;
+}
 
 ExprPtr parse_expr(const std::string& src, const std::vector<std::string>& params, Context ctx) {
     Parser p{src, params, ctx};

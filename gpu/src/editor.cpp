@@ -3,6 +3,8 @@
 #include "editor.hpp"
 
 #include "codegen.hpp"
+
+#include <nlohmann/json.hpp>
 #include "scene.hpp"
 
 #include <imgui.h>
@@ -63,7 +65,7 @@ std::vector<float> to_f(const std::vector<double>& v) {
     return r;
 }
 
-const char* kGeoms[] = {"ball4", "torus", "plane"};
+const char* kGeoms[] = {"ball4", "torus", "plane", "graph"};
 const char* kMats[] = {"diffuse", "metal", "emit"};
 
 geo4d::Object to_object(const EdObject& e) {
@@ -71,7 +73,7 @@ geo4d::Object to_object(const EdObject& e) {
     o.name = e.name;
     o.kind = kGeoms[e.geom];
     for (int i = 0; i < 4; ++i) o.center[i] = e.c[i];
-    if (e.geom == 0) o.r = e.a;
+    if (e.geom == 0 || e.geom == 3) o.r = e.a;   // составная форма: a — радиус ограничивающей сферы
     else if (e.geom == 1) { o.R = e.a; o.r = e.b; }
     o.axis = e.axis;
     o.offset = e.offset;
@@ -87,9 +89,9 @@ EdObject from_object(const geo4d::Object& o) {
     EdObject e;
     e.name = o.name;
     std::replace(e.name.begin(), e.name.end(), ' ', '_');
-    e.geom = o.kind == "ball4" ? 0 : o.kind == "torus" ? 1 : 2;
+    e.geom = o.kind == "ball4" ? 0 : o.kind == "torus" ? 1 : o.kind == "graph" ? 3 : 2;
     for (int i = 0; i < 4; ++i) e.c[i] = float(o.center[i]);
-    if (e.geom == 0) e.a = float(o.r);
+    if (e.geom == 0 || e.geom == 3) e.a = float(o.r);
     else if (e.geom == 1) { e.a = float(o.R); e.b = float(o.r); }
     e.axis = o.axis;
     e.offset = float(o.offset);
@@ -334,6 +336,8 @@ EditorConfig parse_editor_config(const std::vector<std::vector<std::string>>& ex
             c.python = w.at(1);
             c.script = w.at(2);
             c.rebuild_args.assign(w.begin() + 3, w.end());
+        } else if (w[0] == "graphdoc") {      // DD-011: сцена — граф, не выразимый в version 1
+            c.graph_doc = true;
         } else if (w[0] == "speed") {
             c.speed = std::stof(w.at(1));
         }
@@ -439,10 +443,28 @@ void Editor::commit_scene(const SceneDesc& sd, const ManifoldInfo& mi, const std
     sel_ = objs_.empty() ? -1 : 0;
 }
 
+// Текст сцены для сохранения и перегенерации: version 1 — из состояния редактора; документ-граф (DD-011) — исходный
+// .g4d с текущей камерой (правки материалов ползунками до шага 6 в него не попадают)
+std::string Editor::scene_text(const std::string& kind, const std::vector<ManifoldParam>& params, const std::string& env,
+                               const CameraState& cam) const {
+    if (!cfg_.graph_doc) return scene_json(kind, params, env, objs_, cam, cfg_.fov, cfg_.speed);
+    std::ifstream in(cfg_.scene_path, std::ios::binary);
+    if (!in) throw std::runtime_error("не открыть " + cfg_.scene_path);
+    nlohmann::json doc = nlohmann::json::parse(in);
+    auto v4 = [](const float* a) { return nlohmann::json::array({a[0], a[1], a[2], a[3]}); };
+    doc["camera"] = {{"x", v4(cam.x)}, {"f", v4(cam.f)}, {"up", v4(cam.u)}, {"right", v4(cam.r)}, {"fov", cfg_.fov}};
+    return doc.dump(1) + "\n";
+}
+
 void Editor::save(const std::string& path, const CameraState& cam) {
     std::ofstream f(path, std::ios::binary);
     if (!f) { status_ = "не удалось записать " + path; return; }
-    f << scene_json(cfg_.kind, cfg_.params, cfg_.env, objs_, cam, cfg_.fov, cfg_.speed);
+    try {
+        f << scene_text(cfg_.kind, cfg_.params, cfg_.env, cam);
+    } catch (const std::exception& e) {
+        status_ = e.what();
+        return;
+    }
     status_ = "сохранено: " + path;
 }
 
@@ -463,7 +485,7 @@ void Editor::start_rebuild(const CameraState& cam, RebuildKind rk) {
     std::string env = kind == cfg_.kind ? cfg_.env : "";              // другой вид — фон по умолчанию для вида
     {
         std::ofstream f(json, std::ios::binary);
-        f << scene_json(kind, params, env, objs_, cam, cfg_.fov, cfg_.speed);
+        f << scene_text(kind, params, env, cam);
     }
     if (rebuild_fn_) {                              // в процессе (DD-010): кодген и компиляция в потоке
         done_ = false;
@@ -688,13 +710,15 @@ UiActions Editor::draw(const FrameInfo& fi, const CameraState& cam, bool edit_mo
             act.objects_changed = true;
             act.structural = true;
         };
+        // без графа режима редактирования (сцены-графы DD-011) структура правится в графе (редактор нод, шаг 6)
+        ImGui::BeginDisabled(!fi.instant);
         if (ImGui::Button("+ шар")) add(0);
         ImGui::SameLine();
         if (ImGui::Button("+ тор")) add(1);
         ImGui::SameLine();
         if (ImGui::Button("+ плоскость")) add(2);
         if (sel_ >= 0) {
-            if (ImGui::Button("копия") && objs_.size() < size_t(kMaxObj)) {
+            if (ImGui::Button("копия") && objs_.size() < size_t(kMaxObj) && objs_[sel_].geom != 3) {
                 EdObject o = objs_[sel_];
                 o.name += "_copy";
                 if (o.geom != 2) o.c[0] += 2.2f * o.a;
@@ -712,6 +736,8 @@ UiActions Editor::draw(const FrameInfo& fi, const CameraState& cam, bool edit_mo
                 act.structural = true;
             }
         }
+        ImGui::EndDisabled();
+        if (!fi.instant) ImGui::TextDisabled("структура сцены-графа правится в графе (.g4d)");
         if (sel_ >= 0 && sel_ < int(objs_.size())) {
             EdObject& o = objs_[sel_];
             bool ch = false, moved = false;
@@ -723,12 +749,17 @@ UiActions Editor::draw(const FrameInfo& fi, const CameraState& cam, bool edit_mo
                 std::replace(o.name.begin(), o.name.end(), ' ', '_');   // имена — слова директив графа
             }
             const char* geoms[] = {"4D-шар", "тор в листе", "полупространство"};
-            if (ImGui::Combo("форма", &o.geom, geoms, 3)) {
+            if (o.geom == 3) {
+                ImGui::TextDisabled("составная форма графа (M36): форма правится в графе");
+            } else if (!fi.instant) {
+                ImGui::TextDisabled("форма: %s", geoms[o.geom]);
+            } else if (ImGui::Combo("форма", &o.geom, geoms, 3)) {
                 ch = true;
                 act.structural = true;
                 if (o.geom == 1 && o.b <= 0) o.b = 0.15f;
             }
-            if (o.geom != 2) {
+            if (o.geom == 3) {
+            } else if (o.geom != 2) {
                 moved |= ImGui::DragFloat4("центр", o.c, 0.01f);
                 if (ImGui::Checkbox("на M (проекция центра)", &o.on_M)) moved = true;
                 if (ImGui::Button("перед камерой")) {
@@ -748,7 +779,7 @@ UiActions Editor::draw(const FrameInfo& fi, const CameraState& cam, bool edit_mo
                 }
             } else {
                 const char* axes[] = {"x", "y", "z", "w"};
-                if (ImGui::Combo("ось", &o.axis, axes, 4)) { ch = true; act.structural = true; }
+                if (fi.instant && ImGui::Combo("ось", &o.axis, axes, 4)) { ch = true; act.structural = true; }
                 ch |= ImGui::DragFloat("смещение", &o.offset, 0.01f);
                 bool up = o.sign > 0;
                 if (ImGui::Checkbox("внутрь — в сторону «−»", &up)) { o.sign = up ? 1.0f : -1.0f; ch = true; }
@@ -771,7 +802,7 @@ UiActions Editor::draw(const FrameInfo& fi, const CameraState& cam, bool edit_mo
                                                        : "плоских зон нет: свет только через BSDF");
             }
             if (ch || moved) act.objects_changed = true;
-            if (moved && o.on_M && o.geom != 2) act.snap = true;
+            if (moved && o.on_M && o.geom != 2 && o.geom != 3) act.snap = true;
         }
         ImGui::EndDisabled();
     }

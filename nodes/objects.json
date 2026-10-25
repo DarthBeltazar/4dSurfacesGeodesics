@@ -1,21 +1,304 @@
 [
- {"type": "obj.ball4", "group": "Объекты", "title": "4D-шар", "output": "shape",
-  "params": [{"name": "c", "type": "vec4", "default": [0.0, 0.0, 0.0, 0.0]},
-             {"name": "r", "type": "float", "default": 0.5, "min": 0.01, "max": 20.0}],
-  "formula": "length(x - c.x, y - c.y, z - c.z, w - c.w) - r", "legacy_kind": "ball4",
-  "rows": {"c": "c", "r": "s.y"}},
- {"type": "obj.torus", "group": "Объекты", "title": "Тор в листе", "output": "shape",
-  "params": [{"name": "c", "type": "vec4", "default": [0.0, 0.0, 0.0, 0.0]},
-             {"name": "R", "type": "float", "default": 1.0, "min": 0.01, "max": 20.0},
-             {"name": "r", "type": "float", "default": 0.15, "min": 0.01, "max": 20.0}],
-  "formula": "length(length(x - c.x, y - c.y) - R, z - c.z, w - c.w) - r", "legacy_kind": "torus",
-  "rows": {"c": "c", "R": "s.y", "r": "s.z"}},
- {"type": "obj.halfspace", "group": "Объекты", "title": "Полупространство", "output": "shape",
-  "params": [{"name": "axis", "type": "int", "default": 2, "min": 0, "max": 3, "structural": true},
-             {"name": "offset", "type": "float", "default": 0.0, "min": -100.0, "max": 100.0},
-             {"name": "sign", "type": "float", "default": 1.0, "min": -1.0, "max": 1.0}],
-  "formula": "sign * ({axis} - offset)", "legacy_kind": "plane",
-  "rows": {"offset": "s.z", "sign": "s.w"}},
- {"type": "xf.on_M", "group": "Преобразования", "title": "Поставить на M", "output": "shape",
-  "inputs": [{"name": "shape", "type": "shape"}], "params": []}
+ {
+  "type": "obj.ball4",
+  "group": "Объекты",
+  "title": "4D-шар",
+  "output": "shape",
+  "params": [
+   {
+    "name": "c",
+    "type": "vec4",
+    "default": [
+     0.0,
+     0.0,
+     0.0,
+     0.0
+    ]
+   },
+   {
+    "name": "r",
+    "type": "float",
+    "default": 0.5,
+    "min": 0.01,
+    "max": 20.0
+   }
+  ],
+  "formula": "length(x - c.x, y - c.y, z - c.z, w - c.w) - r",
+  "legacy_kind": "ball4",
+  "rows": {
+   "c": "c",
+   "r": "s.y"
+  }
+ },
+ {
+  "type": "obj.torus",
+  "group": "Объекты",
+  "title": "Тор в листе",
+  "output": "shape",
+  "params": [
+   {
+    "name": "c",
+    "type": "vec4",
+    "default": [
+     0.0,
+     0.0,
+     0.0,
+     0.0
+    ]
+   },
+   {
+    "name": "R",
+    "type": "float",
+    "default": 1.0,
+    "min": 0.01,
+    "max": 20.0
+   },
+   {
+    "name": "r",
+    "type": "float",
+    "default": 0.15,
+    "min": 0.01,
+    "max": 20.0
+   }
+  ],
+  "formula": "length(length(x - c.x, y - c.y) - R, z - c.z, w - c.w) - r",
+  "legacy_kind": "torus",
+  "rows": {
+   "c": "c",
+   "R": "s.y",
+   "r": "s.z"
+  }
+ },
+ {
+  "type": "obj.halfspace",
+  "group": "Объекты",
+  "title": "Полупространство",
+  "output": "shape",
+  "params": [
+   {
+    "name": "axis",
+    "type": "int",
+    "default": 2,
+    "min": 0,
+    "max": 3,
+    "structural": true
+   },
+   {
+    "name": "offset",
+    "type": "float",
+    "default": 0.0,
+    "min": -100.0,
+    "max": 100.0
+   },
+   {
+    "name": "sign",
+    "type": "float",
+    "default": 1.0,
+    "min": -1.0,
+    "max": 1.0
+   }
+  ],
+  "formula": "sign * ({axis} - offset)",
+  "legacy_kind": "plane",
+  "rows": {
+   "offset": "s.z",
+   "sign": "s.w"
+  }
+ },
+ {
+  "type": "xf.on_M",
+  "group": "Преобразования",
+  "title": "Поставить на M",
+  "output": "shape",
+  "inputs": [
+   {
+    "name": "shape",
+    "type": "shape"
+   }
+  ],
+  "params": []
+ },
+ {
+  "type": "obj.union",
+  "group": "Объекты: операции",
+  "title": "Объединение (гладкое)",
+  "output": "shape",
+  "inputs": [
+   {
+    "name": "a",
+    "type": "shape"
+   },
+   {
+    "name": "b",
+    "type": "shape"
+   }
+  ],
+  "params": [
+   {
+    "name": "k",
+    "type": "float",
+    "default": 0.2,
+    "min": 0.001,
+    "max": 10.0
+   }
+  ],
+  "doc": "smin_k(a, b) (M6, M36): ≤ min, 1-липшицева"
+ },
+ {
+  "type": "obj.intersect",
+  "group": "Объекты: операции",
+  "title": "Пересечение (гладкое)",
+  "output": "shape",
+  "inputs": [
+   {
+    "name": "a",
+    "type": "shape"
+   },
+   {
+    "name": "b",
+    "type": "shape"
+   }
+  ],
+  "params": [
+   {
+    "name": "k",
+    "type": "float",
+    "default": 0.2,
+    "min": 0.001,
+    "max": 10.0
+   }
+  ],
+  "doc": "smax_k(a, b) − k·ln 2 (M36): ≤ max — граница расстояния сохраняется"
+ },
+ {
+  "type": "obj.subtract",
+  "group": "Объекты: операции",
+  "title": "Вычитание (гладкое)",
+  "output": "shape",
+  "inputs": [
+   {
+    "name": "a",
+    "type": "shape"
+   },
+   {
+    "name": "b",
+    "type": "shape"
+   }
+  ],
+  "params": [
+   {
+    "name": "k",
+    "type": "float",
+    "default": 0.2,
+    "min": 0.001,
+    "max": 10.0
+   }
+  ],
+  "doc": "a без b: пересечение a и −b (M36)"
+ },
+ {
+  "type": "xf.translate",
+  "group": "Преобразования",
+  "title": "Сдвиг",
+  "output": "shape",
+  "inputs": [
+   {
+    "name": "shape",
+    "type": "shape"
+   }
+  ],
+  "params": [
+   {
+    "name": "t",
+    "type": "vec4",
+    "default": [
+     0.0,
+     0.0,
+     0.0,
+     0.0
+    ]
+   }
+  ],
+  "doc": "g(x − t)"
+ },
+ {
+  "type": "xf.rotate",
+  "group": "Преобразования",
+  "title": "Поворот в плоскости",
+  "output": "shape",
+  "inputs": [
+   {
+    "name": "shape",
+    "type": "shape"
+   }
+  ],
+  "params": [
+   {
+    "name": "i",
+    "type": "int",
+    "default": 0,
+    "min": 0,
+    "max": 3,
+    "structural": true
+   },
+   {
+    "name": "j",
+    "type": "int",
+    "default": 1,
+    "min": 0,
+    "max": 3,
+    "structural": true
+   },
+   {
+    "name": "angle",
+    "type": "float",
+    "default": 0.0,
+    "min": -360.0,
+    "max": 360.0
+   },
+   {
+    "name": "center",
+    "type": "vec4",
+    "default": [
+     0.0,
+     0.0,
+     0.0,
+     0.0
+    ]
+   }
+  ],
+  "doc": "поворот на angle (градусы) в плоскости осей i, j вокруг center: g(R⁻¹(x − center) + center)"
+ },
+ {
+  "type": "xf.scale",
+  "group": "Преобразования",
+  "title": "Масштаб (равномерный)",
+  "output": "shape",
+  "inputs": [
+   {
+    "name": "shape",
+    "type": "shape"
+   }
+  ],
+  "params": [
+   {
+    "name": "s",
+    "type": "float",
+    "default": 1.0,
+    "min": 0.01,
+    "max": 100.0
+   },
+   {
+    "name": "center",
+    "type": "vec4",
+    "default": [
+     0.0,
+     0.0,
+     0.0,
+     0.0
+    ]
+   }
+  ],
+  "doc": "s·g((x − center)/s + center) (M36: граница расстояния сохраняется)"
+ }
 ]

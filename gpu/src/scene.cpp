@@ -168,9 +168,16 @@ Manifold make_manifold(const std::string& kind, const Params& overrides) {
 }
 
 double Object::bound() const {
-    if (kind == "ball4") return r;
+    if (kind == "ball4" || kind == "graph") return r;     // graph: радиус ограничивающей сферы составной формы
     if (kind == "torus") return R + r;
     return std::numeric_limits<double>::infinity();
+}
+
+bool Scene::dynamic_ok() const {
+    if (!mf.legacy()) return false;
+    for (auto& o : objs)
+        if (o.kind != "ball4" && o.kind != "torus" && o.kind != "plane") return false;
+    return true;
 }
 
 double sdf(const Manifold& m, const Vec4& x, Vec4* grad) {

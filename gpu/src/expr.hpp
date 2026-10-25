@@ -40,6 +40,15 @@ using ExprPtr = std::shared_ptr<Expr>;
 // разбор и проверка: имена параметров — params; неизвестное имя, функция или запрещённая в контексте — ExprError
 ExprPtr parse_expr(const std::string& src, const std::vector<std::string>& params, Context ctx = Context::Geometry);
 
+// Построение выражений из нод (DD-011, составные объекты M36): число, операция, вызов; параметры → числа;
+// подстановка координат (преобразования: f(x − t), f(R⁻¹x), s·f(x/s))
+ExprPtr mk_num(double v);
+ExprPtr mk_op(Expr::Kind k, ExprPtr a, ExprPtr b = nullptr);          // Add Sub Mul Div; Neg — один аргумент
+ExprPtr mk_call(const std::string& name, std::vector<ExprPtr> args);
+ExprPtr mk_coord(int i);
+ExprPtr bind_params(const ExprPtr& e, const std::map<std::string, double>& values);
+ExprPtr substitute_coords(const ExprPtr& e, const std::array<ExprPtr, 4>& coords);
+
 // Slang: params — имя параметра → выражение Slang (литерал, дефайн, слот); coords — имена x y z w в функции
 std::string emit_slang(const ExprPtr& e, const std::map<std::string, std::string>& params,
                        const std::array<std::string, 4>& coords = {"x", "y", "z", "w"});

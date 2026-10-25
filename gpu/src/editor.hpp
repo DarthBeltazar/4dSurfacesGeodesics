@@ -21,7 +21,7 @@ constexpr int kMfRows = 7;
 
 struct EdObject {
     std::string name = "ball";
-    int geom = 0;                                 // 0 — ball4, 1 — torus, 2 — plane (полупространство)
+    int geom = 0;                                 // 0 — ball4, 1 — torus, 2 — plane, 3 — составная форма графа (M36)
     float c[4] = {0, 0, 0, 0};
     float a = 0.5f, b = 0.15f;                    // ball4: r = a; torus: R = a, r = b
     int axis = 2;                                 // plane: sign·(p[axis] − offset)
@@ -80,6 +80,7 @@ struct EditorConfig {
     EdFlat flat;
     std::vector<std::string> names;
     bool enabled = false;
+    bool graph_doc = false;                       // DD-011: сцена не выразима в version 1 — сохраняется граф (.g4d)
 };
 EditorConfig parse_editor_config(const std::vector<std::vector<std::string>>& extra);
 
@@ -218,4 +219,6 @@ private:
     int scene_sel_ = -1;
     void start_rebuild(const CameraState& cam, RebuildKind kind);
     void save(const std::string& path, const CameraState& cam);
+    std::string scene_text(const std::string& kind, const std::vector<ManifoldParam>& params, const std::string& env,
+                           const CameraState& cam) const;
 };
