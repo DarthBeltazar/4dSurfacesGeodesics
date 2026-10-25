@@ -60,8 +60,11 @@ bool ParamsPanel::set(const std::string& node, const std::string& param, const s
 
 ParamsPanel::Change ParamsPanel::draw(bool enabled) {
     Change ch;
-    ImGui::SetNextWindowPos(ImVec2(10, ImGui::GetIO().DisplaySize.y - 430), ImGuiCond_FirstUseEver);
+    // слева от «Объектов» (editor.cpp: x = ширина − 370), свёрнута при первом показе — не закрывает кадр
+    // (компоновка панелей — DD-012)
+    ImGui::SetNextWindowPos(ImVec2(ImGui::GetIO().DisplaySize.x - 710, 10), ImGuiCond_FirstUseEver);
     ImGui::SetNextWindowSize(ImVec2(330, 420), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowCollapsed(true, ImGuiCond_FirstUseEver);
     if (!ImGui::Begin("Параметры")) {
         ImGui::End();
         return ch;
