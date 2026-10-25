@@ -99,13 +99,8 @@ def compile_cold(mips, td, opt):
     if r.returncode != 0:
         raise RuntimeError(r.stderr)
     job = td / "job.txt"
-    job.write_text(f"spv {spv}
-entry pt_preview
-groups 0 1 1
-repeat 1
-"
-                   + "".join(f"buf {b} out {td / f'o{b}.npy'} f4 4 4
-" for b in range(G.PT_BIND.count(" ") + 1)),
+    job.write_text(f"spv {spv}\nentry pt_preview\ngroups 0 1 1\nrepeat 1\n"
+                   + "".join(f"buf {b} out {td / f'o{b}.npy'} f4 4 4\n" for b in range(G.PT_BIND.count(" ") + 1)),
                    encoding="utf-8")
     r = subprocess.run([str(gpu.EXE), "run", str(job)], capture_output=True, text=True,
                        env=dict(os.environ, GEO4D_PIPE_TIME="1"))
