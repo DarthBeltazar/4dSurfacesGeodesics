@@ -6,12 +6,14 @@
 //   geo4d_gpu app <graph>     — интерактивное окно (см. app.cpp, DD-007)
 //   geo4d_gpu export-graph <сцена.json> <каталог> [...] — граф окна без Python (см. export_graph.cpp, DD-010)
 //   geo4d_gpu [сцена.json] [--res WxH] [...] — окно без Python (см. standalone.cpp, DD-010)
+//   geo4d_gpu eval <вход.json> <выход.json> — формулы языка нод: значения, производные, Slang (expr.cpp, DD-011)
 #include <cstdio>
 #include <exception>
 #include <iostream>
 #include <string>
 
 #include "export_graph.hpp"
+#include "expr.hpp"
 #include "graph.hpp"
 #ifdef GEO4D_APP
 #include "app.hpp"
@@ -34,6 +36,7 @@ int main(int argc, char** argv) {
         }
         std::string cmd = argv[1];
         if (cmd == "export-graph") return run_export_graph(argc, argv);     // без Vulkan
+        if (cmd == "eval") return geo4d::run_eval(argc, argv);               // язык выражений (DD-011), без Vulkan
 #ifdef GEO4D_OPTIX
         if (cmd == "denoise" && argc >= 3) return run_denoise(argv[2]);     // без Vulkan
 #endif

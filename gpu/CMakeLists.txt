@@ -18,6 +18,7 @@ add_executable(geo4d_gpu
   src/export_graph.cpp
   src/shader_compiler.cpp
   src/memfs.cpp
+  src/expr.cpp
 )
 if(WIN32)
   target_sources(geo4d_gpu PRIVATE src/geo4d.manifest)     # UTF-8 как кодовая страница процесса (DD-010)
