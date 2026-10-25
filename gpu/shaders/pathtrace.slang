@@ -787,6 +787,42 @@ void pt_classall(uint3 id : SV_DispatchThreadID)
     gFlag[i] = 0;
 }
 
+// Проба режима предпросмотра (concept-standalone-nodes.md, п. 3): одна первичная геодезическая через центр пикселя
+// (Jet7, без полей Якоби, отскоков и фолбэка), затенение «фонарь у камеры»: альбедо·(0.2 + 0.8|cos|), где cos — между
+// касательной нормалью объекта и лучом; уход — фон по направлению выхода без фильтра; потолок шагов — пурпурный.
+// Пишет gFrame и класс 1 (pt_present показывает gFrame).
+[shader("compute")] [numthreads(64, 1, 1)]
+void pt_preview(uint3 id : SV_DispatchThreadID)
+{
+    uint i = id.x;
+    if (i >= pp.n) return;
+    Cam c = load_cam(gCam);
+    uint W = uint(c.width);
+    float2 uv = pixel_uv(c, i % W, i / W);
+    float4 D = c.f + uv.x * c.r + uv.y * c.u;
+    float4 x = proj_M(c.x);
+    float4 n0 = normal_M(x);
+    float4 v = normalize(D - dot(D, n0) * n0);
+    float4 wr = float4(0), wu = float4(0), stats = float4(0);
+    g_c_hit = pp.c_hit; g_w0 = 0; g_gamma = c.theta_pix;
+    float s;
+    int k;
+    bool straight;
+    uint seg = trace_segment(x, v, s, k, min(pp.tol_max, pp.tol_kappa * c.theta_pix), straight, stats, wr, wu, false);
+    float3 col = float3(0.5, 0, 0.5);
+    if (seg == SEG_ESCAPE) col = env_radiance(exit_value(x, v), x, 0);
+    else if (seg == SEG_HIT)
+    {
+        float4 gk = obj_grad(k, x), nM = normal_M(x);
+        float4 ngk = normalize(gk - dot(gk, nM) * nM);
+        float3 alb = int(mat_a(k).w) == 2 ? saturate(mat_e(k).rgb) : mat_a(k).rgb;
+        col = alb * (0.2 + 0.8 * abs(dot(ngk, v)));
+    }
+    gFrame[i] = float4(col, 1);
+    gClass[i] = 1;
+    gFlag[i] = 0;
+}
+
 // кадр для денойзера: фон — режим A, остальное — среднее трассировщика; AOV — средние (у фона — цвет фона, нормаль 0)
 [shader("compute")] [numthreads(64, 1, 1)]
 void pt_compose(uint3 id : SV_DispatchThreadID)
