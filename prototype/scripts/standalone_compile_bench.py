@@ -7,11 +7,13 @@
 import json
 import os
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 
-from geo4d import gpu
-from geo4d.results import new_run
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from geo4d import gpu                                                      # noqa: E402
+from geo4d.results import new_run                                          # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[2]
 THREADS = [1, 4, 8, 16]
