@@ -736,9 +736,12 @@ std::vector<std::string> build(const GraphCtx& c, bool dynamic, std::map<std::st
     L.insert(L.end(), ed.begin(), ed.end());
     if (!dynamic) {                               // граф режима редактирования — без vsync/fullscreen, как в Python
         if (sc.dynamic_ok()) L.push_back("editgraph " + qpath(c.td / "app_graph_dyn.txt"));   // DD-009: только виды scenes.slang
-        if (preview && c.prev_ok)                 // DD-011 §6: варианты без составных объектов и с ними
-            L.push_back("prevgraph " + qpath(c.td / "app_graph_prev.txt") + " " + qpath(c.td / "app_graph_prev_obj.txt"));
         else L.push_back("graphdoc");             // сцена не выразима в version 1: редактор сохраняет и перегенерирует граф
+        if (preview && c.prev_ok) {               // DD-011 §6: варианты без / с составными объектами, 8 / 32 регистра
+            std::string w = "prevgraph";
+            for (const char* n : {"p8", "o8", "p32", "o32"}) w += " " + qpath(c.td / (std::string("app_graph_prev_") + n + ".txt"));
+            L.push_back(w);
+        }
         if (c.o.vsync) L.push_back("vsync");
         if (c.o.fullscreen) L.push_back("fullscreen");
     }
@@ -749,14 +752,20 @@ std::vector<std::string> build(const GraphCtx& c, bool dynamic, std::map<std::st
 // строки, составные формы и многообразие — программы байткода), поэтому компилируются один раз на все сцены; сцену
 // задают строки буфера камеры: камера, объекты, многообразие, (слоты не нужны), область программ с kProgBase.
 // Секции: move — шаг камеры и кадр предпросмотра, edit — кадр, static — ничего (кадр не меняется), post — вывод.
-// Два варианта: без составных объектов и с ними (objs: PROG_OBJ) — окно выбирает по сцене.
-std::vector<std::string> build_preview(const GraphCtx& c, std::map<std::string, Array>& arrays, bool objs) {
+// Варианты: без составных объектов и с ними (objs: PROG_OBJ), на 8 и 32 регистра — окно выбирает по сцене.
+std::vector<std::string> build_preview(const GraphCtx& c, std::map<std::string, Array>& arrays, bool objs, int nreg) {
     const Scene& sc = c.sc;
     const int W = c.o.width, H = c.o.height;
     const long long N = (long long)W * H;
     fs::path inc = write_header(c.d, sc, true, false);           // заголовок динамического графа — от сцены не зависит
-    Defines df = defines(sc, 0, true, false);
-    df.emplace_back("MF_PROG", "1");
+    // дефайны: вывод от варианта не зависит; шаг камеры — только от числа регистров; кадр — от обоих (общие SPIR-V
+    // у вариантов — меньше ядер при холодном старте)
+    const Defines base = defines(sc, 0, true, false);
+    Defines dfm = base;
+    dfm.emplace_back("MF_PROG", "1");
+    // массив регистров интерпретатора: 8 — вдвое быстрее, чем 16 или 32 (results/stage-5/…_preview_bench)
+    dfm.emplace_back("PROG_NREG", std::to_string(nreg));
+    Defines df = dfm;
     if (objs) df.emplace_back("PROG_OBJ", "1");   // составные объекты — программы (вариант дороже, pathtrace.slang)
     auto with = [](Defines d, const std::string& k, int v) { d.emplace_back(k, std::to_string(v)); return d; };
     auto spv = [&](const std::string& e, const Defines& d) {
@@ -804,27 +813,25 @@ std::vector<std::string> build_preview(const GraphCtx& c, std::map<std::string, 
         {"Status", 16}, {"Class", 4 * N}, {"Flag", 4 * N}, {"Cnt", 16}, {"Args", 32}, {"Frame", 16 * N}, {"AlbF", 16},
         {"NrmF", 16}, {"Den", 16}, {"Present", 4 * N}, {"Color", 16}, {"GB", 32 * N}};
     for (auto& [n, b] : bufs) L.push_back(std::string("buffer ") + n + " zero " + std::to_string(b));
-    L.push_back("pipeline camstep " + spv("cam_step", with(df, "CAM_STEP", 1)) + " cam_step cam");
-    L.push_back("pipeline snap " + spv("pt_snap", with(df, "CAM_STEP", 1)) + " pt_snap cam");
+    L.push_back("pipeline camstep " + spv("cam_step", with(dfm, "CAM_STEP", 1)) + " cam_step cam");
     L.push_back("pipeline preview " + spv("pt_preview", with(df, "PT_STAGE", 0)) + " pt_preview " + kPtBind + " GB");
-    L.push_back("pipeline present " + spv("pt_present", with(df, "PT_STAGE", 0)) + " pt_present " + kPtBind);
+    L.push_back("pipeline present " + spv("pt_present", with(base, "PT_STAGE", 0)) + " pt_present " + kPtBind);
     PTParams p;
     const int env_n = env.table_n;
     PushItems cm(7, {'f', 0.0});
     cm.push_back({'f', 0.05});
     cm.push_back({'u', 16});
     L.push_back(push_line("camstep", cm));
-    L.push_back(push_line("snap", cm));
     L.push_back(push_line("preview", push_items(sc, p, N, env_n)));
     L.push_back(push_line("present", push_items(sc, p, N, env_n, 0, 1.0, 0, 0, 1, 1)));
     L.insert(L.end(), {"section move", "mark start", "dispatch camstep 1 1 1", "dispatch preview " + G + " 1 1", "mark preview",
                        "section edit", "mark start", "dispatch preview " + G + " 1 1", "mark preview",
-                       "section static", "mark start", "section snap", "dispatch snap 1 1 1",
+                       "section static", "mark start",
                        "section post", "dispatch present " + G + " 1 1",
                        "app " + std::to_string(W) + " " + std::to_string(H) + " Present", "campipe camstep",
                        "presentpipe present " + std::to_string(kIUseDen) + " " + std::to_string(kIBgra) + " " + std::to_string(kIExposure),
                        "speed " + pyrepr(sc.speed), "objrows cam " + std::to_string(kObjBase), "mfrows cam " + std::to_string(kMfBase),
-                       "progrows cam " + std::to_string(kProgBase) + " " + std::to_string(kProgMaxRows), objs ? "preview obj" : "preview"});
+                       "progrows cam " + std::to_string(kProgBase) + " " + std::to_string(kProgMaxRows), "preview " + std::to_string(int(objs)) + " " + std::to_string(nreg)});
     auto sd = scene_directives(sc);
     L.insert(L.end(), sd.begin(), sd.end());
     auto ed = editor_directives(c);
@@ -849,8 +856,10 @@ AppGraph app_graph(const Dirs& d, const Scene& sc0, const AppOptions& o, const f
     if (sc.dynamic_ok()) g.dyn_lines = build(c, true, g.arrays);  // как в Python: граф режима редактирования — первым
     if (!o.legacy_codegen) {                      // DD-011 §6: граф предпросмотра на интерпретаторе
         try {
-            g.prev_lines = build_preview(c, g.arrays, false);
-            g.prev_obj_lines = build_preview(c, g.arrays, true);
+            for (int nreg : {kProgNarrowReg, kProgMaxReg})
+                for (bool objs : {false, true})
+                    g.prev_graphs.emplace_back(std::string("app_graph_prev_") + (objs ? "o" : "p") + std::to_string(nreg) + ".txt",
+                                               build_preview(c, g.arrays, objs, nreg));
             c.prev_ok = true;
         } catch (const std::exception& e) {       // программа не помещается в пределы — только нативный путь
             std::fprintf(stderr, "предпросмотр на интерпретаторе недоступен: %s\n", e.what());

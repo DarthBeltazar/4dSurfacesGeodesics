@@ -85,16 +85,13 @@ struct Builder {
                 memfs::put_npy(u8(out_dir / name), std::move(n));
             }
             memfs::put_text(u8(out_dir / "app_graph_dyn.txt"), text(g.dyn_lines));
-            if (!g.prev_lines.empty()) memfs::put_text(u8(out_dir / "app_graph_prev.txt"), text(g.prev_lines));
-            if (!g.prev_obj_lines.empty()) memfs::put_text(u8(out_dir / "app_graph_prev_obj.txt"), text(g.prev_obj_lines));
+            for (auto& [n, l] : g.prev_graphs) memfs::put_text(u8(out_dir / n), text(l));
             memfs::put_text(u8(out_dir) + "/app_graph.txt", text(g.lines));     // путь, который ждёт редактор
             memfs::put_text(u8(out_dir / "app_graph.txt"), text(g.lines));
             if (to_disk) {
                 std::ofstream(out_dir / "app_graph.txt", std::ios::binary) << text(g.lines);
                 std::ofstream(out_dir / "app_graph_dyn.txt", std::ios::binary) << text(g.dyn_lines);
-                if (!g.prev_lines.empty()) std::ofstream(out_dir / "app_graph_prev.txt", std::ios::binary) << text(g.prev_lines);
-                if (!g.prev_obj_lines.empty())
-                    std::ofstream(out_dir / "app_graph_prev_obj.txt", std::ios::binary) << text(g.prev_obj_lines);
+                for (auto& [n, l] : g.prev_graphs) std::ofstream(out_dir / n, std::ios::binary) << text(l);
             }
             auto ms = [](auto a, auto b) { return std::chrono::duration<double, std::milli>(b - a).count(); };
             std::printf("standalone_build {\"scene_env_ms\": %.1f, \"graph_ms\": %.1f, \"compile_ms\": %.1f, \"compiled\": %d, "

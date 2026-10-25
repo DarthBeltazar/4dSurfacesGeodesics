@@ -174,7 +174,7 @@ constexpr int kFirst = kDir + 32;                 // программа мног
 
 }  // namespace
 
-std::vector<float> program_rows(const Scene& sc) {
+std::vector<float> program_rows(const Scene& sc, int* max_reg) {
     std::vector<std::array<float, 4>> R(kFirst, {0, 0, 0, 0});
     const auto& balls = sc.mf.flat.centers;
     if (balls.size() > size_t(kProgMaxBall)) throw std::runtime_error("шаров кривизны больше " + std::to_string(kProgMaxBall));
@@ -182,14 +182,17 @@ std::vector<float> program_rows(const Scene& sc) {
     for (size_t i = 0; i < balls.size(); ++i) R[1 + i] = {float(balls[i][0]), float(balls[i][1]), float(balls[i][2]), 0};
     auto [e, vals] = manifold_expr(sc);
     Program mf = compile_program(e, vals);
+    int mr = mf.nreg;
     R.insert(R.end(), mf.rows.begin(), mf.rows.end());
     const auto slots = sc.slots.values();
     for (size_t k = 0; k < sc.objs.size() && k < 32; ++k) {
         if (sc.objs[k].kind != "graph") continue;
         Program p = compile_program(sc.objs[k].expr, slots);
+        mr = std::max(mr, p.nreg);
         R[kDir + k][0] = float(kProgBase + R.size());
         R.insert(R.end(), p.rows.begin(), p.rows.end());
     }
+    if (max_reg) *max_reg = mr;
     if (R.size() > size_t(kProgMaxRows)) throw std::runtime_error("программы длиннее " + std::to_string(kProgMaxRows) + " строк");
     std::vector<float> out;
     for (auto& r : R) out.insert(out.end(), r.begin(), r.end());

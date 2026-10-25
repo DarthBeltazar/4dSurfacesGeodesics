@@ -98,7 +98,7 @@ def test_standalone_structural_cycle_equals_cold_start(tmp_path):
     out = _standalone(tmp_path / "hot", ROOT / "scenes" / "two_wormholes.json", 40, [39],
                       f"editmode 5 on\nedit 6 {gpu.qpath(rows)}\neditmode 10 off\n")
     builds = [json.loads(t.split(" ", 1)[1]) for t in out.splitlines() if t.startswith("standalone_build")]
-    assert len(builds) == 2 and builds[1]["shaders"] == 36     # выход: новая структура — граф и шейдеры в процессе (27 + предпросмотр: нативный и 2 × 4 ядра интерпретатора)
+    assert len(builds) == 2 and builds[1]["shaders"] == 34     # выход: новая структура — граф и шейдеры в процессе (27 + предпросмотр: нативный и 6 ядер интерпретатора; вывод — общий с графом режима редактирования)
     _standalone(tmp_path / "cold", edited, 29, [28])
     _same(_dumps(tmp_path / "hot", 39), _dumps(tmp_path / "cold", 28))
     log = json.loads((tmp_path / "hot" / "f.json").read_text(encoding="utf-8"))
@@ -152,7 +152,7 @@ def test_installed_layout(tmp_path):
                        env=dict(ENV, GEO4D_CACHE_DIR=str(cache)), cwd=tmp_path)
     assert r.returncode == 0, r.stdout + r.stderr
     assert sorted(p.relative_to(inst) for p in inst.rglob("*")) == before
-    assert len(list((cache / "spv").glob("*.spv"))) == 36 and list((cache / "gen").rglob("pt_scene.slang"))
+    assert len(list((cache / "spv").glob("*.spv"))) == 34 and list((cache / "gen").rglob("pt_scene.slang"))
     assert (cache / "pipelines.bin").exists()
     assert not list((td / "work").glob("edit_*.json"))          # перегенераций не было
     assert (np.load(td / "Present_3.npy") & 0xFFFFFF).std() > 0

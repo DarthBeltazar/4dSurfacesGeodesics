@@ -20,7 +20,8 @@ namespace geo4d {
 
 struct Scene;
 
-constexpr int kProgMaxReg = 32;                   // PROG_NREG в scenes.slang
+constexpr int kProgMaxReg = 32;                   // PROG_NREG в scenes.slang (широкий вариант)
+constexpr int kProgNarrowReg = 8;                 // узкий вариант: вдвое быстрее (массив регистров меньше)
 constexpr int kProgMaxIns = 1024;                 // на программу (DD-011 §6)
 constexpr int kProgMaxBall = 16;                  // центры шаров кривизны в строках программ
 constexpr int kProgMaxRows = 8192;                // вся область программ
@@ -37,7 +38,8 @@ Program compile_program(const ExprPtr& e, const std::map<std::string, double>& p
 // Область программ буфера камеры с kProgBase (codegen.hpp), см. scenes.slang (PROG_BASE):
 //   +0 — (число шаров кривизны, 0, 0, 0); +1…+16 — центры шаров (M29); +17…+48 — начальная строка программы объекта k
 //   (0 — у объекта нет программы); +49 — программа многообразия, затем программы составных объектов (вид 3).
-std::vector<float> program_rows(const Scene& sc);
+// max_reg — наибольшее число регистров среди программ (вариант графа предпросмотра: PROG_NREG 8 или 32)
+std::vector<float> program_rows(const Scene& sc, int* max_reg = nullptr);
 
 // geo4d_gpu bytecode <сцена> <выход.json>: программы многообразия и объектов (строки) — для bc_check
 int run_bytecode(int argc, char** argv);

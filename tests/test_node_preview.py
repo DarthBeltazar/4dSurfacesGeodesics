@@ -55,7 +55,7 @@ def _interp(d, scene, frames, dumps, objs=False):
                        capture_output=True, text=True, encoding="utf-8")
     assert r.returncode == 0, r.stdout + r.stderr
     assert "prevgraph" in (g / "app_graph.txt").read_text(encoding="utf-8")
-    prev = g / ("app_graph_prev_obj.txt" if objs else "app_graph_prev.txt")   # с составными объектами — свой вариант
+    prev = g / ("app_graph_prev_o8.txt" if objs else "app_graph_prev_p8.txt")   # с составными объектами — свой вариант
     ex = _extra(d, frames, dumps, "")
     prev.write_text(prev.read_text(encoding="utf-8") + ex.read_text(encoding="utf-8"), encoding="utf-8")
     r = subprocess.run([str(gpu.EXE), "app", str(prev)], capture_output=True, text=True, encoding="utf-8")
@@ -118,4 +118,34 @@ def test_structural_edit_with_composite_objects(tmp_path):
     new.write_text(json.dumps(set_param(doc, "xr", "j", 3), ensure_ascii=False), encoding="utf-8")
     _window(tmp_path / "cold", new, 3, [1], "previewmode 0 on\n")
     rel, frac = _close(np.load(tmp_path / "hot" / "Frame_2.npy"), np.load(tmp_path / "cold" / "Frame_1.npy"))
+    assert rel < 1e-4 and frac < 0.01, (rel, frac)
+
+
+def test_wide_program_uses_32_register_variant(tmp_path):
+    """Программа больше 8 регистров (правая вложенность произведений): граф на 32 регистра = нативный предпросмотр."""
+    from test_node_objects import N, scene as obj_scene
+    f = "1"
+    for i in range(10, 0, -1):
+        f = f"(0.9 + 0.1 * sin(0.3 * x + {i})) * ({f})"
+    doc = obj_scene([], manifold=N("m", "mf.formula", formula=f"w - 0.2 * {f}", a=0.0, b=0.0, c=0.0, d=0.0, scale=1.0,
+                                   s_max=40.0))
+    sc = tmp_path / "wide.g4d"
+    sc.write_text(json.dumps(doc, ensure_ascii=False), encoding="utf-8")
+    r = subprocess.run([str(gpu.EXE), "bytecode", str(sc), str(tmp_path / "bc.json")], capture_output=True, text=True,
+                       encoding="utf-8")
+    assert r.returncode == 0, r.stderr
+    nreg = json.loads((tmp_path / "bc.json").read_text(encoding="utf-8"))["manifold"]["f32"][0][1]
+    assert 8 < nreg <= 32
+    _window(tmp_path / "nat", sc, 3, [1], "previewmode 0 on\n")
+    d = tmp_path / "int"
+    g = d / "g"
+    r = subprocess.run([str(gpu.EXE), str(sc), "--res", RES, "--cube", "64", "--graph-only", str(g)], capture_output=True,
+                       text=True, encoding="utf-8")
+    assert r.returncode == 0, r.stderr
+    prev = g / "app_graph_prev_p32.txt"
+    ex = _extra(d, 3, [1], "")
+    prev.write_text(prev.read_text(encoding="utf-8") + ex.read_text(encoding="utf-8"), encoding="utf-8")
+    r = subprocess.run([str(gpu.EXE), "app", str(prev)], capture_output=True, text=True, encoding="utf-8")
+    assert r.returncode == 0, r.stdout + r.stderr
+    rel, frac = _close(np.load(d / "Frame_1.npy"), np.load(tmp_path / "nat" / "Frame_1.npy"))
     assert rel < 1e-4 and frac < 0.01, (rel, frac)
