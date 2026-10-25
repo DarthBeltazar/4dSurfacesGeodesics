@@ -4,11 +4,13 @@
 //   geo4d_gpu graph <файл>    — граф диспетчеризаций одним командным буфером (см. graph.cpp)
 //   geo4d_gpu denoise <job>   — денойзер OptiX (см. denoise.cpp)
 //   geo4d_gpu app <graph>     — интерактивное окно (см. app.cpp, DD-007)
+//   geo4d_gpu export-graph <сцена.json> <каталог> [...] — граф окна без Python (см. export_graph.cpp, DD-010)
 #include <cstdio>
 #include <exception>
 #include <iostream>
 #include <string>
 
+#include "export_graph.hpp"
 #include "graph.hpp"
 #ifdef GEO4D_APP
 #include "app.hpp"
@@ -22,10 +24,11 @@
 int main(int argc, char** argv) {
     try {
         if (argc < 2) {
-            std::fprintf(stderr, "использование: geo4d_gpu info | run <job.txt> | graph <graph.txt> | denoise <job.txt> | app <graph.txt>\n");
+            std::fprintf(stderr, "использование: geo4d_gpu info | run <job.txt> | graph <graph.txt> | denoise <job.txt> | app <graph.txt> | export-graph <сцена.json> <каталог>\n");
             return 2;
         }
         std::string cmd = argv[1];
+        if (cmd == "export-graph") return run_export_graph(argc, argv);     // без Vulkan
 #ifdef GEO4D_OPTIX
         if (cmd == "denoise" && argc >= 3) return run_denoise(argv[2]);     // без Vulkan
 #endif

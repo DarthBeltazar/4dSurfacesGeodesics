@@ -12,6 +12,10 @@ add_executable(geo4d_gpu
   src/job.cpp
   src/graph.cpp
   src/graph_program.cpp
+  src/scene.cpp
+  src/environment.cpp
+  src/codegen.cpp
+  src/export_graph.cpp
 )
 # exe всегда в корне каталога сборки (gpu/build/geo4d_gpu[.exe]) — его ищет geo4d.gpu.EXE
 set_target_properties(geo4d_gpu PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}")
@@ -41,7 +45,13 @@ if(NOT GEO4D_VMA_INC)
   FetchContent_MakeAvailable(vma)
   set(GEO4D_VMA_INC "${vma_SOURCE_DIR}/include" CACHE PATH "" FORCE)
 endif()
-target_include_directories(geo4d_gpu PRIVATE "${GEO4D_VULKAN_INC}" "${GEO4D_VOLK_INC}" "${GEO4D_VMA_INC}" src)
+# JSON файлов сцен (DD-010): nlohmann/json, только заголовки
+FetchContent_Declare(nlohmann_json URL https://github.com/nlohmann/json/releases/download/v3.11.3/include.zip
+                     URL_HASH SHA256=a22461d13119ac5c78f205d3df1db13403e58ce1bb1794edc9313677313f4a9d
+                     SOURCE_SUBDIR none DOWNLOAD_EXTRACT_TIMESTAMP TRUE)
+FetchContent_MakeAvailable(nlohmann_json)
+target_include_directories(geo4d_gpu PRIVATE "${GEO4D_VULKAN_INC}" "${GEO4D_VOLK_INC}" "${GEO4D_VMA_INC}" src
+                           "${nlohmann_json_SOURCE_DIR}/single_include")
 target_compile_definitions(geo4d_gpu PRIVATE VK_NO_PROTOTYPES)
 target_link_libraries(geo4d_gpu PRIVATE ${CMAKE_DL_LIBS})        # volk загружает libvulkan через dlopen
 
