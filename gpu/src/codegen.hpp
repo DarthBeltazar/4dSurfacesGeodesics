@@ -48,9 +48,13 @@ fs::path exe_path(const char* argv0);             // путь к exe от ОС (
 // (Linux/macOS — $XDG_CACHE_HOME/geo4d или ~/.cache/geo4d)
 fs::path user_cache_dir();
 
-std::string scene_header(const Scene& sc, bool dynamic);
-fs::path write_header(const Dirs& d, const Scene& sc, bool dynamic);     // gen/<sha256[:16]>/pt_scene.slang (CRLF, как write_text)
-Defines defines(const Scene& sc, int nj, bool dynamic);
+// graph — многообразие и объекты из формул графа сцены (DD-011): SCENE_GRAPH, mf_scene.slang; иначе — как
+// geo4d.gpu_pt (виды scenes.slang и дефайны MF_*; режим --legacy-codegen, эталон для сверки)
+std::string scene_header(const Scene& sc, bool dynamic, bool graph = false);
+std::string mf_header(const Scene& sc);           // mf_scene.slang: SCALE, sdf<T>, hcap
+// gen/<sha256[:16]>/pt_scene.slang (+ mf_scene.slang при graph); CRLF, как Path.write_text
+fs::path write_header(const Dirs& d, const Scene& sc, bool dynamic, bool graph = false);
+Defines defines(const Scene& sc, int nj, bool dynamic, bool graph = false);
 
 // шейдер графа: что компилировать и куда (shader_compiler.hpp)
 struct ShaderJob {
@@ -100,6 +104,7 @@ struct AppOptions {
     int cube = 512;
     double fov = 0;                               // 0 — из файла сцены
     bool vsync = false, fullscreen = false;
+    bool legacy_codegen = false;                  // виды scenes.slang и MF_* (как Python) вместо формул графа
 };
 
 struct AppGraph {

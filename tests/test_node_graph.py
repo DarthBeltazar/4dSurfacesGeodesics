@@ -77,3 +77,31 @@ def test_graph_errors(tmp_path, case):
     p.write_text(json.dumps(_doc(nodes, links), ensure_ascii=False), encoding="utf-8")
     r = _exe("export-graph", p, tmp_path / "g", "--res", "96x54")
     assert r.returncode != 0 and word in r.stderr, r.stderr
+
+
+def _frames(d, scene, legacy, tmp_path):
+    args = ["export-graph", scene, d, "--res", "96x54", "--compile"] + (["--legacy-codegen"] if legacy else [])
+    r = _exe(*args)
+    assert r.returncode == 0, r.stderr
+    np.savetxt(tmp_path / "s.txt", np.zeros((3, 6)), fmt="%.6f")
+    g = d / "app_graph.txt"
+    g.write_text(g.read_text(encoding="utf-8") + f"hidden\nbench {gpu.qpath(tmp_path / 's.txt')} "
+                 f"{gpu.qpath(d / 'f.json')}\ndump 2 {gpu.qpath(d)}\n", encoding="utf-8")
+    r = _exe("app", g)
+    assert r.returncode == 0, r.stdout + r.stderr
+    return {k: np.load(d / f"{k}_2.npy") for k in ("Frame", "Present")}
+
+
+@pytest.mark.gpu
+@pytest.mark.parametrize("scene", SCENES)
+def test_graph_codegen_equals_legacy(tmp_path, scene):
+    """DD-011 §4: многообразие и объекты из формул библиотеки (SCENE_GRAPH, mf_scene.slang, obj_g из формул) дают
+    тот же кадр, что виды scenes.slang с дефайнами MF_* — побитово (96×54: known-issues, «пурпурный пиксель»)."""
+    src = ROOT / "scenes" / f"{scene}.json"
+    a = _frames(tmp_path / "graph", src, False, tmp_path)
+    b = _frames(tmp_path / "legacy", src, True, tmp_path)
+    spv = lambda d: {l.split()[2] for l in (d / "app_graph.txt").read_text(encoding="utf-8").splitlines()
+                     if l.startswith("pipeline camera")}
+    assert spv(tmp_path / "graph") != spv(tmp_path / "legacy")          # действительно другой шейдер
+    for k in a:
+        assert np.array_equal(a[k], b[k]), k

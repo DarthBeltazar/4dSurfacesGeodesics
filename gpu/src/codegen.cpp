@@ -11,6 +11,8 @@
 #include <sstream>
 #include <stdexcept>
 
+#include "expr.hpp"
+#include "scene_graph.hpp"
 #include "sha256.hpp"
 
 #ifdef _WIN32
@@ -209,7 +211,73 @@ fs::path user_cache_dir() {
 
 // ---- заголовок и дефайны -----------------------------------------------------------------------------------
 
-std::string scene_header(const Scene& sc, bool dynamic) {
+namespace {
+
+// вещественный литерал параметра: как MF_* (repr); отрицательный — в скобках («x - (-4.0)»)
+std::string param_lit(double v) {
+    std::string s = pyrepr(v);
+    return v < 0 ? "(" + s + ")" : s;
+}
+
+// строка obj_g для объекта из формулы его ноды (DD-011 §4): параметры — поля строк объекта (rows), int-параметры
+// формы ({axis}) подставляются в текст как координата
+std::string object_g_line(const Object& o, size_t k) {
+    const NodeDef* def = node_library().find(o.node);
+    if (!def || def->formula.empty()) throw std::runtime_error("нет формулы ноды «" + o.node + "»");
+    std::string f = def->formula;
+    std::vector<std::string> names;
+    std::map<std::string, std::string> pm;
+    for (auto& p : def->params) {
+        if (p.type == "int") {
+            const std::string key = "{" + p.name + "}";
+            for (size_t at; (at = f.find(key)) != std::string::npos;)
+                f.replace(at, key.size(), std::string(1, "xyzw"[int(o.values.at(p.name)) & 3]));
+            continue;
+        }
+        auto r = def->rows.find(p.name);
+        const int n = p.type == "vec3" || p.type == "color" ? 3 : p.type == "vec4" ? 4 : 1;
+        for (int i = 0; i < n; ++i) {
+            const std::string nm = n == 1 ? p.name : p.name + "." + "xyzw"[i];
+            names.push_back(nm);
+            pm[nm] = r == def->rows.end() ? param_lit(o.values.at(nm)) : (n == 1 ? r->second : r->second + "." + "xyzw"[i]);
+        }
+    }
+    const std::string ks = std::to_string(k);
+    return "    if (k == " + ks + ") { float4 c = obj_c(" + ks + "), s = obj_s(" + ks + "); return " +
+           emit_slang(parse_expr(f, names), pm) + "; }";
+}
+
+}  // namespace
+
+std::string mf_header(const Scene& sc) {
+    const NodeDef* def = node_library().find(sc.mf_node);
+    if (!def || def->formula.empty()) throw std::runtime_error("нет формулы ноды многообразия «" + sc.mf_node + "»");
+    std::vector<std::string> names;
+    std::map<std::string, std::string> pm;
+    for (auto& [n, v] : sc.mf_values) {
+        names.push_back(n);
+        pm[n] = param_lit(v);
+    }
+    const std::string sdf = emit_slang(parse_expr(def->formula, names), pm);
+    // hcap (DD-001, M37): Эллис — 0.5|q|; плоские зоны с шарами кривизны — расстояние до ближайшего шара, не меньше ¼ℓ_s
+    const Manifold& m = sc.mf;
+    std::string hcap = "SCALE";
+    if (m.exit == 1) hcap = "0.5 * length(p.xyz)";
+    else if (m.flat.has && !m.flat.centers.empty()) {
+        std::string mn;
+        for (auto& c : m.flat.centers) {
+            std::string t = "length(p.xyz - float3(" + param_lit(c[0]) + ", " + param_lit(c[1]) + ", " + param_lit(c[2]) + "))";
+            mn = mn.empty() ? t : "min(" + mn + ", " + t + ")";
+        }
+        hcap = "max(" + mn + " - " + param_lit(m.flat.rho0) + ", 0.25 * " + param_lit(m.scale) + ")";
+    }
+    return "// Сгенерировано из графа сцены (DD-011, нода " + def->type + ") — не редактировать.\n"
+           "static const float SCALE = " + param_lit(m.scale) + ";\n"
+           "__generic<T : IReal> T sdf(T x, T y, T z, T w) { return " + sdf + "; }\n"
+           "float hcap(float4 p) { return " + hcap + "; }\n";
+}
+
+std::string scene_header(const Scene& sc, bool dynamic, bool graph) {
     std::vector<std::string> L = {"// Сгенерировано geo4d.gpu_pt.scene_header из описания сцены прототипа — не редактировать.",
                                   "#define PT_MAXOBJ " + std::to_string(kPtMaxObj),
                                   std::string("#define PT_DYNAMIC ") + (dynamic ? "1" : "0")};
@@ -239,7 +307,8 @@ std::string scene_header(const Scene& sc, bool dynamic) {
     for (size_t k = 0; k < sc.objs.size(); ++k) {
         const Object& o = sc.objs[k];
         std::string ks = std::to_string(k);
-        if (o.kind == "ball4")
+        if (graph) L.push_back(object_g_line(o, k));
+        else if (o.kind == "ball4")
             L.push_back("    if (k == " + ks + ") { float4 c = obj_c(" + ks + "); return jlength4(x - c.x, y - c.y, z - c.z, w - c.w) - obj_s(" + ks + ").y; }");
         else if (o.kind == "torus")
             L.push_back("    if (k == " + ks + ") { float4 c = obj_c(" + ks + "), s = obj_s(" + ks + "); "
@@ -251,25 +320,32 @@ std::string scene_header(const Scene& sc, bool dynamic) {
     return join(L, "\n") + "\n";
 }
 
-fs::path write_header(const Dirs& d, const Scene& sc, bool dynamic) {
-    std::string text = scene_header(sc, dynamic);
+fs::path write_header(const Dirs& d, const Scene& sc, bool dynamic, bool graph) {
+    std::string text = scene_header(sc, dynamic, graph);
+    std::string mf = graph ? mf_header(sc) : "";
     Sha256 h;
     h.update(text);
+    h.update(mf);                                 // без графа — пусто: каталог тот же, что у Python
     fs::path dir = d.gen / h.hexdigest().substr(0, 16);
     fs::create_directories(dir);
+    auto write = [&](const char* name, const std::string& t) {
 #ifdef _WIN32
-    std::string out;                              // Path.write_text в Windows пишет CRLF
-    for (char c : text) { if (c == '\n') out += '\r'; out += c; }
+        std::string out;                          // Path.write_text в Windows пишет CRLF
+        for (char c : t) { if (c == '\n') out += '\r'; out += c; }
 #else
-    const std::string& out = text;
+        const std::string& out = t;
 #endif
-    std::ofstream f(dir / "pt_scene.slang", std::ios::binary);
-    f << out;
+        std::ofstream f(dir / name, std::ios::binary);
+        f << out;
+    };
+    write("pt_scene.slang", text);
+    if (graph) write("mf_scene.slang", mf);
     return dir;
 }
 
-Defines defines(const Scene& sc, int nj, bool dynamic) {
+Defines defines(const Scene& sc, int nj, bool dynamic, bool graph) {
     if (dynamic) return {{"SCENE", std::to_string(kSceneDynamic)}, {"EXIT", "0"}, {"KERNEL", "0"}, {"NJ", std::to_string(nj)}};
+    if (graph) return {{"SCENE", "12"}, {"EXIT", std::to_string(sc.mf.exit)}, {"KERNEL", "0"}, {"NJ", std::to_string(nj)}};
     Defines d = {{"SCENE", std::to_string(sc.mf.scene_id)}, {"EXIT", std::to_string(sc.mf.exit)}, {"KERNEL", "0"},
                  {"NJ", std::to_string(nj)}};
     // gpu_pt.manifold_defines (_MF): параметры фигуры → MF_*
@@ -443,8 +519,10 @@ std::vector<std::string> build(const GraphCtx& c, bool dynamic, std::map<std::st
     EnvMap none;
     const EnvMap* env = &c.procedural;
     if (!dynamic && sc.env == "none") { none = constant_env(0.0f, 8); env = &none; }
-    fs::path inc = write_header(c.d, sc, dynamic);
-    auto df = [&](int nj) { return defines(sc, nj, dynamic); };
+    // DD-011: многообразие и объекты быстрого графа — из формул графа сцены (режим A тоже берёт mf_scene.slang)
+    const bool graph = !dynamic && !c.o.legacy_codegen && !sc.mf_node.empty();
+    fs::path inc = write_header(c.d, sc, dynamic, graph);
+    auto df = [&](int nj) { return defines(sc, nj, dynamic, graph); };
     auto with = [](Defines d, const std::string& k, int v) { d.emplace_back(k, std::to_string(v)); return d; };
     auto spv = [&](const std::string& src, const std::string& e, const Defines& d, bool use_inc) {
         fs::path out = c.keys.spv_path(src, e, d, use_inc ? inc : fs::path{});
@@ -460,7 +538,7 @@ std::vector<std::string> build(const GraphCtx& c, bool dynamic, std::map<std::st
     auto md = [&](int k, const std::string& e) {
         Defines d = df(0);
         for (auto& [n, v] : d) if (n == "KERNEL") v = std::to_string(k);
-        return spv("modea.slang", e, d, false);
+        return spv("modea.slang", e, d, graph);
     };
     const long long g = (N + 63) / 64;
     const std::string G = std::to_string(g);

@@ -121,6 +121,7 @@ AppOptions parse_args(const std::vector<std::string>& args, AppOptions o, int* t
         else if (a == "--fov") o.fov = std::stod(next());
         else if (a == "--vsync") o.vsync = true;
         else if (a == "--fullscreen") o.fullscreen = true;
+        else if (a == "--legacy-codegen") o.legacy_codegen = true;   // виды scenes.slang и MF_* (как Python)
         else if (a == "--threads" && threads) *threads = std::stoi(next());
         else if (a == "--work-dir" && work) *work = next();
         else if (a == "--graph-only" && graph_only) *graph_only = next();

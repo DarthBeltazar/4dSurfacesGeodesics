@@ -56,6 +56,7 @@ int run_export_graph(int argc, char** argv) {
         else if (a == "--fov") o.fov = std::stod(next());
         else if (a == "--vsync") o.vsync = true;
         else if (a == "--fullscreen") o.fullscreen = true;
+        else if (a == "--legacy-codegen") o.legacy_codegen = true;   // виды scenes.slang и MF_* (как Python)
         else if (a == "--compile") do_compile = true;
         else if (a == "--threads") threads = std::stoi(next());
         else if (a == "--spv-dir") spv_dir = next();

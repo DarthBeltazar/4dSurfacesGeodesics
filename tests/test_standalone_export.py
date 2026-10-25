@@ -1,6 +1,7 @@
 """DD-010, шаг 1: граф окна из C++ (`geo4d_gpu export-graph`) = граф `app.py --graph-only` для всех сцен scenes/.
 
-Текст графов совпадает построчно (каталоги заменены, директива rebuild — перегенерация через Python — опущена);
+Граф C++ строится в режиме --legacy-codegen (виды scenes.slang и MF_*, как Python; кодген из формул графа сверяется
+с ним по кадрам в test_node_graph). Текст графов совпадает построчно (каталоги заменены, директива rebuild — перегенерация через Python — опущена);
 это проверяет и заголовок pt_scene.slang, и дефайны, и push-константы: от них зависят ключи кэша SPIR-V в путях.
 Массивы (буфер камеры, кубмапа, таблица фона) — побитово, кроме базиса камеры f, r, u: порядок суммирования
 скалярных произведений в Грам–Шмидте (numpy против C++) и дополнение r из SVD (Python) против координатной оси (C++)
@@ -73,7 +74,7 @@ def _export(tmp_path, scene, args):
     r = subprocess.run([sys.executable, "-X", "utf8", str(APP), "--scene", str(sf), "--graph-only", str(py), "--python-graph"] + args,
                        capture_output=True, text=True, encoding="utf-8", env=ENV)
     assert r.returncode == 0, r.stderr
-    r = subprocess.run([str(gpu.EXE), "export-graph", str(sf), str(cc)] + args,
+    r = subprocess.run([str(gpu.EXE), "export-graph", str(sf), str(cc), "--legacy-codegen"] + args,
                        capture_output=True, text=True, encoding="utf-8", env=ENV)
     assert r.returncode == 0, r.stderr
     return py.resolve(), cc.resolve()
@@ -135,7 +136,7 @@ def test_compile_matches_slangc(tmp_path, scene):
     тому, что собрал slangc.exe по `app.py --graph-only` (кэш gpu/build/spv)."""
     py, cc = _export(tmp_path, scene, ["--res", "320x180"])
     spv = tmp_path / "spv api"
-    r = subprocess.run([str(gpu.EXE), "export-graph", str(_scene_file(tmp_path, scene)), str(tmp_path / "c2"), "--res",
+    r = subprocess.run([str(gpu.EXE), "export-graph", str(_scene_file(tmp_path, scene)), str(tmp_path / "c2"), "--legacy-codegen", "--res",
                         "320x180", "--compile", "--threads", "8", "--spv-dir", str(spv)],
                        capture_output=True, text=True, encoding="utf-8", env=ENV)
     assert r.returncode == 0, r.stderr

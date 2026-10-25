@@ -15,6 +15,7 @@
 #define SCENE_COMPACT 9
 #define SCENE_TWO_COMPACT 10
 #define SCENE_DYNAMIC 11          // окно, режим редактирования (DD-009): вид и параметры многообразия — из буфера камеры
+#define SCENE_GRAPH 12            // многообразие из графа сцены (DD-011): SCALE, sdf и hcap — в сгенерированном mf_scene.slang
 
 #ifndef SCENE
 #error "задайте -DSCENE=<id>"
@@ -196,6 +197,9 @@ float hcap(float4 q)
     if (k == SCENE_TWO_COMPACT) return max(min(length(q.xyz - mf_c1()), length(q.xyz - mf_c2())) - p.y, 0.25 * p.x);
     return SCALE;
 }
+
+#elif SCENE == SCENE_GRAPH
+#include "mf_scene.slang"
 
 #elif SCENE == SCENE_HYPERPLANE
 static const float SCALE = 1.0;
