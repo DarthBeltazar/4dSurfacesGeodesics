@@ -34,6 +34,7 @@
 //                                    нод (структурная — ждёт перегенерацию)
 //   addnode <кадр> <id> <тип> | link <кадр> <id.out> <id.вход> | unlink <кадр> <id.вход> | delnode <кадр> <id> |
 //   graphundo <кадр> | graphredo <кадр>   в сценарии: действия на холсте редактора нод (DD-011 §8)
+//   opengraph <кадр> <сцена>         в сценарии: открыть другой файл сцены, как кнопка «открыть» (камера — из файла)
 //   prevgraph <p8> <o8> <p32> <o32>  графы предпросмотра на интерпретаторе (DD-011 §6): o — с составными объектами-
 //                                    программами (дороже), 8/32 — регистров интерпретатора (8 — вдвое быстрее); шейдеры
 //                                    от сцены не зависят, сцена —
@@ -232,7 +233,7 @@ AppDirs parse_dirs(const GraphProgram& prog) {
         else if (w[0] == "progrows") { d.prog_base = std::stoi(w.at(2)); d.prog_rows = std::stoi(w.at(3)); }
         else if (w[0] == "previewmode") d.previewmode.emplace_back(uint32_t(std::stoul(w.at(1))), w.at(2) == "on");
         else if (w[0] == "addnode" || w[0] == "link" || w[0] == "unlink" || w[0] == "delnode" || w[0] == "graphundo" ||
-                 w[0] == "graphredo") {
+                 w[0] == "graphredo" || w[0] == "opengraph") {
             std::vector<std::string> a = {w[0]};
             a.insert(a.end(), w.begin() + 2, w.end());
             d.graphops.emplace_back(uint32_t(std::stoul(w.at(1))), a);
@@ -574,7 +575,8 @@ int run_app(const std::string& graph_path, RebuildFn rebuild, std::vector<std::s
         bool preview_mode = false;
         // строки сцены s в буфер камеры текущего графа: объекты, многообразие, слоты (если есть у графа), программы
         // байткода (у графа предпросмотра); камера, сошедшая с M, — проекция и касательный базис на CPU
-        auto write_scene_rows = [&](const geo4d::Scene& s, const std::vector<float>* progs) {
+        // cam_doc — камера из документа (открыт другой файл: подсказки файла, уже на M), иначе — текущая
+        auto write_scene_rows = [&](const geo4d::Scene& s, const std::vector<float>* progs, bool cam_doc = false) {
             auto orows = geo4d::object_rows(s), mrows = geo4d::manifold_rows(s);
             std::vector<float> srows;
             if (d.slot_base >= 0) {
@@ -603,7 +605,18 @@ int run_app(const std::string& graph_path, RebuildFn rebuild, std::vector<std::s
             geo4d::Vec4 g;
             const double fx = geo4d::sdf(s.mf, hc.x, &g);
             const double gn = std::sqrt(g[0] * g[0] + g[1] * g[1] + g[2] * g[2] + g[3] * g[3]);
-            if (!(std::fabs(fx) <= 1e-6 * s.mf.scale * gn)) {      // камера сошла с M
+            if (cam_doc) {                             // как холодный старт: make_camera по подсказкам файла, его fov
+                geo4d::Camera c = geo4d::make_camera(s.mf, s.cam, int(W), int(H), s.cam.fov);
+                for (int i = 0; i < 4; ++i) {
+                    R[i] = float(c.x[i]);
+                    R[4 + i] = float(c.f[i]);
+                    R[8 + i] = float(c.r[i]);
+                    R[12 + i] = float(c.u[i]);
+                }
+                R[16] = float(c.tf());                 // строки 4 и 6: tan(fov/2) и угловой размер пикселя
+                R[24] = float(c.theta_pix());
+                speed = float(s.speed);
+            } else if (!(std::fabs(fx) <= 1e-6 * s.mf.scale * gn)) {      // камера сошла с M
                 hc.x = geo4d::project(s.mf, hc.x);
                 geo4d::Camera c = geo4d::make_camera(s.mf, hc, 64, 64, 90.0);
                 for (int i = 0; i < 4; ++i) {
@@ -626,7 +639,8 @@ int run_app(const std::string& graph_path, RebuildFn rebuild, std::vector<std::s
             editor->set_flat(ef);
             force_edit = true;
         };
-        auto apply_params = [&](const CameraState& cam, bool commit, bool wait) {
+        // opened — открыт другой файл сцены: камера из него (DD-009: сразу, как прежнее «Открыть»), сборка — в фоне
+        auto apply_params = [&](const CameraState& cam, bool commit, bool wait, bool opened = false) {
             if (!editor) return;
             const auto t_apply = std::chrono::steady_clock::now();
             geo4d::Scene s;
@@ -650,7 +664,7 @@ int run_app(const std::string& graph_path, RebuildFn rebuild, std::vector<std::s
                 std::fflush(stdout);
             };
             if (!edit_mode && !d.is_preview && d.slot_base >= 0 && geo4d::structure_key(s) == d.slotkey) {
-                write_scene_rows(s, nullptr);
+                write_scene_rows(s, nullptr, opened);
                 done("применено без перекомпиляции", 1);
                 return;
             }
@@ -669,7 +683,7 @@ int run_app(const std::string& graph_path, RebuildFn rebuild, std::vector<std::s
                         switch_graph(prev_paths[(want == geo4d::kProgNarrowReg ? 0 : 2) + (objs ? 1 : 0)], true, false);
                         std::printf("preview_switch_ms %.1f\n", ms_since(t_sw));
                     }
-                    write_scene_rows(s, &progs);
+                    write_scene_rows(s, &progs, opened);
                     shown = true;
                     done("предпросмотр на интерпретаторе; быстрые шейдеры — в фоне", 2);
                 } catch (const std::exception& e) {
@@ -684,7 +698,8 @@ int run_app(const std::string& graph_path, RebuildFn rebuild, std::vector<std::s
             if (!shown) done("сборка шейдеров: структура графа изменилась", 0);
             else std::printf("params_apply {\"instant\": 0, \"ms\": %.2f}\n", ms_since(t_apply));
             std::fflush(stdout);
-            editor->rebuild_doc(doc_text, cam, wait);
+            if (opened) open_pending = true;
+            editor->rebuild_doc(doc_text, cam, wait, opened);
         };
         if (editor) panel.open(editor->config().scene_path);
         if (overlay) {
@@ -890,9 +905,10 @@ int run_app(const std::string& graph_path, RebuildFn rebuild, std::vector<std::s
                     else if (w[0] == "unlink") ok = panel.unlink(w.at(1), err);
                     else if (w[0] == "delnode") ok = panel.del_node(w.at(1), err);
                     else if (w[0] == "graphundo") panel.undo();
+                    else if (w[0] == "opengraph") { ok = panel.open(w.at(1)); err = panel.status(); }
                     else panel.redo();
                     if (!ok) throw std::runtime_error(w[0] + ": " + err);
-                    apply_params(camst, true, true);
+                    apply_params(camst, true, true, w[0] == "opengraph");
                 }
             for (auto& sp : d.setparams)               // сценарий: правка параметра графа (DD-011 §5)
                 if (sp.frame == frame && editor) {
@@ -902,7 +918,7 @@ int run_app(const std::string& graph_path, RebuildFn rebuild, std::vector<std::s
                 }
             if (params_pending && editor && !editor->rebuilding()) {
                 params_pending = false;
-                apply_params(camst, true, false);
+                apply_params(camst, true, !d.bench_in.empty());   // в сценарии — с ожиданием сборки (детерминированно)
             }
             for (auto& [fi, p] : d.edits)              // сценарий замера: правка объектов перед кадром
                 if (fi == frame) {
@@ -992,13 +1008,9 @@ int run_app(const std::string& graph_path, RebuildFn rebuild, std::vector<std::s
                     if (act.manifold_now || act.load_now) apply_scene(editor->pending_scene(), act.load_now);
                     if (act.toggle_edit) toggle_req = true;
                     if (act.structural && !edit_mode) enter_edit();      // форма/число объектов — в режиме редактирования
-                    const NodeEditor::Change pc = panel.draw(!edit_mode);
-                    if (pc.opened) {                   // другой файл: сборка по нему, камера — из файла
-                        editor->set_doc(panel.doc().dump(1) + "\n");
-                        dyn_path.clear();
-                        open_pending = true;
-                        editor->rebuild_doc(panel.doc().dump(1) + "\n", camst, false, true);
-                    } else if (pc.changed || pc.commit) apply_params(camst, pc.commit, false);
+                    const NodeEditor::Change pc = panel.draw(!edit_mode, camst.x, camst.f);
+                    if (pc.opened) apply_params(camst, true, false, true);   // другой файл: камера — из него
+                    else if (pc.changed || pc.commit) apply_params(camst, pc.commit, false);
                     if (!pc.save_path.empty()) {
                         editor->set_doc(panel.doc().dump(1) + "\n");
                         editor->save_scene(pc.save_path, camst);

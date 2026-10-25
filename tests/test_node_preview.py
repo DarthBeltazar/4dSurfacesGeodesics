@@ -24,8 +24,8 @@ RES = "160x90"
 
 
 def _scene(tmp_path, name):
-    if name == "two_wormholes":
-        return ROOT / "scenes" / "two_wormholes.json"
+    if (ROOT / "scenes" / f"{name}.json").exists():
+        return ROOT / "scenes" / f"{name}.json"
     doc = {"throats": sheets_doc, "csg": csg_doc}[name]()
     p = tmp_path / f"{name}.g4d"
     p.write_text(json.dumps(doc, ensure_ascii=False), encoding="utf-8")
@@ -69,8 +69,13 @@ def _close(a, b):
     return rel, frac
 
 
-@pytest.mark.parametrize("name", ["throats", "csg", "two_wormholes"])
+SCENES = sorted(p.stem for p in (ROOT / "scenes").glob("*.json"))
+
+
+@pytest.mark.parametrize("name", ["throats", "csg"] + SCENES)
 def test_interpreter_equals_native_preview(tmp_path, name):
+    """Все прежние виды (выход Эллиса, компактные пространства, плоские зоны) — ветви SCENE_DYNAMIC, на которых работают
+    графы предпросмотра, — и многообразия и объекты графа."""
     scene = _scene(tmp_path, name)
     _window(tmp_path / "nat", scene, 3, [1], "previewmode 0 on\n")
     _interp(tmp_path / "int", scene, 3, [1], objs=name == "csg")
@@ -149,3 +154,35 @@ def test_wide_program_uses_32_register_variant(tmp_path):
     assert r.returncode == 0, r.stdout + r.stderr
     rel, frac = _close(np.load(d / "Frame_1.npy"), np.load(tmp_path / "nat" / "Frame_1.npy"))
     assert rel < 1e-4 and frac < 0.01, (rel, frac)
+
+
+@pytest.mark.parametrize("target", ["S3", "ellis", "tiger"])
+def test_open_other_topology(tmp_path, target):
+    """«Открыть» в редакторе нод (директива opengraph): кадр открытия — предпросмотр на интерпретаторе новой сцены с её
+    камерой (= нативный предпросмотр её холодного старта), затем в фоне быстрый граф — кадры = холодный старт побитово."""
+    new = ROOT / "scenes" / f"{target}.json"
+    out = _window(tmp_path / "hot", ROOT / "scenes" / "two_wormholes.json", 10, [2, 9], f"opengraph 2 {new.as_posix()}\n")
+    assert 'params_apply {"instant": 2' in out and out.count("standalone_build") == 2
+    _window(tmp_path / "pv", new, 3, [1], "previewmode 0 on\n")
+    rel, frac = _close(np.load(tmp_path / "hot" / "Frame_2.npy"), np.load(tmp_path / "pv" / "Frame_1.npy"))
+    assert rel < 1e-4 and frac < 0.01, (rel, frac)
+    _window(tmp_path / "cold", new, 7, [6])                       # кадр 3 (после сборки) = кадр 0 холодного старта
+    for k in ("Frame", "Present"):
+        assert np.array_equal(np.load(tmp_path / "hot" / f"{k}_9.npy"), np.load(tmp_path / "cold" / f"{k}_6.npy")), k
+    # камера: у холодного старта кадр 0 — секция move, cam_step заново ортонормирует базис (нули → ~1e-9)
+    np.testing.assert_allclose(np.load(tmp_path / "hot" / "cam_9.npy"), np.load(tmp_path / "cold" / "cam_6.npy"), rtol=0, atol=1e-7)
+
+
+def test_change_manifold_kind_by_nodes(tmp_path):
+    """Смена вида многообразия нодами (удалить ноду многообразия, добавить S³, связать): камера проецируется на новое M
+    на CPU с касательным базисом, кадр предпросмотра сразу, затем быстрый граф."""
+    out = _window(tmp_path / "hot", ROOT / "scenes" / "two_wormholes.json", 8, [7],
+                  "delnode 2 manifold\naddnode 2 m2 mf.S3\nsetparam 2 m2 R 6.0\nlink 3 m2.out scene.manifold\n")   # в кадре: холст, затем setparam
+    assert out.count("standalone_build") == 2 and 'graph_switch {"kind": 3' in out
+    cam = np.load(tmp_path / "hot" / "cam_7.npy").astype(np.float64)
+    x, f, r, u = cam[:4]
+    assert abs(np.linalg.norm(x) - 6.0) < 1e-5                       # точка камеры — на S³ радиуса 6
+    B = np.stack([x / np.linalg.norm(x), f, r, u])
+    assert np.max(np.abs(B @ B.T - np.eye(4))) < 1e-5
+    # S³ — без фона, объекты двух горловин — на прежних листах (не на новом M): кадр чёрный, но конечный
+    assert np.isfinite(np.load(tmp_path / "hot" / "Frame_7.npy")).all()

@@ -241,7 +241,7 @@ bool NodeEditor::del_node(const std::string& id, std::string& err) {
 }
 
 // инспектор выбранной ноды: ползунки параметров (диапазоны из библиотеки); числа — сразу, «*» — меняют шейдер
-NodeEditor::Change NodeEditor::inspector(bool enabled) {
+NodeEditor::Change NodeEditor::inspector(bool enabled, const float* cam_x, const float* cam_f) {
     Change ch;
     nlohmann::json* n = nullptr;
     for (auto& x : nodes())
@@ -310,6 +310,24 @@ NodeEditor::Change NodeEditor::inspector(bool enabled) {
         if (ImGui::IsItemDeactivatedAfterEdit() || (changed && p.type == "int")) ch.commit = true;
     }
     ImGui::PopItemWidth();
+    // центр формы (vec4 c): поставить перед камерой (x + 2f; «на M» спроецирует) или на другой лист (w → −w)
+    if (const NodeParamDef* pc = def->param("c"); pc && pc->type == "vec4") {
+        nlohmann::json c = params.contains("c") ? params["c"] : pc->def;
+        if (cam_x && cam_f && ImGui::Button("перед камерой")) {
+            snapshot();
+            params["c"] = {cam_x[0] + 2.0 * cam_f[0], cam_x[1] + 2.0 * cam_f[1], cam_x[2] + 2.0 * cam_f[2], cam_x[3] + 2.0 * cam_f[3]};
+            dirty_ = true;
+            ch.changed = ch.commit = true;
+        }
+        ImGui::SameLine();
+        if (c.is_array() && c.size() == 4 && ImGui::Button("на другой лист")) {
+            snapshot();
+            c[3] = -c[3].get<double>();
+            params["c"] = c;
+            dirty_ = true;
+            ch.changed = ch.commit = true;
+        }
+    }
     ImGui::PopID();
     if (def->type != "out.scene" && ImGui::Button("удалить ноду")) {
         std::string err;
@@ -330,7 +348,7 @@ std::string NodeEditor::object_node(int k) const {
     return "";
 }
 
-NodeEditor::Change NodeEditor::draw(bool enabled) {
+NodeEditor::Change NodeEditor::draw(bool enabled, const float* cam_x, const float* cam_f) {
     Change ch;
     if (!ImGui::Begin("Граф")) {
         ImGui::End();
@@ -541,7 +559,7 @@ NodeEditor::Change NodeEditor::draw(bool enabled) {
     ImGui::EndChild();
     ImGui::SameLine();
     ImGui::BeginChild("inspector", ImVec2(0, 0), ImGuiChildFlags_Borders);
-    Change ci = inspector(enabled);
+    Change ci = inspector(enabled, cam_x, cam_f);
     ImGui::EndChild();
     ImGui::End();
     ch.changed = ch.changed || ci.changed;

@@ -32,8 +32,8 @@ public:
         bool opened = false;                      // открыт другой файл сцены (камера — из него)
         std::string save_path;                    // сохранить документ с текущей камерой сюда
     };
-    // окно «Граф»: холст и инспектор; enabled = false — только просмотр
-    Change draw(bool enabled);
+    // окно «Граф»: холст и инспектор; enabled = false — только просмотр; cam_x, cam_f — камера (кнопка «перед камерой»)
+    Change draw(bool enabled, const float* cam_x = nullptr, const float* cam_f = nullptr);
     // сценарий: setparam — число или вектор; addnode / link / unlink / delnode — как действия на холсте
     bool set(const std::string& node, const std::string& param, const std::vector<double>& v, std::string& err);
     bool add_node(const std::string& id, const std::string& type, std::string& err);
@@ -64,5 +64,5 @@ private:
     void layout_missing();                        // ui.pos нодам без положения
     nlohmann::json& nodes() { return doc_["graphs"]["main"]["nodes"]; }
     nlohmann::json& links() { return doc_["graphs"]["main"]["links"]; }
-    Change inspector(bool enabled);
+    Change inspector(bool enabled, const float* cam_x, const float* cam_f);
 };
