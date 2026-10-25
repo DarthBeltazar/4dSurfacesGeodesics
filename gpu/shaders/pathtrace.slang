@@ -109,13 +109,15 @@ float obj_r(int k) { return OBJ_ROW(OBJ_BASE + 14 + 6 * k).x; }        // рад
 #if PT_DYNAMIC
 #define PT_N pt_nobj()
 bool pt_isplane(int k) { return obj_pl(k).x != 0; }
-// 4D SDF объекта k по виду из строк (geo4d.objects: ball4, torus_in_sheet, halfspace)
+// 4D SDF объекта k по виду из строк (geo4d.objects: ball4, torus_in_sheet, halfspace; 3 — составная форма графа,
+// программа байткода в области программ, DD-011 §6)
 __generic<T : IReal> T obj_g(int k, T x, T y, T z, T w)
 {
     float4 c = obj_c(k), s = obj_s(k);
     int kind = int(s.x);
     if (kind == 0) return jlength4(x - c.x, y - c.y, z - c.z, w - c.w) - s.y;
     if (kind == 1) return jlength3(jlength2(x - c.x, y - c.y) - s.y, z - c.z, w - c.w) - s.z;
+    if (kind == 3) return prog_eval(int(gCam[PROG_DIR + k].x), x, y, z, w);
     int ax = int(s.y);
     T p = w;
     if (ax == 0) p = x;

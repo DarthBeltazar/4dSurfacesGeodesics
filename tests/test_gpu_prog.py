@@ -34,9 +34,10 @@ def test_program_matches_shape_cpu():
 def test_program_gpu_jets():
     sh, P32, W32 = _points()
     prog = B.two_compact_program()
-    cam = np.zeros((G.MF_BASE + G.MF_ROWS + len(prog), 4), np.float32)
+    region = G.prog_region(prog)
+    cam = np.zeros((G.PROG_BASE + len(region), 4), np.float32)
     cam[G.MF_BASE, 0] = gpu.SCENE_IDS["two_compact_wh"]
-    cam[G.MF_BASE + G.MF_ROWS:] = prog
+    cam[G.PROG_BASE:] = region
     spv = gpu.compile_shader("prog_u1.slang", "prog_u1", {"SCENE": gpu.SCENE_IDS["dynamic"], "MF_PROG": 1})
     out, _ = gpu.run(spv, "prog_u1", [("in", cam), ("in", P32), ("in", W32), ("out", ("f4", (N * 8, 4)))],
                      push=[("u32", N)], groups=gpu.groups_for(N))

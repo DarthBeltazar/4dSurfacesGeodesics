@@ -86,32 +86,34 @@ float3 mf_c1() { return gCam[MF_BASE + 2].xyz; }
 float3 mf_c2() { return gCam[MF_BASE + 3].xyz; }
 float mf_env_scale() { return gCam[MF_BASE + 4].w; }
 
-#ifdef MF_PROG
-// Проба интерпретатора (docs/design/concept-standalone-nodes.md, п. 3): f — программа-байткод geo4d.bytecode в строках
-// с PROG_BASE (вид в строке MF_BASE по-прежнему задаёт hcap, SCALE и выход). Инструкция:
-// (op + 256·dst + 65536·a, b + 256·c, k, 0). Программа одна на диспетчеризацию — ветвление по op однородно.
-// Над jet-числами — четыре пути: унарная функция (M4: значение и две производные считаются скалярно по op, затем
-// одна операция unary), a ± b, a·b и выбор по значению (M6). Деление и smin раскладывает ассемблер (geo4d.bytecode).
-static const int PROG_BASE = MF_BASE + 7;
+// Интерпретатор байткода (DD-011 §6; программы строит gpu/src/bytecode.cpp, кодировка — geo4d.bytecode): программа
+// с строки base — (n, регистров, 0, 0), затем n инструкций (op + 256·dst + 65536·a, b + 256·c, k, 0). Программа одна
+// на диспетчеризацию — ветвление по op однородно. Над jet-числами — четыре пути: унарная функция (M4: значение и две
+// производные считаются скалярно по op, затем одна операция unary), a ± b, a·b и выбор по значению (M6).
+// Область программ (codegen.hpp kProgBase, bytecode.hpp): PROG_BASE — (число шаров кривизны, 0, 0, 0); +1…+16 — их
+// центры; +17…+48 — строка начала программы объекта k (вид 3, составная форма); +49 — программа многообразия (MF_PROG).
+static const int PROG_BASE = MF_BASE + 7 + 256;   // после строк многообразия и слотов (DD-011 §5)
+static const int PROG_DIR = PROG_BASE + 17;
+static const int PROG_MF = PROG_BASE + 49;
 #ifndef PROG_NREG
-#define PROG_NREG 16
+#define PROG_NREG 32                       // bytecode.hpp kProgMaxReg
 #endif
-__generic<T : IReal> T sdf(T x, T y, T z, T w)
+__generic<T : IReal> T prog_eval(int base, T x, T y, T z, T w)
 {
     T r[PROG_NREG];
     r[0] = x; r[1] = y; r[2] = z; r[3] = w;
-#ifdef PROG_CONST_ROWS                    // вариант пробы: та же программа константным массивом (не из буфера)
+#ifdef PROG_CONST_ROWS                    // вариант пробы: программа многообразия константным массивом (не из буфера)
     static const float4 kProg[] = { PROG_CONST_ROWS };
     int n = int(kProg[0].x);
 #else
-    int n = int(gCam[PROG_BASE].x);
+    int n = int(gCam[base].x);
 #endif
     for (int i = 0; i < n; i++)
     {
 #ifdef PROG_CONST_ROWS
         float4 ins = kProg[1 + i];
 #else
-        float4 ins = gCam[PROG_BASE + 1 + i];
+        float4 ins = gCam[base + 1 + i];
 #endif
         uint e0 = uint(ins.x), e1 = uint(ins.y);
         uint op = e0 & 255u, d = (e0 >> 8) & 255u, ia = e0 >> 16, ib = e1 & 255u, ic = e1 >> 8;
@@ -168,6 +170,18 @@ __generic<T : IReal> T sdf(T x, T y, T z, T w)
     }
     return r[0];
 }
+// центр шара кривизны i (M29): у многообразия-программы — из области программ (любое число), иначе — c₁, c₂
+float3 mf_ball(int i)
+{
+#ifdef MF_PROG
+    return gCam[PROG_BASE + 1 + i].xyz;
+#else
+    return i == 0 ? mf_c1() : mf_c2();
+#endif
+}
+
+#ifdef MF_PROG
+__generic<T : IReal> T sdf(T x, T y, T z, T w) { return prog_eval(PROG_MF, x, y, z, w); }
 #else
 __generic<T : IReal> T sdf(T x, T y, T z, T w)
 {
@@ -195,6 +209,15 @@ float hcap(float4 q)
     if (k == SCENE_ELLIS) return 0.5 * length(q.xyz);
     if (k == SCENE_COMPACT) return max(length(q.xyz) - p.y, 0.25 * p.x);
     if (k == SCENE_TWO_COMPACT) return max(min(length(q.xyz - mf_c1()), length(q.xyz - mf_c2())) - p.y, 0.25 * p.x);
+#ifdef MF_PROG
+    int nb = int(gCam[PROG_BASE].x);                    // многообразие графа (листы с горловинами, M35)
+    if (k == SCENE_GRAPH && nb > 0)
+    {
+        float d = 1e30;
+        for (int i = 0; i < nb; i++) d = min(d, length(q.xyz - mf_ball(i)));
+        return max(d - gCam[MF_BASE + 4].z, 0.25 * SCALE);
+    }
+#endif
     return SCALE;
 }
 

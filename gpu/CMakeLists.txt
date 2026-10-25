@@ -19,6 +19,7 @@ add_executable(geo4d_gpu
   src/shader_compiler.cpp
   src/memfs.cpp
   src/expr.cpp
+  src/bytecode.cpp
   src/scene_graph.cpp
 )
 if(WIN32)

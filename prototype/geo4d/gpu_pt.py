@@ -31,6 +31,19 @@ OBJ_BASE = 8                       # первая строка: (n_obj, n_light,
 OBJ_ROWS = 9 + 6 * PT_MAXOBJ       # объект k — строки 17 + 6k …: центр, вид, PL, альбедо, излучение, граница
 MF_BASE = OBJ_BASE + OBJ_ROWS      # DD-009: строки многообразия (scenes.slang, SCENE_DYNAMIC) — после строк объектов
 MF_ROWS = 7
+SLOT_ROWS = 256                    # DD-011 §5: слоты параметров графа (codegen.hpp kMaxSlotRows)
+PROG_BASE = MF_BASE + MF_ROWS + SLOT_ROWS   # DD-011 §6: область программ байткода (scenes.slang PROG_BASE)
+PROG_MF = PROG_BASE + 49           # программа многообразия (MF_PROG)
+
+
+def prog_region(rows, balls=()):
+    """Область программ с PROG_BASE (bytecode.hpp): число и центры шаров кривизны, начала программ объектов (нет),
+    программа многообразия."""
+    R = np.zeros((PROG_MF - PROG_BASE, 4))
+    R[0, 0] = len(balls)
+    for i, c in enumerate(balls):
+        R[1 + i, :3] = c
+    return gpu.f32(np.concatenate([R, np.asarray(rows, np.float64)]))
 
 
 def object_rows(scene: Scene):
@@ -104,7 +117,7 @@ def scene_header(scene: Scene, dynamic=False) -> str:
     if dynamic:                    # строки MF_BASE + 2…4 (scenes.slang, SCENE_DYNAMIC)
         L += ["#define PT_FLAT_DYNAMIC 1", "#define PT_HAS_FLAT (int(gCam[MF_BASE + 4].x))",
               "#define PT_NBALL (int(gCam[MF_BASE + 4].y))", "#define PT_RHO0 (gCam[MF_BASE + 4].z)",
-              "float3 pt_ball_c(int i) { return i == 0 ? mf_c1() : mf_c2(); }"]
+              "float3 pt_ball_c(int i) { return mf_ball(i); }"]
         return "\n".join(L) + "\n"
     L.append("#define PT_FLAT_DYNAMIC 0")
     if fz is not None:
@@ -429,8 +442,9 @@ def app_graph(scene: Scene, cam, td, p: GPUPT = GPUPT(), nfb_move=8, speed=1.0, 
     pfb = GPUPT(**{**p.__dict__, "seed": p.seed + 7919})
     sfx = "_dyn" if dynamic else ""              # у графа режима редактирования — свой фон (процедурный)
     camb = pt_camera_buffer(scene, cam, k_grad, 0.0, det, 0, cube.shape[2], env=env)
-    if pdefs:
-        camb = np.concatenate([camb, gpu.f32(prog[0])])
+    if pdefs:                                    # область программ — с PROG_BASE (после слотов)
+        pad = np.zeros((PROG_BASE - len(camb), 4), np.float32)
+        camb = np.concatenate([camb, pad, prog_region(prog[0], scene.flat.centers if scene.flat is not None else ())])
     np.save(td / f"cam{sfx}.npy", camb)
     np.save(td / f"env{sfx}.npy", envb)
     np.save(td / f"cube{sfx}.npy", gpu.f32(cube))

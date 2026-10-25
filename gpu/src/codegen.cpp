@@ -343,7 +343,7 @@ std::string scene_header(const Scene& sc, bool dynamic, bool graph) {
     if (dynamic) {
         L.insert(L.end(), {"#define PT_FLAT_DYNAMIC 1", "#define PT_HAS_FLAT (int(gCam[MF_BASE + 4].x))",
                            "#define PT_NBALL (int(gCam[MF_BASE + 4].y))", "#define PT_RHO0 (gCam[MF_BASE + 4].z)",
-                           "float3 pt_ball_c(int i) { return i == 0 ? mf_c1() : mf_c2(); }"});
+                           "float3 pt_ball_c(int i) { return mf_ball(i); }"});
         return join(L, "\n") + "\n";
     }
     const FlatZones& fz = sc.mf.flat;
