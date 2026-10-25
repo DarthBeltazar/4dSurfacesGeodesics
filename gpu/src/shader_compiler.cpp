@@ -1,12 +1,16 @@
 // Компиляция шейдеров в процессе (DD-010, шаг 2) — см. shader_compiler.hpp.
 #include "shader_compiler.hpp"
 
+#ifdef GEO4D_SLANG_API
 #include <slang.h>
 #include <slang-com-ptr.h>
+#endif
 
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <cstdlib>
+#include <fstream>
 #include <mutex>
 #include <thread>
 
@@ -16,9 +20,18 @@
 
 namespace geo4d {
 
+#ifdef GEO4D_SLANG_API
+using SessionPtr = Slang::ComPtr<slang::IGlobalSession>;
+#else
+struct SessionPtr {                               // без Slang API — процесс slangc (сессии нет)
+    bool ok = false;
+    explicit operator bool() const { return ok; }
+};
+#endif
+
 struct ShaderCompiler::Impl {
     int threads = 1;
-    std::vector<Slang::ComPtr<slang::IGlobalSession>> sessions;
+    std::vector<SessionPtr> sessions;
     std::vector<double> session_s;
     std::mutex call;                              // compile() — по одному вызову за раз
 };
@@ -29,35 +42,26 @@ double since(std::chrono::steady_clock::time_point t) {
     return std::chrono::duration<double>(std::chrono::steady_clock::now() - t).count();
 }
 
-ShaderResult compile_one(slang::IGlobalSession* gs, const ShaderJob& j) {
-    ShaderResult r;
-    auto t0 = std::chrono::steady_clock::now();
-    // аргументы — как у geo4d.gpu.compile_shader; -o — во временный файл рядом (то же расширение .spv), затем
-    // переименование: параллельные процессы с тем же ключом не видят недописанный файл. Код из запроса
-    // (getEntryPointCodeBlob) в режиме командной строки недоступен — падение, проверено.
-    fs::create_directories(j.out.parent_path());
-    fs::path tmp = j.out.parent_path() /
-                   (j.out.stem().string() + ".tmp" + std::to_string(std::hash<std::thread::id>{}(std::this_thread::get_id())) + ".spv");
+// аргументы geo4d.gpu.compile_shader; out — файл -o
+std::vector<std::string> slang_args(const ShaderJob& j, const fs::path& out) {
     std::vector<std::string> args = {u8(j.source), "-target", "spirv", "-profile", "spirv_1_6", "-entry", j.entry,
-                                     "-fvk-use-entrypoint-name", "-O2", "-o", u8(tmp)};
+                                     "-fvk-use-entrypoint-name", "-O2", "-o", u8(out)};
     for (auto& [k, v] : j.defs) args.push_back("-D" + k + "=" + v);
     if (!j.include.empty()) {
         args.push_back("-I");
         args.push_back(u8(j.include));
     }
-    std::vector<const char*> argv;
-    for (auto& a : args) argv.push_back(a.c_str());
-    Slang::ComPtr<slang::ICompileRequest> req;
-    if (SLANG_FAILED(gs->createCompileRequest(req.writeRef()))) {
-        r.log = "Slang: не создан запрос компиляции";
-        return r;
-    }
-    req->setCommandLineCompilerMode();            // как slangc: запрос сам пишет файлы -o
-    SlangResult res = req->processCommandLineArguments(argv.data(), int(argv.size()));
-    if (SLANG_SUCCEEDED(res)) res = req->compile();
-    if (const char* d = req->getDiagnosticOutput()) r.log = d;
+    return args;
+}
+
+fs::path tmp_spv(const ShaderJob& j) {
+    return j.out.parent_path() /
+           (j.out.stem().string() + ".tmp" + std::to_string(std::hash<std::thread::id>{}(std::this_thread::get_id())) + ".spv");
+}
+
+ShaderResult finish(ShaderResult r, const ShaderJob& j, const fs::path& tmp, bool ok, std::chrono::steady_clock::time_point t0) {
     std::error_code ec;
-    if (SLANG_FAILED(res) || !fs::exists(tmp)) {
+    if (!ok || !fs::exists(tmp)) {
         if (r.log.empty()) r.log = "Slang: ошибка компиляции " + j.entry;
         fs::remove(tmp, ec);
         r.seconds = since(t0);
@@ -69,6 +73,52 @@ ShaderResult compile_one(slang::IGlobalSession* gs, const ShaderJob& j) {
     r.seconds = since(t0);
     return r;
 }
+
+#ifndef GEO4D_SLANG_API
+// процесс slangc: GEO4D_SLANGC или slangc из PATH; диагностика — в файл рядом
+ShaderResult compile_one(SessionPtr&, const ShaderJob& j) {
+    ShaderResult r;
+    auto t0 = std::chrono::steady_clock::now();
+    fs::create_directories(j.out.parent_path());
+    fs::path tmp = tmp_spv(j), log = tmp;
+    log += ".log";
+    const char* sc = std::getenv("GEO4D_SLANGC");
+    std::string cmd = "\"" + std::string(sc ? sc : "slangc") + "\"";
+    for (auto& a : slang_args(j, tmp)) cmd += " \"" + a + "\"";
+    cmd += " > \"" + u8(log) + "\" 2>&1";
+#ifdef _WIN32
+    cmd = "\"" + cmd + "\"";                       // cmd /c снимает внешние кавычки
+#endif
+    int rc = std::system(cmd.c_str());
+    if (std::ifstream f{log}) r.log.assign(std::istreambuf_iterator<char>(f), std::istreambuf_iterator<char>());
+    std::error_code ec;
+    fs::remove(log, ec);
+    return finish(r, j, tmp, rc == 0, t0);
+}
+#else
+ShaderResult compile_one(SessionPtr& gs, const ShaderJob& j) {
+    ShaderResult r;
+    auto t0 = std::chrono::steady_clock::now();
+    // аргументы — как у geo4d.gpu.compile_shader; -o — во временный файл рядом (то же расширение .spv), затем
+    // переименование: параллельные процессы с тем же ключом не видят недописанный файл. Код из запроса
+    // (getEntryPointCodeBlob) в режиме командной строки недоступен — падение, проверено.
+    fs::create_directories(j.out.parent_path());
+    fs::path tmp = tmp_spv(j);
+    std::vector<std::string> args = slang_args(j, tmp);
+    std::vector<const char*> argv;
+    for (auto& a : args) argv.push_back(a.c_str());
+    Slang::ComPtr<slang::ICompileRequest> req;
+    if (SLANG_FAILED(gs->createCompileRequest(req.writeRef()))) {
+        r.log = "Slang: не создан запрос компиляции";
+        return r;
+    }
+    req->setCommandLineCompilerMode();            // как slangc: запрос сам пишет файлы -o
+    SlangResult res = req->processCommandLineArguments(argv.data(), int(argv.size()));
+    if (SLANG_SUCCEEDED(res)) res = req->compile();
+    if (const char* d = req->getDiagnosticOutput()) r.log = d;
+    return finish(r, j, tmp, SLANG_SUCCEEDED(res), t0);
+}
+#endif
 
 }  // namespace
 
@@ -103,6 +153,7 @@ std::vector<ShaderResult> ShaderCompiler::compile(const std::vector<ShaderJob>& 
     auto worker = [&](int w) {
         for (size_t q; (q = next.fetch_add(1)) < todo.size();) {
             auto& gs = impl_->sessions[w];
+#ifdef GEO4D_SLANG_API
             if (!gs) {
                 auto t0 = std::chrono::steady_clock::now();
                 SlangGlobalSessionDesc desc = {};
@@ -112,7 +163,8 @@ std::vector<ShaderResult> ShaderCompiler::compile(const std::vector<ShaderJob>& 
                 }
                 impl_->session_s[w] = since(t0);
             }
-            out[todo[q]] = compile_one(gs.get(), jobs[todo[q]]);
+#endif
+            out[todo[q]] = compile_one(gs, jobs[todo[q]]);
             out[todo[q]].worker = w;
         }
     };

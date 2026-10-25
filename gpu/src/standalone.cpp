@@ -143,7 +143,7 @@ int run_standalone(int argc, char** argv) {
     auto builder = std::make_shared<Builder>();
     builder->d = default_dirs(argv[0]);
     std::vector<std::string> args(argv + 1, argv + argc);
-    std::string scene = u8(builder->d.root / "scenes" / "two_wormholes.json");
+    std::string scene = u8(builder->d.scenes / "two_wormholes.json");
     if (!args.empty() && args[0].rfind("--", 0) != 0) {
         scene = args[0];
         args.erase(args.begin());

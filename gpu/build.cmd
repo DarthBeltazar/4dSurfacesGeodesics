@@ -6,6 +6,8 @@ setlocal
 set PRESET=release
 if /I "%1"=="Debug" set PRESET=debug
 call "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvars64.bat" >nul || exit /b 1
+rem English compiler messages: Ninja reads header dependencies from /showIncludes ("Note: including file:")
+set VSLANG=1033
 set CMAKE=%LOCALAPPDATA%\Programs\CLion\bin\cmake\win\x64\bin\cmake.exe
 set NINJA=%LOCALAPPDATA%\Programs\CLion\bin\ninja\win\x64\ninja.exe
 pushd "%~dp0.."

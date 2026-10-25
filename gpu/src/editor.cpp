@@ -1,5 +1,9 @@
-// Редактор сцен (DD-008) — см. editor.hpp.
+// Редактор сцен (DD-008) — см. editor.hpp. DD-010: строки объектов и многообразия, правило M34 и чтение файла сцены —
+// через модель окна (scene.hpp, codegen.hpp): одна упаковка для холодного старта и правок в окне.
 #include "editor.hpp"
+
+#include "codegen.hpp"
+#include "scene.hpp"
 
 #include <imgui.h>
 
@@ -27,124 +31,86 @@ bool is_compact_space(const std::string& kind) {
     return false;
 }
 
-// ---- JSON (только то, что пишет geo4d.scenefile.save / scene_json) ------------------------------------
+// ---- преобразования модели редактора (float) ↔ модель окна (double, scene.hpp) -----------------------------
 
-struct JVal {
-    enum T { Null, Bool, Num, Str, Arr, Obj } t = Null;
-    double n = 0;
-    bool b = false;
-    std::string s;
-    std::vector<JVal> a;
-    std::vector<std::pair<std::string, JVal>> o;
-    const JVal* get(const std::string& k) const {
-        for (auto& [key, v] : o) if (key == k) return &v;
-        return nullptr;
-    }
-};
+geo4d::Params to_params(const std::vector<ManifoldParam>& ps) {
+    geo4d::Params p;
+    for (auto& x : ps) p.emplace_back(x.key, std::vector<double>(x.v.begin(), x.v.end()));
+    return p;
+}
 
-struct JParser {
-    const std::string& t;
-    size_t i = 0;
-    [[noreturn]] void fail(const char* what) const {
-        throw std::runtime_error(std::string("JSON: ") + what + " (символ " + std::to_string(i) + ")");
-    }
-    void ws() { while (i < t.size() && std::isspace(static_cast<unsigned char>(t[i]))) ++i; }
-    bool lit(const char* w) {
-        size_t n = std::strlen(w);
-        if (t.compare(i, n, w) != 0) return false;
-        i += n;
-        return true;
-    }
-    std::string str() {
-        if (t[i] != '"') fail("ожидалась строка");
-        std::string out;
-        for (++i; i < t.size() && t[i] != '"'; ++i) {
-            if (t[i] != '\\') { out += t[i]; continue; }
-            if (++i >= t.size()) fail("строка оборвана");
-            char e = t[i];
-            if (e == 'n') out += '\n';
-            else if (e == 't') out += '\t';
-            else if (e == 'u') {                   // \uXXXX → UTF-8 (без суррогатных пар: имена объектов)
-                if (i + 4 >= t.size()) fail("\\u оборвано");
-                unsigned cp = unsigned(std::stoul(t.substr(i + 1, 4), nullptr, 16));
-                i += 4;
-                if (cp < 0x80) out += char(cp);
-                else if (cp < 0x800) { out += char(0xC0 | (cp >> 6)); out += char(0x80 | (cp & 0x3F)); }
-                else { out += char(0xE0 | (cp >> 12)); out += char(0x80 | ((cp >> 6) & 0x3F)); out += char(0x80 | (cp & 0x3F)); }
-            } else out += e;
-        }
-        if (i >= t.size()) fail("строка оборвана");
-        ++i;
-        return out;
-    }
-    JVal val() {
-        ws();
-        if (i >= t.size()) fail("неожиданный конец");
-        JVal v;
-        char c = t[i];
-        if (c == '{') {
-            v.t = JVal::Obj;
-            ++i;
-            ws();
-            if (t[i] == '}') { ++i; return v; }
-            for (;;) {
-                ws();
-                std::string k = str();
-                ws();
-                if (t[i++] != ':') fail("ожидалось ':'");
-                v.o.emplace_back(k, val());
-                ws();
-                if (t[i] == ',') { ++i; continue; }
-                if (t[i++] != '}') fail("ожидалось '}'");
-                return v;
-            }
-        }
-        if (c == '[') {
-            v.t = JVal::Arr;
-            ++i;
-            ws();
-            if (t[i] == ']') { ++i; return v; }
-            for (;;) {
-                v.a.push_back(val());
-                ws();
-                if (t[i] == ',') { ++i; continue; }
-                if (t[i++] != ']') fail("ожидалось ']'");
-                return v;
-            }
-        }
-        if (c == '"') { v.t = JVal::Str; v.s = str(); return v; }
-        if (lit("true")) { v.t = JVal::Bool; v.b = true; return v; }
-        if (lit("false")) { v.t = JVal::Bool; return v; }
-        if (lit("null")) return v;
-        char* end = nullptr;
-        v.n = std::strtod(t.c_str() + i, &end);
-        if (end == t.c_str() + i) fail("ожидалось значение");
-        i = size_t(end - t.c_str());
-        v.t = JVal::Num;
-        return v;
-    }
-};
+geo4d::FlatZones to_flat(const EdFlat& f) {
+    geo4d::FlatZones z;
+    z.has = f.has;
+    z.sheets.assign(f.sheets.begin(), f.sheets.end());
+    for (auto& b : f.balls) z.centers.push_back({b[0], b[1], b[2]});
+    z.rho0 = f.rho0;
+    return z;
+}
 
-double jnum(const JVal* v, double dflt) { return v && v->t == JVal::Num ? v->n : dflt; }
-std::string jstr(const JVal* v, const std::string& dflt) { return v && v->t == JVal::Str ? v->s : dflt; }
-void jvec(const JVal* v, float* out, int n) {        // нет — оставить значение по умолчанию
-    if (!v || v->t != JVal::Arr) return;
-    if (int(v->a.size()) != n) throw std::runtime_error("JSON: ожидался вектор из " + std::to_string(n) + " чисел");
-    for (int k = 0; k < n; ++k) out[k] = float(jnum(&v->a[k], 0));
+EdFlat from_flat(const geo4d::FlatZones& z) {
+    EdFlat f;
+    f.has = z.has;
+    for (double s : z.sheets) f.sheets.push_back(float(s));
+    for (auto& c : z.centers) f.balls.push_back({float(c[0]), float(c[1]), float(c[2])});
+    f.rho0 = float(z.rho0);
+    return f;
+}
+
+std::vector<float> to_f(const std::vector<double>& v) {
+    std::vector<float> r;
+    for (double x : v) r.push_back(float(x));
+    return r;
+}
+
+const char* kGeoms[] = {"ball4", "torus", "plane"};
+const char* kMats[] = {"diffuse", "metal", "emit"};
+
+geo4d::Object to_object(const EdObject& e) {
+    geo4d::Object o;
+    o.name = e.name;
+    o.kind = kGeoms[e.geom];
+    for (int i = 0; i < 4; ++i) o.center[i] = e.c[i];
+    if (e.geom == 0) o.r = e.a;
+    else if (e.geom == 1) { o.R = e.a; o.r = e.b; }
+    o.axis = e.axis;
+    o.offset = e.offset;
+    o.sign = e.sign;
+    o.on_M = e.on_M;
+    o.mat.kind = kMats[e.mat];
+    for (int i = 0; i < 3; ++i) { o.mat.albedo[i] = e.albedo[i]; o.mat.emit[i] = e.emit[i]; }
+    o.mat.rough = e.rough;
+    return o;
+}
+
+EdObject from_object(const geo4d::Object& o) {
+    EdObject e;
+    e.name = o.name;
+    std::replace(e.name.begin(), e.name.end(), ' ', '_');
+    e.geom = o.kind == "ball4" ? 0 : o.kind == "torus" ? 1 : 2;
+    for (int i = 0; i < 4; ++i) e.c[i] = float(o.center[i]);
+    if (e.geom == 0) e.a = float(o.r);
+    else if (e.geom == 1) { e.a = float(o.R); e.b = float(o.r); }
+    e.axis = o.axis;
+    e.offset = float(o.offset);
+    e.sign = float(o.sign);
+    e.on_M = o.on_M;
+    e.mat = o.mat.kind == "diffuse" ? 0 : o.mat.kind == "metal" ? 1 : 2;
+    for (int i = 0; i < 3; ++i) { e.albedo[i] = float(o.mat.albedo[i]); e.emit[i] = float(o.mat.emit[i]); }
+    e.rough = float(o.mat.rough);
+    return e;
 }
 
 }  // namespace
 
-// параметры по умолчанию — как geo4d.scenefile.MANIFOLDS
+// параметры по умолчанию — как geo4d.scenefile.MANIFOLDS (scene.cpp); неизвестный вид — пусто
 std::vector<ManifoldParam> default_params(const std::string& kind) {
-    if (kind == "S3") return {{"R", {1.0f}}};
-    if (kind == "spheritorus" || kind == "torisphere") return {{"R", {1.0f}}, {"r", {0.4f}}};
-    if (kind == "tiger") return {{"R1", {1.2f}}, {"R2", {0.8f}}, {"r", {0.3f}}};
-    if (kind == "ellis") return {{"b", {1.0f}}};
-    if (kind == "compact_wh") return {{"b", {1.0f}}, {"rho0", {3.0f}}, {"W", {1.5f}}};
-    if (kind == "two_compact_wh")
-        return {{"c1", {-4, 0, 0}}, {"c2", {4, 0, 0}}, {"b", {1.0f}}, {"rho0", {3.0f}}, {"W", {1.5f}}};
-    return {};
+    std::vector<ManifoldParam> out;
+    try {
+        for (auto& [k, v] : geo4d::default_params(kind)) out.push_back({k, to_f(v)});
+    } catch (const std::exception&) {
+    }
+    return out;
 }
 
 namespace {
@@ -191,163 +157,41 @@ std::string manifold_key(const std::string& kind, const std::vector<ManifoldPara
 
 ManifoldInfo manifold_info(const std::string& kind, const std::vector<ManifoldParam>& params, const std::string& env) {
     ManifoldInfo mi;
-    static const std::pair<const char*, int> ids[] = {{"hyperplane", 0}, {"S3", 1}, {"spheritorus", 5}, {"torisphere", 6},
-                                                      {"tiger", 7}, {"ellis", 8}, {"compact_wh", 9}, {"two_compact_wh", 10}};
-    int id = -1;
-    for (auto& [k, v] : ids) if (kind == k) id = v;
-    if (id < 0) { mi.err = "нет многообразия " + kind; return mi; }
-    auto p = default_params(kind);
-    for (auto& x : params)
-        for (auto& q : p)
-            if (q.key == x.key && q.v.size() == x.v.size()) q.v = x.v;
-    auto P = [&](const char* k) -> const std::vector<float>& {
-        for (auto& q : p) if (q.key == k) return q.v;
-        throw std::logic_error(k);
-    };
-    auto v = [&](const char* k) { return P(k)[0]; };
-    // geo4d.scenefile.check_params
-    bool ok = true;
-    std::string why;
-    if (kind == "S3") { ok = v("R") > 0; why = "R > 0"; }
-    else if (kind == "spheritorus" || kind == "torisphere") { ok = v("R") > 0 && v("r") > 0 && v("r") < v("R"); why = "0 < r < R"; }
-    else if (kind == "tiger") {
-        ok = v("R1") > 0 && v("R2") > 0 && v("r") > 0 && v("r") < v("R1") && v("r") < v("R2");
-        why = "0 < r < R1, R2";
-    } else if (kind == "ellis") { ok = v("b") > 0; why = "b > 0"; }
-    else if (kind == "compact_wh" || kind == "two_compact_wh") {
-        ok = v("b") > 0 && v("rho0") > 0 && v("W") > 0 && v("b") < v("rho0");
-        why = "0 < b < ρ₀, W > 0";
-        if (ok && kind == "two_compact_wh") {
-            double d2 = 0;
-            for (int i = 0; i < 3; ++i) d2 += double(P("c1")[i] - P("c2")[i]) * double(P("c1")[i] - P("c2")[i]);
-            ok = std::sqrt(d2) > 2.0 * v("rho0");
-            why = "|c₁ − c₂| > 2ρ₀";
-        }
+    try {
+        geo4d::Scene sc;
+        sc.mf = geo4d::make_manifold(kind, to_params(params));       // check_params — исключение с сообщением
+        sc.env = env.empty() ? (sc.mf.compact ? "none" : "procedural") : env;
+        mi.rows = geo4d::manifold_rows(sc);
+        mi.flat = from_flat(sc.mf.flat);
+        mi.background = sc.mf.flat.has || sc.mf.exit == 1;
+        mi.scale = float(sc.mf.scale);
+        mi.ok = true;
+    } catch (const std::exception& e) {
+        mi.err = e.what();
     }
-    if (!ok) { mi.err = kind + ": недопустимые параметры (нужно " + why + ")"; return mi; }
-    const bool compact = is_compact_space(kind);
-    const std::string e = env.empty() ? (compact ? "none" : "procedural") : env;
-    const int exit = kind == "ellis" ? 1 : 2;
-    // плоские зоны (geo4d.scenefile.build) и SCALE (scenes.slang = Shape.scale)
-    float scale = 1;
-    if (kind == "hyperplane") { mi.flat.has = true; mi.flat.sheets = {0.0f}; }
-    else if (kind == "compact_wh" || kind == "two_compact_wh") {
-        mi.flat.has = true;
-        mi.flat.sheets = {v("W"), -v("W")};
-        mi.flat.rho0 = v("rho0");
-        if (kind == "compact_wh") mi.flat.balls = {{0, 0, 0}};
-        else mi.flat.balls = {{P("c1")[0], P("c1")[1], P("c1")[2]}, {P("c2")[0], P("c2")[1], P("c2")[2]}};
-        scale = v("b");
-    } else if (kind == "S3") scale = v("R");
-    else if (kind == "spheritorus" || kind == "torisphere" || kind == "tiger") scale = v("r");
-    else if (kind == "ellis") scale = v("b");
-    mi.background = mi.flat.has || exit == 1;
-    mi.scale = scale;
-    mi.rows.assign(size_t(kMfRows) * 4, 0.0f);
-    auto row = [&](int i) { return &mi.rows[size_t(i) * 4]; };
-    row(0)[0] = float(id);
-    row(0)[1] = float(exit);
-    row(0)[2] = scale;
-    row(0)[3] = mi.background ? 1.0f : 0.0f;
-    static const std::pair<const char*, std::vector<const char*>> keys[] = {
-        {"S3", {"R"}}, {"spheritorus", {"R", "r"}}, {"torisphere", {"R", "r"}}, {"tiger", {"R1", "R2", "r"}},
-        {"ellis", {"b"}}, {"compact_wh", {"b", "rho0", "W"}}, {"two_compact_wh", {"b", "rho0", "W"}}};
-    for (auto& [k, ks] : keys)
-        if (kind == k)
-            for (size_t i = 0; i < ks.size(); ++i) row(1)[i] = v(ks[i]);
-    if (mi.flat.has) {
-        for (size_t i = 0; i < mi.flat.balls.size() && i < 2; ++i) std::copy(mi.flat.balls[i].begin(), mi.flat.balls[i].end(), row(2 + int(i)));
-        row(4)[0] = 1;
-        row(4)[1] = float(mi.flat.balls.size());
-        row(4)[2] = mi.flat.rho0;
-    }
-    row(4)[3] = e == "none" ? 0.0f : 1.0f;
-    double s_max = 1000.0, ell_max = 0.0;                 // GPUPT.s_max; длина пути компактных — от размера пространства
-    if (kind == "ellis") ell_max = 12.0;
-    if (compact) {
-        double size = kind == "tiger" ? double(v("R1")) / 1.2 : double(v("R"));
-        s_max = std::min(s_max, 8 * 3.14159265358979323846 * size);
-        ell_max = 1e9;
-    }
-    row(5)[0] = float(s_max);
-    row(5)[1] = float(ell_max);
-    mi.ok = true;
     return mi;
 }
 
 // ---- сцена из JSON (geo4d.scenefile.build без проекций) ----------------------------------------------
 
 SceneDesc read_scene_json(const std::string& path) {
-    std::ifstream f(path, std::ios::binary);
-    if (!f) throw std::runtime_error("не удалось открыть " + path);
-    std::string text((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
-    JParser jp{text};
-    JVal d = jp.val();
-    if (d.t != JVal::Obj) throw std::runtime_error("JSON: сцена — не объект");
+    geo4d::Scene s = geo4d::load_scene(path, false);              // проекции — на GPU (pt_snap, apply_scene)
+    if (s.objs.size() > size_t(kMaxObj)) throw std::runtime_error("объектов больше 32");
     SceneDesc sd;
     sd.path = path;
-    const JVal* m = d.get("manifold");
-    if (!m || m->t != JVal::Obj) throw std::runtime_error("JSON: нет manifold");
-    sd.kind = jstr(m->get("kind"), "");
-    sd.params = default_params(sd.kind);
-    if (const JVal* ps = m->get("params"))
-        for (auto& [k, pv] : ps->o)
-            for (auto& q : sd.params)
-                if (q.key == k) {
-                    if (pv.t == JVal::Num && q.v.size() == 1) q.v[0] = float(pv.n);
-                    else jvec(&pv, q.v.data(), int(q.v.size()));
-                }
-    sd.env = jstr(d.get("env"), "");
-    static const char* geoms[] = {"ball4", "torus", "plane"};
-    static const char* mats[] = {"diffuse", "metal", "emit"};
-    if (const JVal* os = d.get("objects")) {
-        if (os->a.size() > size_t(kMaxObj)) throw std::runtime_error("объектов больше 32");
-        for (auto& o : os->a) {
-            EdObject e;
-            std::string k = jstr(o.get("kind"), "");
-            e.geom = -1;
-            for (int g = 0; g < 3; ++g) if (k == geoms[g]) e.geom = g;
-            if (e.geom < 0) throw std::runtime_error("нет вида объекта " + k);
-            e.name = jstr(o.get("name"), k);
-            std::replace(e.name.begin(), e.name.end(), ' ', '_');
-            if (e.geom == 2) {
-                e.axis = int(jnum(o.get("axis"), 2));
-                e.offset = float(jnum(o.get("offset"), 0));
-                e.sign = float(jnum(o.get("sign"), 1));
-            } else {
-                jvec(o.get("center"), e.c, 4);
-                if (e.geom == 0) e.a = float(jnum(o.get("r"), 0.5));
-                else { e.a = float(jnum(o.get("R"), 1.0)); e.b = float(jnum(o.get("r"), 0.15)); }
-            }
-            const JVal* on = o.get("on_M");
-            e.on_M = on && on->t == JVal::Bool && on->b;
-            const JVal* mt = o.get("material");
-            std::string mk = jstr(mt ? mt->get("kind") : nullptr, "diffuse");
-            e.mat = -1;
-            for (int g = 0; g < 3; ++g) if (mk == mats[g]) e.mat = g;
-            if (e.mat < 0) throw std::runtime_error("нет материала " + mk);
-            if (mt) {
-                jvec(mt->get("albedo"), e.albedo, 3);
-                e.rough = float(jnum(mt->get("rough"), 0.3));
-                jvec(mt->get("emit"), e.emit, 3);
-            }
-            sd.objs.push_back(e);
-        }
+    sd.kind = s.mf.kind;
+    for (auto& [k, v] : s.mf.params) sd.params.push_back({k, to_f(v)});
+    sd.env = s.env_field;
+    for (auto& o : s.objs) sd.objs.push_back(from_object(o));
+    for (int i = 0; i < 4; ++i) {
+        sd.cam.x[i] = float(s.cam.x[i]);
+        sd.cam.f[i] = float(s.cam.f[i]);
+        sd.cam.u[i] = float(s.cam.up[i]);
+        sd.cam.r[i] = float(s.cam.right[i]);
     }
-    const JVal* c = d.get("camera");
-    float x[4] = {0, 0, 0, 0}, fh[4] = {0, 1, 0, 0}, up[4] = {0, 0, 1, 0}, rh[4] = {0, 0, 0, 0};
-    if (c) {
-        jvec(c->get("x"), x, 4);
-        jvec(c->get("f"), fh, 4);
-        jvec(c->get("up"), up, 4);
-        if (c->get("right")) { jvec(c->get("right"), rh, 4); sd.has_right = true; }
-        sd.fov = float(jnum(c->get("fov"), 75.0));
-    }
-    std::copy(x, x + 4, sd.cam.x);
-    std::copy(fh, fh + 4, sd.cam.f);
-    std::copy(up, up + 4, sd.cam.u);
-    std::copy(rh, rh + 4, sd.cam.r);
-    sd.speed = float(jnum(d.get("speed"), 1.0));
+    sd.has_right = s.cam.has_right;
+    sd.fov = float(s.cam.fov);
+    sd.speed = float(s.speed);
     return sd;
 }
 
@@ -418,58 +262,16 @@ std::pair<uint32_t, uint32_t> preset_size(int i, uint32_t ww, uint32_t wh) {
 // ---- модель: M34, упаковка строк -------------------------------------------------------------------
 
 std::vector<int> nee_lights(const std::vector<EdObject>& objs, const EdFlat& flat) {
-    std::vector<int> out;
-    if (!flat.has) return out;
-    for (int k = 0; k < int(objs.size()); ++k) {
-        const EdObject& o = objs[k];
-        if (o.mat != 2 || o.geom != 0) continue;
-        float dw = 1e30f;
-        for (float s : flat.sheets) dw = std::min(dw, std::fabs(o.c[3] - s));
-        if (dw >= 1e-6f) continue;
-        bool clear = true;
-        for (auto& c : flat.balls) {
-            double dx = o.c[0] - c[0], dy = o.c[1] - c[1], dz = o.c[2] - c[2];
-            if (std::sqrt(dx * dx + dy * dy + dz * dz) < double(flat.rho0) + o.a) clear = false;
-        }
-        if (clear) out.push_back(k);
-    }
-    return out;
+    std::vector<geo4d::Object> o;
+    for (auto& e : objs) o.push_back(to_object(e));
+    return geo4d::nee_lights(o, to_flat(flat));
 }
 
 std::vector<float> pack_rows(const std::vector<EdObject>& objs, const EdFlat& flat) {
-    if (objs.size() > size_t(kMaxObj)) throw std::runtime_error("объектов больше PT_MAXOBJ");
-    std::vector<float> R(size_t(kObjRows) * 4, 0.0f);
-    auto row = [&](int i) { return &R[size_t(i) * 4]; };
-    auto lights = nee_lights(objs, flat);
-    row(0)[0] = float(objs.size());
-    row(0)[1] = float(lights.size());
-    for (size_t i = 0; i < lights.size(); ++i) R[4 + i] = float(lights[i]);
-    for (int k = 0; k < int(objs.size()); ++k) {
-        const EdObject& o = objs[k];
-        int b = 9 + 6 * k;
-        float bound = 1e30f;
-        if (o.geom == 0) {
-            std::copy(o.c, o.c + 4, row(b));
-            row(b + 1)[0] = 0; row(b + 1)[1] = o.a;
-            bound = o.a;
-        } else if (o.geom == 1) {
-            std::copy(o.c, o.c + 4, row(b));
-            row(b + 1)[0] = 1; row(b + 1)[1] = o.a; row(b + 1)[2] = o.b;
-            bound = float(double(o.a) + double(o.b));
-        } else {
-            float pl[4] = {2, float(o.axis), o.offset, o.sign};
-            std::copy(pl, pl + 4, row(b + 1));
-            pl[0] = 1;
-            std::copy(pl, pl + 4, row(b + 2));
-        }
-        std::copy(o.albedo, o.albedo + 3, row(b + 3));
-        row(b + 3)[3] = float(o.mat);
-        std::copy(o.emit, o.emit + 3, row(b + 4));
-        row(b + 4)[3] = o.rough;
-        row(b + 5)[0] = bound;
-        row(b + 5)[1] = o.on_M ? 1.0f : 0.0f;
-    }
-    return R;
+    geo4d::Scene sc;
+    for (auto& e : objs) sc.objs.push_back(to_object(e));
+    sc.mf.flat = to_flat(flat);
+    return geo4d::object_rows(sc);
 }
 
 std::vector<EdObject> unpack_rows(const float* R, const std::vector<std::string>& names) {

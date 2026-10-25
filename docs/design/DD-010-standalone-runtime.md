@@ -244,6 +244,23 @@ zip). Сейчас окно — Python-скрипт `prototype/scripts/app.py`, 
   перегенерации (`rebuild` → `app.py --graph-only`) теперь строят граф в C++, холодные эталоны — по-прежнему графы
   Python; все побитовые сверки проходят (70 passed вместе с тестами нового пути).
 - `ide_configs.py`: конфигурации «geo4d_gpu: <сцена> (без Python)» — запуск и отладка окна прямо в CLion.
-- Осталось (шаг 5): директива `rebuild` (внешний процесс) остаётся только для `geo4d_gpu app <граф>`; убрать
-  `read_scene_json` и `pack_rows`/`manifold_info` редактора в пользу `scene`/`codegen`; README; поиск `shaders/` и
-  `scenes/` рядом с exe (риск 8).
+
+**Шаг 5 — сделан:**
+- Редактор упаковывает строки объектов и многообразия, считает M34 и читает файл сцены через `scene`/`codegen`
+  (`pack_rows`, `manifold_info`, `nee_lights`, `read_scene_json` — обёртки над моделью окна; самодельный разбор JSON
+  удалён). Риск 7 снят: одна упаковка для холодного старта и правок в окне.
+- Риск 8 снят: если рядом с exe есть `shaders/`, это установленная программа — шейдеры и сцены рядом с exe, кэш
+  SPIR-V, заголовков сцен и конвейеров — в пользовательском кэше; путь к exe — от ОС (`GetModuleFileNameW`,
+  `/proc/self/exe`). Тест `test_installed_layout`: копия exe, DLL, `shaders/`, `scenes/` в «Программа geo4d» —
+  окно работает, каталог программы не меняется.
+- Директива `rebuild` (внешний процесс) оставлена для `geo4d_gpu app <граф>` (отладка, тесты окна): процесс — это
+  `app.py --graph-only`, то есть тоже C++. Python-перегенерации в окне больше нет.
+- Slang API — опция `GEO4D_SLANG_API` (по умолчанию ON). Без неё (Linux/macOS без SDK, ADR-0008) тот же
+  компилятор запускает процесс `slangc` (`GEO4D_SLANGC` или PATH): сборка с `-DGEO4D_SLANG_API=OFF` проверена один
+  раз — 27 из 27 ядер, SPIR-V побитово = кэш slangc.
+- `gpu/build.cmd`: `VSLANG=1033` — MSVC печатал `/showIncludes` по-русски, Ninja не узнавал префикс и не отслеживал
+  зависимости от заголовков (правка `.hpp` не пересобирала зависимые файлы — так и всплыло).
+- `GEO4D_NO_PIPELINE_CACHE` — отключить `VkPipelineCache` окна (проверка).
+- README: запуск окна без Python, роль `app.py`, конфигурации CLion.
+- Найдено попутно (не регрессия, хост до DD-010 так же): изредка пурпурный пиксель режима A —
+  [known-issues](../known-issues.md), `prototype/scripts/repro_modea_status_race.py`.

@@ -80,7 +80,8 @@ struct Scene {
     double speed = 1;
 };
 
-Scene load_scene(const std::string& path);        // geo4d.scenefile.load (с проекциями on_M и камеры)
+// geo4d.scenefile.load; project = false — центры on_M и точка камеры как в файле (редактор проецирует их на GPU)
+Scene load_scene(const std::string& path, bool project = true);
 
 // f многообразия и ∇f в точке (double; формулы geo4d.shapes)
 double sdf(const Manifold& m, const Vec4& x, Vec4* grad = nullptr);

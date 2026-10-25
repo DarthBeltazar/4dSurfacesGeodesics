@@ -13,6 +13,10 @@
 
 #include "sha256.hpp"
 
+#ifdef _WIN32
+#include <windows.h>
+#endif
+
 namespace geo4d {
 
 namespace {
@@ -157,11 +161,34 @@ std::string qpath(const fs::path& p) {
     return s;
 }
 
+fs::path exe_path(const char* argv0) {
+#ifdef _WIN32
+    wchar_t buf[32768];
+    DWORD n = GetModuleFileNameW(nullptr, buf, DWORD(std::size(buf)));
+    if (n > 0 && n < std::size(buf)) return fs::path(std::wstring(buf, n));
+#else
+    std::error_code ec;
+    fs::path p = fs::read_symlink("/proc/self/exe", ec);
+    if (!ec) return p;
+#endif
+    return fs::canonical(fs::absolute(from_u8(argv0)));
+}
+
 Dirs default_dirs(const char* argv0) {
     Dirs d;
+    const fs::path exe_dir = exe_path(argv0).parent_path();
     if (const char* r = std::getenv("GEO4D_ROOT")) d.root = fs::canonical(from_u8(r));
-    else d.root = fs::canonical(fs::absolute(from_u8(argv0))).parent_path().parent_path().parent_path();
+    else if (fs::exists(exe_dir / "shaders" / "pathtrace.slang")) {
+        d.installed = true;
+        d.root = exe_dir;
+        d.shaders = exe_dir / "shaders";
+        d.scenes = exe_dir / "scenes";
+        d.gen = user_cache_dir() / "gen";
+        d.spv = user_cache_dir() / "spv";
+        return d;
+    } else d.root = exe_dir.parent_path().parent_path();
     d.shaders = d.root / "gpu" / "shaders";
+    d.scenes = d.root / "scenes";
     d.gen = d.root / "gpu" / "build" / "gen";
     d.spv = d.root / "gpu" / "build" / "spv";
     return d;

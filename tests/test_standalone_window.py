@@ -126,3 +126,32 @@ def test_standalone_cyrillic_paths(tmp_path):
     out = _standalone(td / "запуск", scene, 12, [11], "resize 4 64 36\n")
     assert out.count("standalone_build") == 2
     assert np.load(td / "запуск" / "Present_11.npy").shape == (36, 64)
+
+
+def test_installed_layout(tmp_path):
+    """Установленная программа (zip, DD-010/DD-012): exe и DLL, shaders/ и scenes/ рядом; кэш SPIR-V, заголовков и
+    конвейеров — в пользовательском кэше (GEO4D_CACHE_DIR); каталог программы не меняется. Без сцены в аргументах —
+    scenes/two_wormholes.json рядом с exe."""
+    import shutil
+    inst = tmp_path / "Программа geo4d"
+    inst.mkdir()
+    for f in gpu.EXE.parent.glob("*.dll"):
+        shutil.copy2(f, inst)
+    exe = inst / gpu.EXE.name
+    shutil.copy2(gpu.EXE, exe)
+    shutil.copytree(ROOT / "gpu" / "shaders", inst / "shaders")
+    shutil.copytree(ROOT / "scenes", inst / "scenes")
+    before = sorted(p.relative_to(inst) for p in inst.rglob("*"))
+    td = tmp_path / "run"
+    td.mkdir()
+    (td / "extra.txt").write_text(_script(td, 4, [3]), encoding="utf-8")
+    cache = tmp_path / "кэш"
+    r = subprocess.run([str(exe), "--res", "96x54", "--cube", "64", "--work-dir", str(td / "work"), "--extra",
+                        str(td / "extra.txt")], capture_output=True, text=True, encoding="utf-8",
+                       env=dict(ENV, GEO4D_CACHE_DIR=str(cache)), cwd=tmp_path)
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert sorted(p.relative_to(inst) for p in inst.rglob("*")) == before
+    assert len(list((cache / "spv").glob("*.spv"))) == 27 and list((cache / "gen").rglob("pt_scene.slang"))
+    assert (cache / "pipelines.bin").exists()
+    assert not list((td / "work").glob("edit_*.json"))          # перегенераций не было
+    assert (np.load(td / "Present_3.npy") & 0xFFFFFF).std() > 0

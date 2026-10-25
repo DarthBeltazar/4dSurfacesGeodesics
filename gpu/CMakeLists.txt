@@ -50,19 +50,23 @@ if(NOT GEO4D_VMA_INC)
   FetchContent_MakeAvailable(vma)
   set(GEO4D_VMA_INC "${vma_SOURCE_DIR}/include" CACHE PATH "" FORCE)
 endif()
-# Компиляция шейдеров в процессе (DD-010): Slang из Vulkan SDK (та же версия, что slangc); DLL — рядом с exe
+# Компиляция шейдеров в процессе (DD-010): Slang из Vulkan SDK (та же версия, что slangc); DLL — рядом с exe.
+# Без Slang API (Linux/macOS без SDK, ADR-0008) — тот же путь через процесс slangc (GEO4D_SLANGC или PATH).
 find_path(GEO4D_SLANG_INC slang.h HINTS "${VK_SDK}/Include/slang" "${VK_SDK}/include/slang")
 find_library(GEO4D_SLANG_LIB slang HINTS "${VK_SDK}/Lib" "${VK_SDK}/lib")
-if(NOT GEO4D_SLANG_INC OR NOT GEO4D_SLANG_LIB)
-  message(FATAL_ERROR "нет Slang (slang.h, slang.lib) — нужен Vulkan SDK 1.4.328.1")
-endif()
-target_include_directories(geo4d_gpu PRIVATE "${GEO4D_SLANG_INC}")
-target_link_libraries(geo4d_gpu PRIVATE "${GEO4D_SLANG_LIB}")
-if(WIN32)
-  foreach(dll slang slang-glslang slang-glsl-module slang-rt)
-    add_custom_command(TARGET geo4d_gpu POST_BUILD COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                       "${VK_SDK}/Bin/${dll}.dll" "$<TARGET_FILE_DIR:geo4d_gpu>")
-  endforeach()
+option(GEO4D_SLANG_API "Slang API в процессе (иначе процесс slangc)" ON)
+if(GEO4D_SLANG_API AND GEO4D_SLANG_INC AND GEO4D_SLANG_LIB)
+  target_include_directories(geo4d_gpu PRIVATE "${GEO4D_SLANG_INC}")
+  target_link_libraries(geo4d_gpu PRIVATE "${GEO4D_SLANG_LIB}")
+  target_compile_definitions(geo4d_gpu PRIVATE GEO4D_SLANG_API=1)
+  if(WIN32)
+    foreach(dll slang slang-glslang slang-glsl-module slang-rt)
+      add_custom_command(TARGET geo4d_gpu POST_BUILD COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                         "${VK_SDK}/Bin/${dll}.dll" "$<TARGET_FILE_DIR:geo4d_gpu>")
+    endforeach()
+  endif()
+else()
+  message(WARNING "нет Slang API (slang.h, библиотека slang) — шейдеры окна собирает процесс slangc")
 endif()
 
 # JSON файлов сцен (DD-010): nlohmann/json, только заголовки

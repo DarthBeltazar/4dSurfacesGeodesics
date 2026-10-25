@@ -26,13 +26,13 @@
 ## Быстрый старт (Windows)
 
 **Готовая сборка:** [Releases](https://github.com/DarthBeltazar/4dSurfacesGeodesics/releases) → архив
-`geo4d-editor-…-win64.zip`, распаковать и запустить `run_editor.cmd`. Нужен только Python 3.12; Vulkan SDK и
-компилятор не нужны. Из исходников:
+`geo4d-editor-…-win64.zip`, распаковать и запустить `run_editor.cmd` (сборка v0.1.0-alpha ещё требует Python 3.12;
+Vulkan SDK и компилятор не нужны). Из исходников окно Python уже не нужно
+([DD-010](docs/design/DD-010-standalone-runtime.md)):
 
 ```sh
-python -m venv .venv && .venv/Scripts/python -m pip install -r requirements.txt
-gpu\build.cmd                                                          # нужны Vulkan SDK 1.4.328.1 и MSVC 2022
-.venv/Scripts/python prototype/scripts/app.py --scene two_wormholes    # окно; --fullscreen — сразу на весь экран
+gpu\build.cmd                                                    # нужны Vulkan SDK 1.4.328.1 и MSVC 2022
+gpu\build\geo4d_gpu.exe scenes\two_wormholes.json --res 1280x720  # окно; --fullscreen — сразу на весь экран
 ```
 
 | Клавиши | Действие |
@@ -303,8 +303,9 @@ GPU — Vulkan SDK 1.4.328.1 (slangc, volk, VMA), MSVC 2022, CMake/Ninja (нап
 ```sh
 gpu\build.cmd                                               # Windows → gpu/build/geo4d_gpu.exe
 ./gpu/build.sh                                              # Linux/macOS (ADR-0008)
-.venv/Scripts/python -m pytest tests -q -m gpu             # GPU-тесты, ~5 мин
-.venv/Scripts/python prototype/scripts/app.py --scene two_wormholes --res 1280x720   # окно
+.venv/Scripts/python -m pytest tests -q -m gpu             # GPU-тесты, ~10 мин
+gpu/build/geo4d_gpu.exe scenes/two_wormholes.json --res 1280x720                   # окно (без Python)
+.venv/Scripts/python prototype/scripts/app.py --scene two_wormholes --res 1280x720   # то же через обёртку
 .venv/Scripts/python prototype/scripts/video.py --res 1920x1080 --spp 64            # ролик (нужен ffmpeg)
 ```
 
@@ -362,8 +363,14 @@ gpu\build\geo4d_gpu.exe info                                 # устройст�
 .venv/Scripts/python prototype/scripts/app.py --bench --scene two_wormholes --res 1920x1080   # замер
 ```
 
-**IDE (CLion / PyCharm).** Конфигурации запуска (окна сцен, замеры, тесты, хост C++ под отладчиком;
-`app.py --graph-only` пишет граф для него) создаёт `prototype/scripts/ide_configs.py` в `.run/` (каталог не в git).
+Окно без Python (DD-010): граф кадра, фон и шейдеры строит сам `geo4d_gpu` (Slang в процессе, кэш SPIR-V и
+конвейеров), смена разрешения и перегенерация при выходе из режима редактирования — в процессе. Установленная
+программа (рядом с exe — `shaders/`, `scenes/`) держит кэш в `%LOCALAPPDATA%\geo4d\cache` (`GEO4D_CACHE_DIR`).
+`app.py` — обёртка над ним (замеры `--bench`, `--graph-only`); прежняя генерация графа в Python — `--python-graph`
+(эталон в тестах).
+
+**IDE (CLion / PyCharm).** Конфигурации запуска (окна сцен, «geo4d_gpu: <сцена> (без Python)» — окно прямо под
+отладчиком CLion, замеры, тесты) создаёт `prototype/scripts/ide_configs.py` в `.run/` (каталог не в git).
 Один раз: запустить генератор, добавить `.venv` как Python-интерпретатор, в настройках CMake включить профили
 пресетов `release` (`gpu/build`, его использует Python) и `debug` (`gpu/build-debug`).
 
@@ -375,9 +382,10 @@ gpu\build\geo4d_gpu.exe info                                 # устройст�
 
 ## Планы (TODO)
 
-- [ ] **Нодовая система построения сцен, как в Houdini**: граф узлов (многообразия, объекты, CSG через smin,
-  материалы, преобразования, параметры) в редакторе окна; из графа генерируются SDF (`scenes.slang`/`pt_scene.slang`)
-  и файл сцены. Сейчас сцена — плоский список объектов в JSON, многообразие — один из готовых видов.
+- [x] Окно без Python ([DD-010](docs/design/DD-010-standalone-runtime.md)).
+- [ ] **Самостоятельное приложение с нодовой системой сцен** ([концепция](docs/design/concept-standalone-nodes.md)):
+  граф узлов (многообразия, объекты, выражения, процедурные текстуры), режимы вьюпорта «Предпросмотр»/«Рендер»,
+  наложения, панели вокруг вьюпорта; затем zip для Windows без Python.
 - [ ] Отмена (undo) в редакторе, новые формы объектов.
 - [ ] Временная репроекция при движении камеры.
 

@@ -281,7 +281,7 @@ std::vector<int> nee_lights(const std::vector<Object>& objs, const FlatZones& fz
     return out;
 }
 
-Scene load_scene(const std::string& path) {
+Scene load_scene(const std::string& path, bool project) {
     std::ifstream f(path, std::ios::binary);
     if (!f) throw std::runtime_error("не удалось открыть " + path);
     nlohmann::json d;
@@ -323,14 +323,15 @@ Scene load_scene(const std::string& path) {
             } else if (ob.kind == "ball4" || ob.kind == "torus") {
                 Vec4 c = vec<4>(o, "center", Vec4{0, 0, 0, 0});
                 if (!o.contains("center")) throw std::runtime_error("сцена: у объекта нет center");
-                ob.center = ob.on_M ? project(sc.mf, c) : c;
+                ob.center = ob.on_M && project ? geo4d::project(sc.mf, c) : c;
                 if (ob.kind == "ball4") ob.r = o.at("r").get<double>();
                 else { ob.R = o.at("R").get<double>(); ob.r = o.at("r").get<double>(); }
             } else throw std::runtime_error("нет вида объекта " + ob.kind);
             sc.objs.push_back(ob);
         }
     nlohmann::json c = d.contains("camera") ? d["camera"] : nlohmann::json::object();
-    sc.cam.x = project(sc.mf, vec<4>(c, "x", Vec4{0, 0, 0, 0}));
+    sc.cam.x = vec<4>(c, "x", Vec4{0, 0, 0, 0});
+    if (project) sc.cam.x = geo4d::project(sc.mf, sc.cam.x);
     sc.cam.f = vec<4>(c, "f", Vec4{0, 1, 0, 0});
     sc.cam.up = vec<4>(c, "up", Vec4{0, 0, 1, 0});
     sc.cam.has_right = c.contains("right");

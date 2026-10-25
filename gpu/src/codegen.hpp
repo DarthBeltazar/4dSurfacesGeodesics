@@ -33,11 +33,17 @@ fs::path from_u8(const std::string& s);           // путь из UTF-8
 
 using Defines = std::vector<std::pair<std::string, std::string>>;   // имя → значение (как текст литерала Python)
 
-// Каталоги дерева разработки: GEO4D_ROOT или по exe (gpu/build/geo4d_gpu[.exe] → корень)
+// Каталоги (DD-010):
+//  - установленная программа (zip): рядом с exe есть shaders/ — шейдеры и сцены рядом с exe, кэш SPIR-V и заголовков
+//    сцен — в пользовательском кэше (каталог программы только для чтения);
+//  - дерево разработки: корень — GEO4D_ROOT или exe → gpu/build → корень; кэш — gpu/build/spv и gpu/build/gen
+//    (общий с geo4d.gpu.compile_shader).
 struct Dirs {
-    fs::path root, shaders, gen, spv;
+    fs::path root, shaders, scenes, gen, spv;
+    bool installed = false;
 };
 Dirs default_dirs(const char* argv0);
+fs::path exe_path(const char* argv0);             // путь к exe от ОС (argv[0] — запасной)
 // пользовательский кэш (SPIR-V установленной программы, VkPipelineCache): GEO4D_CACHE_DIR или %LOCALAPPDATA%\geo4d\cache
 // (Linux/macOS — $XDG_CACHE_HOME/geo4d или ~/.cache/geo4d)
 fs::path user_cache_dir();

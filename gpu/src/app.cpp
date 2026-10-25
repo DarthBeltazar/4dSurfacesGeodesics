@@ -246,7 +246,7 @@ int run_app(const std::string& graph_path, RebuildFn rebuild, std::vector<std::s
     int rc = 0;
     {
         VkContext ctx(iexts, true);
-        ctx.use_pipeline_cache(geo4d::u8(geo4d::user_cache_dir() / "pipelines.bin"));
+        if (!std::getenv("GEO4D_NO_PIPELINE_CACHE")) ctx.use_pipeline_cache(geo4d::u8(geo4d::user_cache_dir() / "pipelines.bin"));
         const bool overlay = editor_on && (ui_forced || interactive) && ctx.dynamic_rendering();
         VkSurfaceKHR surf;
         if (!SDL_Vulkan_CreateSurface(win, ctx.instance(), nullptr, &surf))
