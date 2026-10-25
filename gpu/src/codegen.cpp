@@ -190,7 +190,15 @@ Dirs default_dirs(const char* argv0) {
         d.gen = user_cache_dir() / "gen";
         d.spv = user_cache_dir() / "spv";
         return d;
-    } else d.root = exe_dir.parent_path().parent_path();
+    } else {
+        // дерево разработки: вверх от exe до каталога с gpu/shaders (gpu/build, gpu/build-debug, cmake-build-* CLion —
+        // любая глубина); не нашли — прежнее правило «exe → gpu/build → корень»
+        d.root = exe_dir.parent_path().parent_path();
+        for (fs::path q = exe_dir; !q.empty(); q = q.parent_path()) {
+            if (fs::exists(q / "gpu" / "shaders" / "pathtrace.slang")) { d.root = q; break; }
+            if (q == q.parent_path()) break;
+        }
+    }
     d.shaders = d.root / "gpu" / "shaders";
     d.scenes = d.root / "scenes";
     d.nodes = d.root / "nodes";

@@ -147,3 +147,23 @@ def test_standalone_graph_edits_equal_cold_start(tmp_path):
     assert len(builds) == 2                                   # новый источник — новая структура: сборка в процессе
     _standalone(tmp_path / "cold", edited, 7, [6])            # кадр 7 (после сборки в кадре 6) = кадр 0
     _same(_dumps(tmp_path / "hot", 13), _dumps(tmp_path / "cold", 6))
+
+
+def test_exe_in_clion_build_dir(tmp_path):
+    """exe в каталоге сборки CLion (cmake-build-debug — прямо в корне репозитория, а не gpu/build): корень дерева
+    разработки ищется вверх от exe по gpu/shaders (раньше — «exe → два уровня вверх», и nodes/ не находился)."""
+    import shutil
+    d = ROOT / "cmake-build-test-root"
+    shutil.rmtree(d, ignore_errors=True)
+    d.mkdir()
+    try:
+        for f in list(gpu.EXE.parent.glob("*.dll")) + [gpu.EXE]:
+            shutil.copy2(f, d / f.name)
+        (tmp_path / "extra.txt").write_text(_script(tmp_path, 3, [2]), encoding="utf-8")
+        r = subprocess.run([str(d / gpu.EXE.name), str(ROOT / "scenes" / "hyperplane.json"), "--res", "96x54", "--cube", "64",
+                            "--work-dir", str(tmp_path / "work"), "--extra", str(tmp_path / "extra.txt")],
+                           capture_output=True, text=True, encoding="utf-8", env=ENV)
+        assert r.returncode == 0, r.stdout + r.stderr
+        assert np.load(tmp_path / "Present_2.npy").shape == (54, 96)
+    finally:
+        shutil.rmtree(d, ignore_errors=True)

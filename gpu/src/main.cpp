@@ -11,6 +11,10 @@
 //   geo4d_gpu eval-graph <сцена> <вход.json> <выход.json> — многообразие графа на CPU, метаданные, заголовок (DD-011)
 //   geo4d_gpu bytecode <сцена> <выход.json> — программы интерпретатора: многообразие и составные объекты (DD-011 §6)
 #include <cstdio>
+#ifdef _WIN32
+#define NOMINMAX
+#include <windows.h>
+#endif
 #include <exception>
 #include <iostream>
 #include <string>
@@ -32,6 +36,9 @@
 #include "vk_context.hpp"
 
 int main(int argc, char** argv) {
+#ifdef _WIN32
+    SetConsoleOutputCP(CP_UTF8);                  // сообщения — UTF-8 (консоль CLion и cmd иначе читают их как CP866)
+#endif
     try {
         // библиотека нод (DD-011) — рядом с exe или в дереве разработки; грузится при первом обращении
         try {
