@@ -32,10 +32,11 @@
 //                                    ключом — запись строк без перекомпиляции, иначе — перегенерация
 //   setparam <кадр> <нода> <параметр> <числа…>   в сценарии: правка параметра ноды графа, как панелью «Параметры»
 //                                    (структурная — ждёт перегенерацию)
-//   prevgraph <граф>                 граф предпросмотра на интерпретаторе (DD-011 §6): шейдеры от сцены не зависят, сцена —
+//   prevgraph <граф> <граф_obj>      графы предпросмотра на интерпретаторе (DD-011 §6; второй — с составными объектами-
+//                                    программами, он дороже): шейдеры от сцены не зависят, сцена —
 //                                    строки буфера камеры; структурная правка показывается в нём сразу, пока в фоне
 //                                    собирается быстрый граф
-//   preview                          (в самом графе предпросмотра) — граф предпросмотра: секции move/edit — кадр предпросмотра
+//   preview [obj]                    (в самом графе предпросмотра) — граф предпросмотра: секции move/edit — кадр предпросмотра
 //   progrows <буфер> <строка> <строк>   область программ байткода в буфере камеры (bytecode.hpp)
 //   previewmode <кадр> on|off        в сценарии: предпросмотр быстрого графа (секции preview / preview_move), как флажок P
 //   editmode <кадр> on|off           в сценарии: войти в режим редактирования / выйти (ждёт перегенерацию)
@@ -183,8 +184,8 @@ struct AppDirs {
     int slot_base = -1, slot_rows = 0;                                          // DD-011 §5
     bool slot_mf = false;                                                       // числа многообразия — тоже слоты
     std::string slotkey;
-    std::string prevgraph;                                                      // DD-011 §6
-    bool is_preview = false;
+    std::string prevgraph, prevgraph_obj;                                       // DD-011 §6: без / с составными объектами
+    bool is_preview = false, preview_obj = false;
     int prog_base = -1, prog_rows = 0;
     std::vector<std::pair<uint32_t, bool>> previewmode;
     struct SetParam { uint32_t frame; std::string node, param; std::vector<double> v; };
@@ -216,8 +217,8 @@ AppDirs parse_dirs(const GraphProgram& prog) {
         else if (w[0] == "mfrows") d.mf_base = std::stoi(w.at(2));
         else if (w[0] == "slots") { d.slot_base = std::stoi(w.at(2)); d.slot_rows = std::stoi(w.at(3)); d.slot_mf = w.size() > 4 && w[4] == "mf"; }
         else if (w[0] == "slotkey") d.slotkey = w.at(1);
-        else if (w[0] == "prevgraph") d.prevgraph = w.at(1);
-        else if (w[0] == "preview") d.is_preview = true;
+        else if (w[0] == "prevgraph") { d.prevgraph = w.at(1); d.prevgraph_obj = w.size() > 2 ? w[2] : w[1]; }
+        else if (w[0] == "preview") { d.is_preview = true; d.preview_obj = w.size() > 1 && w[1] == "obj"; }
         else if (w[0] == "progrows") { d.prog_base = std::stoi(w.at(2)); d.prog_rows = std::stoi(w.at(3)); }
         else if (w[0] == "previewmode") d.previewmode.emplace_back(uint32_t(std::stoul(w.at(1))), w.at(2) == "on");
         else if (w[0] == "setparam") {
@@ -552,6 +553,7 @@ int run_app(const std::string& graph_path, RebuildFn rebuild, std::vector<std::s
         bool params_pending = false;                   // структурная правка ждёт конца идущей перегенерации
         // DD-011 §6: граф предпросмотра на интерпретаторе (из быстрого графа) и предпросмотр быстрого графа (флажок P)
         std::string prev_path = d.is_preview ? std::string() : d.prevgraph;
+        std::string prev_obj_path = d.is_preview ? std::string() : d.prevgraph_obj;
         bool preview_mode = false;
         // строки сцены s в буфер камеры текущего графа: объекты, многообразие, слоты (если есть у графа), программы
         // байткода (у графа предпросмотра); камера, сошедшая с M, — проекция и касательный базис на CPU
@@ -641,9 +643,11 @@ int run_app(const std::string& graph_path, RebuildFn rebuild, std::vector<std::s
             if (!edit_mode && (d.is_preview || !prev_path.empty())) {
                 try {
                     const std::vector<float> progs = geo4d::program_rows(s);
-                    if (!d.is_preview) {
+                    bool objs = false;                 // составные объекты — вариант графа с программами объектов
+                    for (auto& o : s.objs) objs = objs || o.kind == "graph";
+                    if (!d.is_preview || (objs && !d.preview_obj)) {
                         const auto t_sw = std::chrono::steady_clock::now();
-                        switch_graph(prev_path, true, false);
+                        switch_graph(objs ? prev_obj_path : prev_path, true, false);
                         std::printf("preview_switch_ms %.1f\n", ms_since(t_sw));
                     }
                     write_scene_rows(s, &progs);
@@ -836,7 +840,7 @@ int run_app(const std::string& graph_path, RebuildFn rebuild, std::vector<std::s
                     }
             for (auto& [fi, on] : d.previewmode)       // сценарий: предпросмотр быстрого графа (DD-011 §6)
                 if (fi == frame && on != preview_mode) toggle_preview_req = true;
-            if (!d.is_preview && !d.prevgraph.empty()) prev_path = d.prevgraph;
+            if (!d.is_preview && !d.prevgraph.empty()) { prev_path = d.prevgraph; prev_obj_path = d.prevgraph_obj; }
             for (auto& sp : d.setparams)               // сценарий: правка параметра графа (DD-011 §5)
                 if (sp.frame == frame && editor) {
                     std::string err;

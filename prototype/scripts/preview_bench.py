@@ -55,7 +55,7 @@ def native(td, scene, res):
 def interp(td, scene, res):
     g = td / "g"
     run([gpu.EXE, ROOT / scene, "--res", res, "--graph-only", g])
-    prev = g / "app_graph_prev.txt"
+    prev = g / ("app_graph_prev_obj.txt" if "csg" in scene else "app_graph_prev.txt")
     prev.write_text(prev.read_text(encoding="utf-8") + extra(td, FRAMES), encoding="utf-8")
     run([gpu.EXE, "app", prev])
     return median_preview(td)

@@ -88,6 +88,7 @@ int run_export_graph(int argc, char** argv) {
     write_lines(td / "app_graph.txt", g.lines);
     write_lines(td / "app_graph_dyn.txt", g.dyn_lines);
     if (!g.prev_lines.empty()) write_lines(td / "app_graph_prev.txt", g.prev_lines);   // DD-011 §6
+    if (!g.prev_obj_lines.empty()) write_lines(td / "app_graph_prev_obj.txt", g.prev_obj_lines);
     auto t3 = std::chrono::steady_clock::now();
     auto ms = [](auto a, auto b) { return std::chrono::duration<double, std::milli>(b - a).count(); };
     std::string js = "{\"scene_ms\": " + std::to_string(ms(t0, t1)) + ", \"env_ms\": " + std::to_string(ms(t1, t2)) +

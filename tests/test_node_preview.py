@@ -48,14 +48,14 @@ def _window(d, scene, frames, dumps, extra=""):
     return r.stdout
 
 
-def _interp(d, scene, frames, dumps):
+def _interp(d, scene, frames, dumps, objs=False):
     """Граф предпросмотра сам по себе: --graph-only, затем `geo4d_gpu app app_graph_prev.txt` со сценарием."""
     g = d / "g"
     r = subprocess.run([str(gpu.EXE), str(scene), "--res", RES, "--cube", "64", "--graph-only", str(g)],
                        capture_output=True, text=True, encoding="utf-8")
     assert r.returncode == 0, r.stdout + r.stderr
     assert "prevgraph" in (g / "app_graph.txt").read_text(encoding="utf-8")
-    prev = g / "app_graph_prev.txt"
+    prev = g / ("app_graph_prev_obj.txt" if objs else "app_graph_prev.txt")   # с составными объектами — свой вариант
     ex = _extra(d, frames, dumps, "")
     prev.write_text(prev.read_text(encoding="utf-8") + ex.read_text(encoding="utf-8"), encoding="utf-8")
     r = subprocess.run([str(gpu.EXE), "app", str(prev)], capture_output=True, text=True, encoding="utf-8")
@@ -73,7 +73,7 @@ def _close(a, b):
 def test_interpreter_equals_native_preview(tmp_path, name):
     scene = _scene(tmp_path, name)
     _window(tmp_path / "nat", scene, 3, [1], "previewmode 0 on\n")
-    _interp(tmp_path / "int", scene, 3, [1])
+    _interp(tmp_path / "int", scene, 3, [1], objs=name == "csg")
     a, b = (np.load(tmp_path / d / "Frame_1.npy") for d in ("int", "nat"))
     assert np.isfinite(a).all() and np.abs(b[..., :3]).mean() > 0
     rel, frac = _close(a, b)
@@ -105,3 +105,17 @@ def test_structural_edit_shows_interpreter_preview(tmp_path):
     # после сборки — быстрый граф с новым b (нативный предпросмотр)
     rel, frac = _close(np.load(tmp_path / "hot" / "Frame_6.npy"), b)
     assert rel < 1e-6 and frac == 0, (rel, frac)
+
+
+def test_structural_edit_with_composite_objects(tmp_path):
+    """Ось поворота составной формы (целый параметр): предпросмотр — вариант графа с программами объектов."""
+    doc = csg_doc()
+    scene = tmp_path / "c.g4d"
+    scene.write_text(json.dumps(doc, ensure_ascii=False), encoding="utf-8")
+    out = _window(tmp_path / "hot", scene, 6, [2], "previewmode 0 on\nsetparam 2 xr j 3\n")
+    assert 'params_apply {"instant": 2' in out
+    new = tmp_path / "n.g4d"
+    new.write_text(json.dumps(set_param(doc, "xr", "j", 3), ensure_ascii=False), encoding="utf-8")
+    _window(tmp_path / "cold", new, 3, [1], "previewmode 0 on\n")
+    rel, frac = _close(np.load(tmp_path / "hot" / "Frame_2.npy"), np.load(tmp_path / "cold" / "Frame_1.npy"))
+    assert rel < 1e-4 and frac < 0.01, (rel, frac)

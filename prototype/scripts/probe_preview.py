@@ -49,8 +49,9 @@ def preview(sc, cam, interp, png=None, s_max=None):
     camb = G.pt_camera_buffer(sc, cam, 2.0, 0.0, Detector(), 0, cube.shape[2])
     p = G.GPUPT(**({"s_max": s_max} if s_max else {}))
     camb[len(camb) - G.MF_ROWS + 5, 0] = min(p.s_max, sc.meta.get("s_max", p.s_max))      # как manifold_rows(p)
-    if interp:
-        camb = np.concatenate([camb, program(sc)])
+    if interp:                               # область программ — с PROG_BASE (DD-011 §5–6: после слотов)
+        pad = np.zeros((G.PROG_BASE - len(camb), 4))
+        camb = np.concatenate([camb, pad, G.prog_region(program(sc), sc.flat.centers if sc.flat is not None else ())])
     with tempfile.TemporaryDirectory() as td:
         td = gpu.QPath(td)
         np.save(td / "cam.npy", gpu.f32(camb))
@@ -111,7 +112,8 @@ def compile_cold(mips, td, opt):
 
 def main():
     mips = procedural_env_cached(512)
-    out = new_run(5, "probe_preview", dict(scenes=["two_wormholes", "S3"], res=RES, repeat=REPEAT,
+    tag = sys.argv[1] if len(sys.argv) > 1 else ""        # суффикс каталога (повтор пробы на новом коде)
+    out = new_run(5, "probe_preview" + (f"_{tag}" if tag else ""), dict(scenes=["two_wormholes", "S3"], res=RES, repeat=REPEAT,
                                            slangc=gpu.slangc_version()))
     rep = {}
     for name in ["two_wormholes", "S3"]:
