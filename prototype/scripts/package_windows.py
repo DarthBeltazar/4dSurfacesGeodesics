@@ -76,7 +76,7 @@ README = """geo4d — редактор сцен искривлённых про�
 
 Сторонние компоненты: Slang (slangc, Apache-2.0 WITH LLVM-exception, https://github.com/shader-slang/slang),
 SDL3 (zlib), Dear ImGui (MIT), volk (MIT), Vulkan Memory Allocator (MIT), рантайм Microsoft Visual C++
-(распространяемые файлы Visual Studio 2022). Лицензия проекта — LICENSE (MIT).
+(распространяемые файлы Visual Studio 2022). Лицензия проекта — LICENSE (GPL-3.0-or-later).
 """
 
 

@@ -1,6 +1,6 @@
 # 4D-гиперповерхности и геодезические: рендерер червоточин
 
-[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![License: GPL v3](https://img.shields.io/badge/license-GPLv3-blue.svg)](LICENSE)
 ![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-3776AB?logo=python&logoColor=white)
 ![JAX](https://img.shields.io/badge/JAX-float64%20prototype-A100FF)
 ![C++20](https://img.shields.io/badge/C%2B%2B-20-00599C?logo=cplusplus&logoColor=white)
@@ -434,5 +434,5 @@ docs/
 
 ## Лицензия
 
-[MIT](LICENSE). Кодировщик BC6H в `gpu/third_party/bc6h` — GPURealTimeBC6H (K. Narkowicz), MIT, см. его
+[GNU GPL v3](LICENSE) или любая более поздняя версия (GPL-3.0-or-later). Кодировщик BC6H в `gpu/third_party/bc6h` — GPURealTimeBC6H (K. Narkowicz), MIT, см. его
 [LICENSE](gpu/third_party/bc6h/LICENSE).
