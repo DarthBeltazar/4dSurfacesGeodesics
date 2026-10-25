@@ -472,6 +472,29 @@ ExprPtr bind_params(const ExprPtr& e, const std::map<std::string, double>& value
     return c;
 }
 
+ExprPtr bind_params(const ExprPtr& e, const std::map<std::string, ExprPtr>& values) {
+    if (e->kind == Expr::Param) {
+        auto it = values.find(e->text);
+        if (it == values.end()) throw ExprError("нет значения параметра «" + e->text + "»", e->pos);
+        return it->second;
+    }
+    if (e->args.empty()) return e;
+    auto c = std::make_shared<Expr>(*e);
+    c->field = false;
+    for (auto& a : c->args) {
+        a = bind_params(a, values);
+        c->field = c->field || a->field;
+    }
+    return c;
+}
+
+ExprPtr mk_slot(int i) {
+    auto e = std::make_shared<Expr>();
+    e->kind = Expr::Param;
+    e->text = "$" + std::to_string(i);
+    return e;
+}
+
 ExprPtr substitute_coords(const ExprPtr& e, const std::array<ExprPtr, 4>& coords) {
     if (e->kind == Expr::Coord) return coords[e->coord];
     if (e->args.empty()) return e;

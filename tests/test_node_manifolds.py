@@ -191,10 +191,11 @@ def test_m35_gpu_geodesics_vs_dop853(tmp_path):
     assert e_g < 4 * e_p + 1e-5 * sh.scale, (e_g, e_p)
 
 
-def _render(tmp_path, scene, name, legacy=False):
+def _render(tmp_path, scene, name, legacy=False, bake=False):
     d = tmp_path / name
     r = subprocess.run([str(gpu.EXE), "export-graph", str(scene), str(d), "--res", "96x54", "--compile"]
-                       + (["--legacy-codegen"] if legacy else []), capture_output=True, text=True, encoding="utf-8")
+                       + (["--legacy-codegen"] if legacy else []) + (["--bake-params"] if bake else []),
+                       capture_output=True, text=True, encoding="utf-8")
     assert r.returncode == 0, r.stderr
     np.savetxt(tmp_path / "s.txt", np.zeros((6, 6)), fmt="%.6f")
     g = d / "app_graph.txt"
@@ -218,7 +219,7 @@ def test_formula_s3_equals_legacy_s3(tmp_path):
             n.update(type="mf.formula", params={"formula": "length(x, y, z, w) - a", "a": R, "scale": R,
                                                 "s_max": 8 * np.pi * R})
     (tmp_path / "f.g4d").write_text(json.dumps(doc, ensure_ascii=False), encoding="utf-8")
-    a, _ = _render(tmp_path, tmp_path / "f.g4d", "formula")
+    a, _ = _render(tmp_path, tmp_path / "f.g4d", "formula", bake=True)      # побитово — с запечёнными числами
     b, _ = _render(tmp_path, ROOT / "scenes" / "S3.json", "legacy", legacy=True)
     for k in a:
         assert np.array_equal(a[k], b[k]), k

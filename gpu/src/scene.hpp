@@ -47,6 +47,17 @@ struct FlatZones {                                // M29 (geo4d.pathtrace.FlatZo
     double rho0 = 0;
 };
 
+// Слоты параметров (DD-011 §5): числа графа, которые правятся без перекомпиляции. Слот i — компонента i % 4 строки
+// kSlotBase + i / 4 буфера камеры (codegen.hpp); в выражениях — параметр «$i» (mk_slot). Производные числа (cos угла
+// поворота, k·ln 2, SCALE, сдвиг «на M») — тоже слоты, их считает CPU при каждой правке. Порядок выделения задаётся
+// структурой графа, поэтому у той же структуры с другими числами те же индексы (и тот же текст шейдеров).
+struct Slots {
+    std::vector<double> v;
+    int scalar(double x);
+    int row3(const std::array<double, 3>& c);     // с начала новой строки: (x, y, z) — одна строка float4
+    std::map<std::string, double> values() const; // «$i» → число (eval_expr, bind_params)
+};
+
 struct Manifold {
     std::string kind;
     Params params;
@@ -65,6 +76,9 @@ struct Manifold {
     std::string formula;
     ExprPtr expr;
     std::map<std::string, double> expr_vals;      // параметры формулы (a…d у mf.formula)
+    // слоты (граф сцены, DD-011 §5): параметр формулы → слот; SCALE, ρ₀ и центры шаров кривизны (строки подряд)
+    std::map<std::string, int> slot_of;
+    int scale_slot = -1, rho0_slot = -1, ball_slot = -1;
     bool legacy() const { return formula.empty(); }
 
     double p(const std::string& key, size_t i = 0) const;
@@ -94,6 +108,8 @@ struct Scene {
     bool dynamic_ok() const;
     std::string mf_node;                          // тип ноды многообразия в графе (DD-011)
     std::map<std::string, double> mf_values;      // её параметры (векторы — компонентами c1.x …)
+    Slots slots;                                  // DD-011 §5 (только у графа сцены)
+    bool bake = false;                            // кодген: числа слотов — литералами (сверка и замер цены слотов)
 };
 
 // файл сцены (`.g4d` version 2 или scenes/*.json version 1 — переводится в граф, DD-011) → модель окна;

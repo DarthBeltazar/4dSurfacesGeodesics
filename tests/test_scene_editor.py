@@ -161,7 +161,7 @@ def _editor_cfg(td, res="96x54"):
     return dict(scene=SF.resolve("two_wormholes").as_posix(), work_dir=td.as_posix(), fov=75.0, env=None,
                 python=Path(sys.executable).as_posix(),
                 script=(Path(__file__).resolve().parents[1] / "prototype/scripts/app.py").as_posix(),
-                args=["--res", res, "--cube", "64"])
+                args=["--res", res, "--cube", "64", "--bake-params"])   # эталон — граф Python (литералы, без слотов DD-011)
 
 
 def _app_run(sc, cam, td, frames, edits=(), dump=None, editor=None, extra=""):
@@ -262,7 +262,7 @@ def test_app_remanifold(tmp_path, bad):
     ed = dict(scene=SF.resolve("two_wormholes").as_posix(), work_dir=tmp_path.as_posix(), fov=75.0, env=None,
               python=Path(sys.executable).as_posix(),
               script=(Path(__file__).resolve().parents[1] / "prototype/scripts/app.py").as_posix(),
-              args=["--res", "96x54", "--cube", "64"])
+              args=["--res", "96x54", "--cube", "64", "--bake-params"])
     graph = G.app_graph(sc, cam, tmp_path, speed=speed, hidden=True, bench=(tmp_path / "script.txt", tmp_path / "f.json"),
                         dumps=[(9, tmp_path.as_posix()), (39, tmp_path.as_posix())], editor=ed)
     rho0 = 4.5 if bad else 3.5                               # 4.5: шары кривизны пересекаются (|c₁ − c₂| = 8 < 2ρ₀)

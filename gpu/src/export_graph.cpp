@@ -62,6 +62,7 @@ int run_export_graph(int argc, char** argv) {
         else if (a == "--vsync") o.vsync = true;
         else if (a == "--fullscreen") o.fullscreen = true;
         else if (a == "--legacy-codegen") o.legacy_codegen = true;   // виды scenes.slang и MF_* (как Python)
+        else if (a == "--bake-params") o.bake_params = true;         // числа графа — литералами (DD-011 §5)
         else if (a == "--compile") do_compile = true;
         else if (a == "--threads") threads = std::stoi(next());
         else if (a == "--spv-dir") spv_dir = next();
@@ -118,6 +119,7 @@ int run_eval_graph(int argc, char** argv) {
     if (argc < 5) throw std::runtime_error("использование: geo4d_gpu eval-graph <сцена> <вход.json> <выход.json>");
     Dirs d = default_dirs(argv[0]);
     Scene sc = load_scene(argv[2], false);
+    sc.bake = true;                               // заголовок для ядер вне окна (трассировка тестов): числа — литералами
     const Manifold& m = sc.mf;
     // выражение многообразия: собранное по графу или формула ноды из библиотеки с её параметрами
     ExprPtr e = m.expr;
@@ -155,7 +157,7 @@ int run_eval_graph(int argc, char** argv) {
     nlohmann::json objs = nlohmann::json::array();
     for (auto& o : sc.objs) {
         ExprPtr ge = o.expr;
-        std::map<std::string, double> gv;
+        std::map<std::string, double> gv = sc.slots.values();   // составная форма: числа — в слотах
         if (!ge) {
             const NodeDef* def = node_library().find(o.node);
             std::string fs = def->formula;

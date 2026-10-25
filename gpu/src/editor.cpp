@@ -447,10 +447,14 @@ void Editor::commit_scene(const SceneDesc& sd, const ManifoldInfo& mi, const std
 // .g4d с текущей камерой (правки материалов ползунками до шага 6 в него не попадают)
 std::string Editor::scene_text(const std::string& kind, const std::vector<ManifoldParam>& params, const std::string& env,
                                const CameraState& cam) const {
-    if (!cfg_.graph_doc) return scene_json(kind, params, env, objs_, cam, cfg_.fov, cfg_.speed);
-    std::ifstream in(cfg_.scene_path, std::ios::binary);
-    if (!in) throw std::runtime_error("не открыть " + cfg_.scene_path);
-    nlohmann::json doc = nlohmann::json::parse(in);
+    if (!cfg_.graph_doc && doc_override_.empty()) return scene_json(kind, params, env, objs_, cam, cfg_.fov, cfg_.speed);
+    nlohmann::json doc;
+    if (!doc_override_.empty()) doc = nlohmann::json::parse(doc_override_);
+    else {
+        std::ifstream in(cfg_.scene_path, std::ios::binary);
+        if (!in) throw std::runtime_error("не открыть " + cfg_.scene_path);
+        doc = nlohmann::json::parse(in);
+    }
     auto v4 = [](const float* a) { return nlohmann::json::array({a[0], a[1], a[2], a[3]}); };
     doc["camera"] = {{"x", v4(cam.x)}, {"f", v4(cam.f)}, {"up", v4(cam.u)}, {"right", v4(cam.r)}, {"fov", cfg_.fov}};
     return doc.dump(1) + "\n";
@@ -491,6 +495,7 @@ void Editor::start_rebuild(const CameraState& cam, RebuildKind rk) {
         done_ = false;
         status_ = rk == RebuildKind::Structure    ? "сборка быстрых шейдеров (новая структура объектов)…"
                   : rk == RebuildKind::Resolution ? "граф под новое разрешение…"
+                  : rk == RebuildKind::Graph      ? "сборка шейдеров (структура графа сцены изменилась)…"
                                                   : "сборка шейдеров и графа…";
         worker_ = std::make_unique<std::thread>([this, fn = rebuild_fn_, json, base, args = inproc_args_]() {
             std::string err;
@@ -528,6 +533,12 @@ void Editor::rebuild(const std::string& kind, const std::vector<ManifoldParam>& 
     while (wait && worker_ && !done_) std::this_thread::sleep_for(std::chrono::milliseconds(20));
 }
 
+void Editor::rebuild_doc(const std::string& doc_text, const CameraState& cam, bool wait) {
+    doc_override_ = doc_text;
+    start_rebuild(cam, RebuildKind::Graph);
+    while (wait && worker_ && !done_) std::this_thread::sleep_for(std::chrono::milliseconds(20));
+}
+
 void Editor::rebuild_structure(const CameraState& cam, bool wait) {
     start_rebuild(cam, RebuildKind::Structure);
     while (wait && worker_ && !done_) std::this_thread::sleep_for(std::chrono::milliseconds(20));
@@ -551,6 +562,7 @@ std::string Editor::poll_rebuild() {
     if (rc_ == 0) {
         status_ = rebuild_kind_ == RebuildKind::Structure    ? "быстрый режим: шейдеры с новой структурой объектов"
                   : rebuild_kind_ == RebuildKind::Resolution ? "разрешение рендера обновлено"
+                  : rebuild_kind_ == RebuildKind::Graph      ? "граф сцены пересобран"
                                                              : "многообразие обновлено";
         return graph_out_ + "/app_graph.txt";
     }
@@ -608,7 +620,8 @@ UiActions Editor::draw(const FrameInfo& fi, const CameraState& cam, bool edit_mo
     if (ImGui::CollapsingHeader("Многообразие", ImGuiTreeNodeFlags_DefaultOpen)) {
         int cur = 0;
         for (int i = 0; i < IM_ARRAYSIZE(kKinds); ++i) if (kind_edit_ == kKinds[i]) cur = i;
-        ImGui::BeginDisabled(busy);
+        if (has_doc()) ImGui::TextDisabled("граф сцены правится в панели «Параметры»");
+        ImGui::BeginDisabled(busy || has_doc());
         if (ImGui::Combo("вид", &cur, kKindNames, IM_ARRAYSIZE(kKindNames)) && kind_edit_ != kKinds[cur]) {
             kind_edit_ = kKinds[cur];
             params_edit_ = kind_edit_ == cfg_.kind ? cfg_.params : default_params(kind_edit_);

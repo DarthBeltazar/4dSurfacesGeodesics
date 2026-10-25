@@ -80,7 +80,8 @@ def test_graph_errors(tmp_path, case):
 
 
 def _frames(d, scene, legacy, tmp_path):
-    args = ["export-graph", scene, d, "--res", "96x54", "--compile"] + (["--legacy-codegen"] if legacy else [])
+    # граф: числа запечены (--bake-params) — побитовое сравнение с видами scenes.slang; слоты — test_node_slots.py
+    args = ["export-graph", scene, d, "--res", "96x54", "--compile"] + (["--legacy-codegen"] if legacy else ["--bake-params"])
     r = _exe(*args)
     assert r.returncode == 0, r.stderr
     np.savetxt(tmp_path / "s.txt", np.zeros((3, 6)), fmt="%.6f")

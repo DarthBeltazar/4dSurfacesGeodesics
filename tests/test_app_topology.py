@@ -31,7 +31,7 @@ def _editor_cfg(td, scene_path, res="96x54"):
                 env=json.loads(Path(scene_path).read_text(encoding="utf-8")).get("env"),
                 python=Path(sys.executable).as_posix(),
                 script=(Path(__file__).resolve().parents[1] / "prototype/scripts/app.py").as_posix(),
-                args=["--res", res, "--cube", "64"])
+                args=["--res", res, "--cube", "64", "--bake-params"])   # эталон — граф Python (литералы, без слотов DD-011)
 
 
 def _cam(sc, c, w=96, h=54):

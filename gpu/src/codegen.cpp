@@ -221,10 +221,18 @@ std::string param_lit(double v) {
 
 // строка obj_g для объекта из формулы его ноды (DD-011 §4): параметры — поля строк объекта (rows), int-параметры
 // формы ({axis}) подставляются в текст как координата
-std::string object_g_line(const Object& o, size_t k) {
+std::map<std::string, std::string> slot_params(const Scene& sc) {
+    std::map<std::string, std::string> pm;
+    for (size_t i = 0; i < sc.slots.v.size(); ++i) pm["$" + std::to_string(i)] = slot_ref(int(i));
+    return pm;
+}
+
+std::string object_g_line(const Scene& sc, const Object& o, size_t k) {
     const std::string ks0 = std::to_string(k);
-    if (o.kind == "graph")                        // составная форма (M36): выражение целиком, числа подставлены
-        return "    if (k == " + ks0 + ") { return " + emit_slang(o.expr, {}) + "; }";
+    if (o.kind == "graph") {                      // составная форма (M36): выражение целиком, числа — слоты (или bake)
+        const std::string g = sc.bake ? emit_slang(bind_params(o.expr, sc.slots.values()), {}) : emit_slang(o.expr, slot_params(sc));
+        return "    if (k == " + ks0 + ") { return " + g + "; }";
+    }
     const NodeDef* def = node_library().find(o.node);
     if (!def || def->formula.empty()) throw std::runtime_error("нет формулы ноды «" + o.node + "»");
     std::string f = def->formula;
@@ -252,34 +260,72 @@ std::string object_g_line(const Object& o, size_t k) {
 
 }  // namespace
 
+std::string slot_ref(int i) {
+    return "gCam[" + std::to_string(kSlotBase + i / 4) + "]." + std::string(1, "xyzw"[i % 4]);
+}
+
+std::vector<float> slot_rows(const Scene& sc) {
+    if (sc.bake || sc.slots.v.empty()) return {};
+    if (sc.slots.v.size() > size_t(4 * kMaxSlotRows))
+        throw std::runtime_error("граф сцены: чисел-параметров больше " + std::to_string(4 * kMaxSlotRows));
+    std::vector<double> R = sc.slots.v;
+    R.resize((R.size() + 3) / 4 * 4, 0.0);
+    return f32(R);
+}
+
 std::string mf_header(const Scene& sc) {
     const NodeDef* def = node_library().find(sc.mf_node);
     // формула: у нынешних видов — из библиотеки; у листов с горловинами и mf.formula — собранная по графу (DD-011)
     const std::string formula = !sc.mf.formula.empty() ? sc.mf.formula : def ? def->formula : "";
     if (!def || formula.empty()) throw std::runtime_error("нет формулы ноды многообразия «" + sc.mf_node + "»");
+    const Manifold& m = sc.mf;
+    // число графа: слот (DD-011 §5) или литерал (bake — побитово как формулы scenes.slang)
+    const bool slots = !sc.bake;
+    auto num = [&](int slot, double v) { return slots && slot >= 0 ? slot_ref(slot) : param_lit(v); };
     std::vector<std::string> names;
     std::map<std::string, std::string> pm;
     for (auto& [n, v] : sc.mf_values) {
         names.push_back(n);
-        pm[n] = param_lit(v);
+        auto it = m.slot_of.find(n);
+        pm[n] = num(it == m.slot_of.end() ? -1 : it->second, v);
     }
     const std::string sdf = emit_slang(parse_expr(formula, names), pm);
     // hcap (DD-001, M37): Эллис — 0.5|q|; плоские зоны с шарами кривизны — расстояние до ближайшего шара, не меньше ¼ℓ_s
-    const Manifold& m = sc.mf;
+    const std::string scale = num(m.scale_slot, m.scale);
     std::string hcap = "SCALE";
     if (m.exit == 1) hcap = "0.5 * length(p.xyz)";
     else if (m.flat.has && !m.flat.centers.empty()) {
         std::string mn;
-        for (auto& c : m.flat.centers) {
-            std::string t = "length(p.xyz - float3(" + param_lit(c[0]) + ", " + param_lit(c[1]) + ", " + param_lit(c[2]) + "))";
+        for (size_t i = 0; i < m.flat.centers.size(); ++i) {
+            const auto& c = m.flat.centers[i];
+            std::string t = slots && m.ball_slot >= 0
+                                ? "length(p.xyz - gCam[" + std::to_string(kSlotBase + m.ball_slot / 4 + int(i)) + "].xyz)"
+                                : "length(p.xyz - float3(" + param_lit(c[0]) + ", " + param_lit(c[1]) + ", " + param_lit(c[2]) + "))";
             mn = mn.empty() ? t : "min(" + mn + ", " + t + ")";
         }
-        hcap = "max(" + mn + " - " + param_lit(m.flat.rho0) + ", 0.25 * " + param_lit(m.scale) + ")";
+        hcap = "max(" + mn + " - " + num(m.rho0_slot, m.flat.rho0) + ", 0.25 * " + scale + ")";
     }
-    return "// Сгенерировано из графа сцены (DD-011, нода " + def->type + ") — не редактировать.\n"
-           "static const float SCALE = " + param_lit(m.scale) + ";\n"
-           "__generic<T : IReal> T sdf(T x, T y, T z, T w) { return " + sdf + "; }\n"
-           "float hcap(float4 p) { return " + hcap + "; }\n";
+    std::string head = "// Сгенерировано из графа сцены (DD-011, нода " + def->type + ") — не редактировать.\n";
+    if (slots)                                    // числа — слоты в буфере камеры (привязка 0 у всех ядер окна)
+        head += "#define MF_SLOTS 1\n"
+                "#ifndef GCAM_DECLARED\n#define GCAM_DECLARED\n[[vk::binding(0, 0)]] RWStructuredBuffer<float4> gCam;\n#endif\n"
+                "#define SCALE (" + scale + ")\n";
+    else head += "static const float SCALE = " + scale + ";\n";
+    return head + "__generic<T : IReal> T sdf(T x, T y, T z, T w) { return " + sdf + "; }\n"
+                  "float hcap(float4 p) { return " + hcap + "; }\n";
+}
+
+std::string structure_key(const Scene& sc) {
+    Sha256 h;
+    h.update(scene_header(sc, false, true));
+    h.update(mf_header(sc));
+    for (auto& [k, v] : defines(sc, 0, false, true)) h.update(k + "=" + v + ";");
+    const Manifold& m = sc.mf;
+    // push-константы многообразия (push_items), фон и плоские зоны (секции графа, директива flat)
+    h.update("s_max=" + pyrepr(m.has_s_max ? m.s_max : -1.0) + ";ell_max=" + pyrepr(m.has_ell_max ? m.ell_max : -1.0) +
+             ";env=" + sc.env + ";flat=" + std::to_string(m.flat.has) + ";exit=" + std::to_string(m.exit) +
+             ";nslot=" + std::to_string(sc.slots.v.size()) + ";bake=" + std::to_string(sc.bake));
+    return h.hexdigest();
 }
 
 std::string scene_header(const Scene& sc, bool dynamic, bool graph) {
@@ -292,8 +338,15 @@ std::string scene_header(const Scene& sc, bool dynamic, bool graph) {
                            "float3 pt_ball_c(int i) { return i == 0 ? mf_c1() : mf_c2(); }"});
         return join(L, "\n") + "\n";
     }
-    L.push_back("#define PT_FLAT_DYNAMIC 0");
     const FlatZones& fz = sc.mf.flat;
+    if (graph && !sc.bake && fz.has) {            // DD-011 §5: ρ₀ и центры шаров кривизны — слоты (как DD-009)
+        const Manifold& m = sc.mf;
+        L.insert(L.end(), {"#define PT_FLAT_DYNAMIC 1", "#define PT_HAS_FLAT 1", "#define PT_NBALL " + std::to_string(fz.centers.size()),
+                           "#define PT_RHO0 (" + slot_ref(m.rho0_slot) + ")",
+                           m.ball_slot >= 0 ? "float3 pt_ball_c(int i) { return gCam[" + std::to_string(kSlotBase + m.ball_slot / 4) + " + i].xyz; }"
+                                            : "float3 pt_ball_c(int i) { return float3(0); }"});
+    } else {
+    L.push_back("#define PT_FLAT_DYNAMIC 0");
     if (fz.has) {
         std::vector<std::string> cs;
         for (auto& c : fz.centers) cs.push_back("float3(" + fmt9g(c[0]) + ", " + fmt9g(c[1]) + ", " + fmt9g(c[2]) + ")");
@@ -304,6 +357,7 @@ std::string scene_header(const Scene& sc, bool dynamic, bool graph) {
                            "static const float3 PT_BALL_C[1] = { float3(0) };"});
     }
     L.push_back("float3 pt_ball_c(int i) { return PT_BALL_C[i]; }");
+    }
     std::vector<std::string> isplane;
     for (auto& o : sc.objs) isplane.push_back(o.kind == "plane" ? "1" : "0");
     L.push_back("#define PT_NOBJ " + std::to_string(sc.objs.size()));
@@ -312,7 +366,7 @@ std::string scene_header(const Scene& sc, bool dynamic, bool graph) {
     for (size_t k = 0; k < sc.objs.size(); ++k) {
         const Object& o = sc.objs[k];
         std::string ks = std::to_string(k);
-        if (graph) L.push_back(object_g_line(o, k));
+        if (graph) L.push_back(object_g_line(sc, o, k));
         else if (o.kind == "ball4")
             L.push_back("    if (k == " + ks + ") { float4 c = obj_c(" + ks + "); return jlength4(x - c.x, y - c.y, z - c.z, w - c.w) - obj_s(" + ks + ").y; }");
         else if (o.kind == "torus")
@@ -569,6 +623,8 @@ std::vector<std::string> build(const GraphCtx& c, bool dynamic, std::map<std::st
     auto orows = object_rows(sc), mrows = manifold_rows(sc);
     cam.data.insert(cam.data.end(), orows.begin(), orows.end());
     cam.data.insert(cam.data.end(), mrows.begin(), mrows.end());
+    const std::vector<float> srows = graph ? slot_rows(sc) : std::vector<float>{};   // DD-011 §5
+    cam.data.insert(cam.data.end(), srows.begin(), srows.end());
     cam.shape = {cam.data.size() / 4, 4};
     arrays["cam" + sfx + ".npy"] = cam;
     Array envb;
@@ -642,6 +698,9 @@ std::vector<std::string> build(const GraphCtx& c, bool dynamic, std::map<std::st
                        "presentpipe present " + std::to_string(kIUseDen) + " " + std::to_string(kIBgra) + " " + std::to_string(kIExposure),
                        "seedpipes " + std::to_string(kISeed) + " ptA ptB", "speed " + pyrepr(sc.speed),
                        "objrows cam " + std::to_string(kObjBase), "mfrows cam " + std::to_string(kMfBase)});
+    if (!srows.empty())                           // правка числа графа — запись строк (структура — ключ)
+        L.insert(L.end(), {"slots cam " + std::to_string(kSlotBase) + " " + std::to_string(srows.size() / 4),
+                           "slotkey " + structure_key(sc)});
     auto sd = scene_directives(sc);
     L.insert(L.end(), sd.begin(), sd.end());
     auto ed = editor_directives(c);
@@ -657,8 +716,10 @@ std::vector<std::string> build(const GraphCtx& c, bool dynamic, std::map<std::st
 
 }  // namespace
 
-AppGraph app_graph(const Dirs& d, const Scene& sc, const AppOptions& o, const fs::path& work_dir,
+AppGraph app_graph(const Dirs& d, const Scene& sc0, const AppOptions& o, const fs::path& work_dir,
                    const fs::path& scene_path, const EnvMap& procedural) {
+    Scene sc = sc0;
+    sc.bake = sc.bake || o.bake_params;
     ShaderKeys keys(d);
     double fov = o.fov != 0 ? o.fov : sc.cam.fov;
     AppGraph g;

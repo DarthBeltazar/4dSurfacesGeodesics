@@ -113,7 +113,7 @@ if(GEO4D_APP)
                              PRIVATE "${GEO4D_VULKAN_INC}" "${GEO4D_VOLK_INC}")
   target_compile_definitions(geo4d_imgui PUBLIC IMGUI_IMPL_VULKAN_USE_VOLK PRIVATE VK_NO_PROTOTYPES)
   target_link_libraries(geo4d_imgui PUBLIC SDL3::SDL3)
-  target_sources(geo4d_gpu PRIVATE src/app.cpp src/editor.cpp src/standalone.cpp)
+  target_sources(geo4d_gpu PRIVATE src/app.cpp src/editor.cpp src/params_panel.cpp src/standalone.cpp)
   target_link_libraries(geo4d_gpu PRIVATE SDL3::SDL3 geo4d_imgui)
   target_compile_definitions(geo4d_gpu PRIVATE GEO4D_APP=1)
   if(WIN32)       # SDL3.dll рядом с exe

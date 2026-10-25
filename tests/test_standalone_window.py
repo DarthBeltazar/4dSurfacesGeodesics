@@ -33,12 +33,12 @@ def _script(td, frames, dump=(), extra=""):
     return "\n".join(lines) + "\n" + extra
 
 
-def _standalone(td, scene, frames, dump=(), extra="", res="96x54"):
+def _standalone(td, scene, frames, dump=(), extra="", res="96x54", opts=()):
     """Окно без Python; возвращает stdout (rows_check, mf_check, standalone_build)."""
     (td / "extra.txt").parent.mkdir(parents=True, exist_ok=True)
     (td / "extra.txt").write_text(_script(td, frames, dump, extra), encoding="utf-8")
     r = subprocess.run([str(gpu.EXE), str(scene), "--res", res, "--cube", "64", "--work-dir", str(td / "work"),
-                        "--extra", str(td / "extra.txt")], capture_output=True, text=True, encoding="utf-8", env=ENV)
+                        "--extra", str(td / "extra.txt"), *opts], capture_output=True, text=True, encoding="utf-8", env=ENV)
     assert r.returncode == 0, r.stdout + r.stderr
     rows = [float(t.split()[1]) for t in r.stdout.splitlines() if t.startswith("rows_check")]
     assert rows and max(rows) < 1e-6, rows
@@ -64,7 +64,7 @@ def test_standalone_equals_python_app(tmp_path):
     g.write_text(g.read_text(encoding="utf-8") + _script(py, 8, [7]), encoding="utf-8")
     r = subprocess.run([str(gpu.EXE), "app", str(g)], capture_output=True, text=True, encoding="utf-8", env=ENV)
     assert r.returncode == 0, r.stdout + r.stderr
-    _standalone(tmp_path / "c", scene, 8, [7])
+    _standalone(tmp_path / "c", scene, 8, [7], opts=["--bake-params"])     # числа литералами — тот же текст шейдеров
     _same(_dumps(py, 7), _dumps(tmp_path / "c", 7))
 
 

@@ -72,6 +72,8 @@ def main():
                     help="проба интерпретатора байткода (concept-standalone-nodes.md): в графе режима редактирования f "
                          "двух горловин исполняется из программы geo4d.bytecode, NREG — размер массива регистров")
     ap.add_argument("--probe-variant", default="", help="вариант пробы: const — программа константным массивом в шейдере")
+    ap.add_argument("--bake-params", action="store_true",
+                    help="числа графа сцены — литералами в шейдерах, без слотов (DD-011 §5: замер цены слотов)")
     ap.add_argument("--dump", default="", help="кадры для сохранения через запятую (в каталог результатов замера)")
     ap.add_argument("--python-graph", action="store_true",
                     help="граф строит Python (как до DD-010), окно — `geo4d_gpu app <граф>`: эталон для тестов")
@@ -112,7 +114,7 @@ def main():
         rebuild_args = ["--res", a.res, "--cube", str(a.cube)] + (["--vsync"] if a.vsync else [])
         if not legacy:
             # DD-010: всё в geo4d_gpu; сценарий замера — директивами через --extra (как ниже их дописывает Python)
-            cmd = [str(gpu.EXE), str(scene_path)] + rebuild_args + (["--fov", str(a.fov)] if a.fov else [])
+            cmd = [str(gpu.EXE), str(scene_path)] + rebuild_args + (["--fov", str(a.fov)] if a.fov else []) +                 (["--bake-params"] if a.bake_params else [])
             if a.fullscreen and not a.bench:
                 cmd.append("--fullscreen")
             if a.graph_only:

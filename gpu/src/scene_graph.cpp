@@ -43,15 +43,6 @@ std::array<double, N> vec(const nlohmann::json& j, const char* key, std::array<d
     return r;
 }
 
-// литерал числа для формулы: как repr Python; отрицательный — в скобках
-std::string lit(double v) {
-    char b[64];
-    std::snprintf(b, sizeof(b), "%.17g", v);
-    std::string s = b;
-    if (s.find_first_of(".eEn") == std::string::npos) s += ".0";
-    return v < 0 ? "(" + s + ")" : s;
-}
-
 }  // namespace
 
 const NodeParamDef* NodeDef::param(const std::string& n) const {
@@ -261,7 +252,16 @@ Scene scene_from_document(const nlohmann::json& doc0, const std::string& path, b
         m.flat.has = true;
         m.flat.sheets = {W, -W};
         m.scale = W;
-        std::string f = "w * w - " + lit(W) + " * " + lit(W);
+        std::map<std::string, double> vals;
+        auto sl = [&](double x) {                 // слот параметра формулы (DD-011 §5): имя «_i» — слот i
+            const int i = sc.slots.scalar(x);
+            const std::string n = "_" + std::to_string(i);
+            m.slot_of[n] = i;
+            vals[n] = x;
+            return n;
+        };
+        const std::string Wn = sl(W);
+        std::string f = "w * w - " + Wn + " * " + Wn;
         for (size_t i = 0; i < th.size(); ++i) {
             const T& t = th[i];
             if (!(t.b > 0 && t.b < t.rho0)) fail(t.id, "нужно 0 < b < ρ₀");
@@ -275,13 +275,18 @@ Scene scene_from_document(const nlohmann::json& doc0, const std::string& path, b
             m.flat.centers.push_back({t.cx, t.cy, t.cz});
             m.flat.rho0 = t.rho0;
             m.scale = i == 0 ? t.b : std::min(m.scale, t.b);
-            f += " + (" + lit(W) + " * " + lit(W) + " - compact_h(length(x - " + lit(t.cx) + ", y - " + lit(t.cy) + ", z - " +
-                 lit(t.cz) + "), " + lit(t.b) + ", " + lit(t.rho0) + ", " + lit(W) + "))";
+            const std::string cx = sl(t.cx), cy = sl(t.cy), cz = sl(t.cz), b = sl(t.b), r0 = sl(t.rho0);
+            f += " + (" + Wn + " * " + Wn + " - compact_h(length(x - " + cx + ", y - " + cy + ", z - " + cz + "), " + b +
+                 ", " + r0 + ", " + Wn + "))";
         }
         m.formula = f;
-        m.expr = parse_expr(f, {});
+        std::vector<std::string> names;
+        for (auto& [k, x] : vals) names.push_back(k);
+        m.expr = parse_expr(f, names);
+        m.expr_vals = vals;
         sc.mf = m;
         sc.mf_node = mn.def->type;
+        sc.mf_values = vals;
     } else if (mn.def->type == "mf.formula") {
         // M37: вид неизвестен — шаг ≤ ℓ_s, без плоских зон (NEE) и фона, длина пути ≤ s_max
         auto v = node_values(*mn.def, *mn.params);
@@ -293,13 +298,6 @@ Scene scene_from_document(const nlohmann::json& doc0, const std::string& path, b
             fail(mid, std::string("формула, символ ") + std::to_string(ex.pos + 1) + ": " + ex.what());
         }
         if (!e->field) fail(mid, "формула не зависит от x, y, z, w");
-        // параметры a…d — числами в текст (до слотов параметров, шаг 4)
-        std::string f;
-        {
-            std::map<std::string, std::string> pm;
-            for (const char* k : {"a", "b", "c", "d"}) pm[k] = lit(v.at(k));
-            f = emit_slang(e, pm, {"x", "y", "z", "w"});
-        }
         Manifold m;
         m.kind = "formula";
         m.shape_name = "formula";
@@ -314,14 +312,16 @@ Scene scene_from_document(const nlohmann::json& doc0, const std::string& path, b
         m.ell_max = 1e9;
         m.formula = src;
         std::map<std::string, double> vals;
-        for (const char* k : {"a", "b", "c", "d"}) vals[k] = v.at(k);
+        for (const char* k : {"a", "b", "c", "d"}) {
+            vals[k] = v.at(k);
+            m.slot_of[k] = sc.slots.scalar(v.at(k));
+        }
         // вычисление на CPU — по исходной формуле с параметрами (eval_expr подставит их)
         m.expr = e;
         m.expr_vals = vals;
         sc.mf = m;
         sc.mf_node = mn.def->type;
         sc.mf_values = vals;
-        (void)f;
     } else {
     if (mn.def->legacy_kind.empty()) fail(mid, "многообразие типа «" + mn.def->type + "» не собирается в окне");
     auto mv = node_values(*mn.def, *mn.params);
@@ -336,6 +336,16 @@ Scene scene_from_document(const nlohmann::json& doc0, const std::string& path, b
     sc.mf = make_manifold(mn.def->legacy_kind, mp);
     sc.mf_node = mn.def->type;
     sc.mf_values = mv;
+    for (auto& [k, x] : mv) sc.mf.slot_of[k] = sc.slots.scalar(x);
+    }
+    // производные числа многообразия — тоже слоты: SCALE (шаг, α, hcap), ρ₀ и центры шаров кривизны (M29) подряд
+    sc.mf.scale_slot = sc.slots.scalar(sc.mf.scale);
+    if (sc.mf.flat.has) {
+        sc.mf.rho0_slot = sc.slots.scalar(sc.mf.flat.rho0);
+        for (size_t i = 0; i < sc.mf.flat.centers.size(); ++i) {
+            const int s = sc.slots.row3(sc.mf.flat.centers[i]);
+            if (i == 0) sc.mf.ball_slot = s;
+        }
     }
     const J settings = doc.value("settings", J::object());
     sc.env_field = settings.contains("env") && !settings["env"].is_null() ? settings["env"].get<std::string>() : "";
@@ -349,8 +359,8 @@ Scene scene_from_document(const nlohmann::json& doc0, const std::string& path, b
         const N& n = nodes[id];
         const std::string& t = n.def->type;
         auto v = node_values(*n.def, *n.params);
-        auto num = [](double x) { return mk_num(x); };
-        if (!n.def->legacy_kind.empty()) {        // примитив: формула библиотеки с числами
+        auto num = [&](double x) { return mk_slot(sc.slots.scalar(x)); };   // число графа — слот (DD-011 §5)
+        if (!n.def->legacy_kind.empty()) {        // примитив: формула библиотеки, параметры — слоты
             std::string f = n.def->formula;
             std::vector<std::string> names;
             for (auto& p : n.def->params) {
@@ -360,8 +370,13 @@ Scene scene_from_document(const nlohmann::json& doc0, const std::string& path, b
                         f.replace(at, key.size(), std::string(1, "xyzw"[int(v.at(p.name)) & 3]));
                 }
             }
-            for (auto& [k, x] : v) names.push_back(k);
-            ExprPtr g = bind_params(parse_expr(f, names), v);
+            std::map<std::string, ExprPtr> bound;
+            for (auto& [k, x] : v) {
+                names.push_back(k);
+                const NodeParamDef* pd = n.def->param(k.substr(0, k.find('.')));
+                if (!pd || pd->type != "int") bound[k] = num(x);
+            }
+            ExprPtr g = bind_params(parse_expr(f, names), bound);
             Bound b;
             if (t == "obj.ball4" || t == "obj.torus") {
                 b.c = {v.at("c.x"), v.at("c.y"), v.at("c.z"), v.at("c.w")};
@@ -375,11 +390,13 @@ Scene scene_from_document(const nlohmann::json& doc0, const std::string& path, b
             const double k = v.at("k");
             if (!(k > 0)) fail(id, "нужно k > 0");
             ExprPtr g;
-            if (t == "obj.union") g = mk_call("smin", {a.g, bb.g, num(k)});
+            ExprPtr ks = num(k);
+            if (t == "obj.union") g = mk_call("smin", {a.g, bb.g, ks});
             else {
                 // smax_k(a, b) − k·ln 2 = −smin_k(−a, −b) − k·ln 2; вычитание — пересечение с −b
                 ExprPtr nb = t == "obj.subtract" ? bb.g : mk_op(Expr::Neg, bb.g);
-                g = mk_op(Expr::Sub, mk_op(Expr::Neg, mk_call("smin", {mk_op(Expr::Neg, a.g), nb, num(k)})), num(k * kLn2));
+                ExprPtr kl = num(k * kLn2);
+                g = mk_op(Expr::Sub, mk_op(Expr::Neg, mk_call("smin", {mk_op(Expr::Neg, a.g), nb, ks})), kl);
             }
             auto fa = a.bound, fb = bb.bound;
             std::function<Bound(double)> bf;
@@ -411,7 +428,7 @@ Scene scene_from_document(const nlohmann::json& doc0, const std::string& path, b
             for (int i = 0; i < 4; ++i) c[i] = mk_coord(i);
             if (t == "xf.translate") {
                 Vec4 tv{v.at("t.x"), v.at("t.y"), v.at("t.z"), v.at("t.w")};
-                for (int i = 0; i < 4; ++i) c[i] = mk_op(Expr::Sub, mk_coord(i), num(tv[i]));
+                for (int i = 0; i < 4; ++i) c[i] = mk_op(Expr::Sub, mk_coord(i), num(tv[i]));   // по порядку i
                 auto f = s.bound;
                 return {substitute_coords(s.g, c), [f, tv](double d) {
                             Bound b = f(d);
@@ -425,9 +442,11 @@ Scene scene_from_document(const nlohmann::json& doc0, const std::string& path, b
                 if (i < 0 || i > 3 || j < 0 || j > 3 || i == j) fail(id, "оси поворота i, j — разные из 0…3");
                 const double a = v.at("angle") * (3.14159265358979323846 / 180.0), ca = std::cos(a), sa = std::sin(a);
                 // аргумент дочерней формы: R⁻¹(x − center) + center (R — поворот на +angle в плоскости i, j)
-                auto q = [&](int k) { return mk_op(Expr::Sub, mk_coord(k), num(ctr[k])); };
-                c[i] = mk_op(Expr::Add, mk_op(Expr::Add, mk_op(Expr::Mul, num(ca), q(i)), mk_op(Expr::Mul, num(sa), q(j))), num(ctr[i]));
-                c[j] = mk_op(Expr::Add, mk_op(Expr::Sub, mk_op(Expr::Mul, num(ca), q(j)), mk_op(Expr::Mul, num(sa), q(i))), num(ctr[j]));
+                // слоты — по порядку (порядок вычисления аргументов в C++ не задан): cos, sin, center_i, center_j
+                ExprPtr cs = num(ca), sn = num(sa), ci = num(ctr[i]), cj = num(ctr[j]);
+                ExprPtr qi = mk_op(Expr::Sub, mk_coord(i), ci), qj = mk_op(Expr::Sub, mk_coord(j), cj);
+                c[i] = mk_op(Expr::Add, mk_op(Expr::Add, mk_op(Expr::Mul, cs, qi), mk_op(Expr::Mul, sn, qj)), ci);
+                c[j] = mk_op(Expr::Add, mk_op(Expr::Sub, mk_op(Expr::Mul, cs, qj), mk_op(Expr::Mul, sn, qi)), cj);
                 auto f = s.bound;
                 return {substitute_coords(s.g, c), [f, i, j, ca, sa, ctr](double d) {
                             Bound b = f(d);
@@ -440,10 +459,13 @@ Scene scene_from_document(const nlohmann::json& doc0, const std::string& path, b
             }
             const double sc_ = v.at("s");
             if (!(sc_ > 0)) fail(id, "нужно s > 0");
-            for (int k = 0; k < 4; ++k)
-                c[k] = mk_op(Expr::Add, mk_op(Expr::Div, mk_op(Expr::Sub, mk_coord(k), num(ctr[k])), num(sc_)), num(ctr[k]));
+            ExprPtr ss = num(sc_);
+            for (int k = 0; k < 4; ++k) {
+                ExprPtr ck = num(ctr[k]);
+                c[k] = mk_op(Expr::Add, mk_op(Expr::Div, mk_op(Expr::Sub, mk_coord(k), ck), ss), ck);
+            }
             auto f = s.bound;
-            return {mk_op(Expr::Mul, num(sc_), substitute_coords(s.g, c)), [f, sc_, ctr](double d) {
+            return {mk_op(Expr::Mul, ss, substitute_coords(s.g, c)), [f, sc_, ctr](double d) {
                         Bound b = f(d / sc_);
                         if (std::isinf(b.r)) return b;
                         for (int k = 0; k < 4; ++k) b.c[k] = ctr[k] + sc_ * (b.c[k] - ctr[k]);
@@ -477,13 +499,11 @@ Scene scene_from_document(const nlohmann::json& doc0, const std::string& path, b
             ob.center = b.c;
             if (ob.on_M) {                        // сдвиг всей формы: центр сферы — на M
                 if (std::isinf(b.r)) fail(sid, "«Поставить на M» — только для ограниченной формы");
-                if (project) {
-                    Vec4 pc = geo4d::project(sc.mf, b.c);
-                    std::array<ExprPtr, 4> c;
-                    for (int i = 0; i < 4; ++i) c[i] = mk_op(Expr::Sub, mk_coord(i), mk_num(pc[i] - b.c[i]));
-                    ob.expr = substitute_coords(s.g, c);
-                    ob.center = pc;
-                }
+                const Vec4 pc = project ? geo4d::project(sc.mf, b.c) : b.c;
+                std::array<ExprPtr, 4> c;
+                for (int i = 0; i < 4; ++i) c[i] = mk_op(Expr::Sub, mk_coord(i), mk_slot(sc.slots.scalar(pc[i] - b.c[i])));
+                ob.expr = substitute_coords(s.g, c);
+                ob.center = pc;
             }
         } else {
         auto v = node_values(*sn.def, *sn.params);

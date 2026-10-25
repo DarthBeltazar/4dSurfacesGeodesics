@@ -22,7 +22,7 @@ def _editor_cfg(td, res):
     return dict(scene=SF.resolve("two_wormholes").as_posix(), work_dir=td.as_posix(), fov=75.0, env=None,
                 python=Path(sys.executable).as_posix(),
                 script=(Path(__file__).resolve().parents[1] / "prototype/scripts/app.py").as_posix(),
-                args=["--res", res, "--cube", "64"])
+                args=["--res", res, "--cube", "64", "--bake-params"])   # эталон — граф Python (литералы, без слотов DD-011)
 
 
 def _run(td, w, h, frames, dump, extra="", editor=False):

@@ -167,6 +167,24 @@ Manifold make_manifold(const std::string& kind, const Params& overrides) {
     return m;
 }
 
+int Slots::scalar(double x) {
+    v.push_back(x);
+    return int(v.size()) - 1;
+}
+
+int Slots::row3(const std::array<double, 3>& c) {
+    while (v.size() % 4) v.push_back(0.0);
+    const int i = int(v.size());
+    v.insert(v.end(), {c[0], c[1], c[2], 0.0});
+    return i;
+}
+
+std::map<std::string, double> Slots::values() const {
+    std::map<std::string, double> m;
+    for (size_t i = 0; i < v.size(); ++i) m["$" + std::to_string(i)] = v[i];
+    return m;
+}
+
 double Object::bound() const {
     if (kind == "ball4" || kind == "graph") return r;     // graph: радиус ограничивающей сферы составной формы
     if (kind == "torus") return R + r;

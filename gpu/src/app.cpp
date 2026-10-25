@@ -27,6 +27,11 @@
 //   loadscene <кадр> <сцена.json>    в сценарии: открыть сцену, как кнопкой «Открыть» (сразу, режим редактирования)
 //   resize <кадр> <W> <H>            в сценарии: новое разрешение рендера, как в панели «Рендер» (ждёт перегенерацию)
 //   editgraph <граф>                 граф режима редактирования (шейдеры без зашитой структуры объектов, DD-008)
+//   slots <буфер> <строка> <строк>   слоты параметров графа сцены (DD-011 §5) в буфере камеры
+//   slotkey <sha256>                 ключ структуры быстрого графа (codegen.hpp::structure_key): правка параметра с тем же
+//                                    ключом — запись строк без перекомпиляции, иначе — перегенерация
+//   setparam <кадр> <нода> <параметр> <числа…>   в сценарии: правка параметра ноды графа, как панелью «Параметры»
+//                                    (структурная — ждёт перегенерацию)
 //   editmode <кадр> on|off           в сценарии: войти в режим редактирования / выйти (ждёт перегенерацию)
 //   record <файл.raw> <период>       дописывать вывод (BGRA8/RGBA8, W·H·4 байт) каждого период-го кадра — для ролика
 //   dump <кадр> <каталог>            сохранить вывод (u32 RGBA8), кадр, выход денойзера и камеру этого кадра (.npy)
@@ -61,6 +66,8 @@
 #include "denoiser.hpp"
 #endif
 #include "editor.hpp"
+#include "params_panel.hpp"
+#include "scene_graph.hpp"
 #include "graph_program.hpp"
 #include "codegen.hpp"
 #include "memfs.hpp"
@@ -166,6 +173,10 @@ struct AppDirs {
     size_t i_use_den = 0, i_bgra = 0, i_seed = 1, i_exposure = SIZE_MAX;
     float speed = 1.0f;
     int obj_base = -1, mf_base = -1;
+    int slot_base = -1, slot_rows = 0;                                          // DD-011 §5
+    std::string slotkey;
+    struct SetParam { uint32_t frame; std::string node, param; std::vector<double> v; };
+    std::vector<SetParam> setparams;
 };
 
 AppDirs parse_dirs(const GraphProgram& prog) {
@@ -191,6 +202,13 @@ AppDirs parse_dirs(const GraphProgram& prog) {
         else if (w[0] == "record") { d.record_path = w.at(1); d.record_period = uint32_t(std::stoul(w.at(2))); }
         else if (w[0] == "objrows") { d.objbuf = w.at(1); d.obj_base = std::stoi(w.at(2)); }
         else if (w[0] == "mfrows") d.mf_base = std::stoi(w.at(2));
+        else if (w[0] == "slots") { d.slot_base = std::stoi(w.at(2)); d.slot_rows = std::stoi(w.at(3)); }
+        else if (w[0] == "slotkey") d.slotkey = w.at(1);
+        else if (w[0] == "setparam") {
+            AppDirs::SetParam s{uint32_t(std::stoul(w.at(1))), w.at(2), w.at(3), {}};
+            for (size_t i = 4; i < w.size(); ++i) s.v.push_back(std::stod(w[i]));
+            d.setparams.push_back(s);
+        }
         else if (w[0] == "mouse") d.mouse.emplace_back(uint32_t(std::stoul(w.at(1))), std::vector<std::string>(w.begin() + 2, w.end()));
         else if (w[0] == "loadscene") d.loadscene.emplace_back(uint32_t(std::stoul(w.at(1))), w.at(2));
         else if (w[0] == "editgraph") d.editgraph = w.at(1);
@@ -297,7 +315,7 @@ int run_app(const std::string& graph_path, RebuildFn rebuild, std::vector<std::s
             if (!old.present_buf.empty()) {            // перезагрузка: сценарий, дампы и запись — из исходного графа
                 d.bench_in = old.bench_in; d.bench_out = old.bench_out;
                 d.dumps = old.dumps; d.edits = old.edits; d.remanifold = old.remanifold; d.editmode = old.editmode;
-                d.resize = old.resize; d.loadscene = old.loadscene; d.mouse = old.mouse;
+                d.resize = old.resize; d.loadscene = old.loadscene; d.mouse = old.mouse; d.setparams = old.setparams;
                 d.record_path = old.record_path; d.record_period = old.record_period;
             }
             prog->set_push_u32(d.presentpipe, d.i_bgra, sc.format == VK_FORMAT_B8G8R8A8_UNORM ? 1u : 0u);
@@ -509,6 +527,86 @@ int run_app(const std::string& graph_path, RebuildFn rebuild, std::vector<std::s
                                " — режим редактирования; быстрые шейдеры — при выходе из него (Tab)");
             return true;
         };
+        // DD-011 §5: правка параметров графа сцены (панель «Параметры», директива setparam) — сцена на CPU. Ключ
+        // структуры тот же — запись строк объектов, многообразия и слотов и кадр секцией edit (без перекомпиляции);
+        // иначе — перегенерация быстрого графа по документу (commit: ползунок отпущен). Если правка многообразия
+        // увела M от камеры — проекция и касательный базис на CPU, как при холодном старте.
+        ParamsPanel panel;
+        bool params_pending = false;                   // структурная правка ждёт конца идущей перегенерации
+        auto apply_params = [&](const CameraState& cam, bool commit, bool wait) {
+            if (!editor) return;
+            const auto t_apply = std::chrono::steady_clock::now();
+            geo4d::Scene s;
+            try {
+                s = geo4d::scene_from_document(panel.doc(), panel.path(), true);
+            } catch (const std::exception& e) {
+                panel.set_status(std::string(e.what()) + " — не применено");
+                std::printf("params_apply {\"error\": 1}\n");
+                std::fflush(stdout);
+                return;
+            }
+            const std::string doc_text = panel.doc().dump(1) + "\n";
+            editor->set_doc(doc_text);
+            dyn_path.clear();                          // граф режима редактирования собран по старой сцене
+            if (!edit_mode && d.slot_base >= 0 && geo4d::structure_key(s) == d.slotkey) {
+                auto orows = geo4d::object_rows(s), mrows = geo4d::manifold_rows(s), srows = geo4d::slot_rows(s);
+                if (srows.size() != size_t(d.slot_rows) * 4) throw std::runtime_error("слоты: другое число строк при том же ключе");
+                const size_t nb = size_t(d.slot_base + d.slot_rows) * 16;
+                Buffer h = ctx.create_buffer(nb, true);
+                Buffer& camb = prog->buffer(d.objbuf);
+                ctx.copy_buffer(camb, h, nb);
+                float* R = static_cast<float*>(h.mapped);
+                std::copy(orows.begin(), orows.end(), R + size_t(d.obj_base) * 4);
+                std::copy(mrows.begin(), mrows.end(), R + size_t(d.mf_base) * 4);
+                std::copy(srows.begin(), srows.end(), R + size_t(d.slot_base) * 4);
+                geo4d::CameraHints hc;
+                for (int i = 0; i < 4; ++i) {
+                    hc.x[i] = R[i];
+                    hc.f[i] = R[4 + i];
+                    hc.right[i] = R[8 + i];
+                    hc.up[i] = R[12 + i];
+                }
+                hc.has_right = true;
+                geo4d::Vec4 g;
+                const double fx = geo4d::sdf(s.mf, hc.x, &g);
+                const double gn = std::sqrt(g[0] * g[0] + g[1] * g[1] + g[2] * g[2] + g[3] * g[3]);
+                if (!(std::fabs(fx) <= 1e-6 * s.mf.scale * gn)) {      // камера сошла с M
+                    hc.x = geo4d::project(s.mf, hc.x);
+                    geo4d::Camera c = geo4d::make_camera(s.mf, hc, 64, 64, 90.0);
+                    for (int i = 0; i < 4; ++i) {
+                        R[i] = float(c.x[i]);
+                        R[4 + i] = float(c.f[i]);
+                        R[8 + i] = float(c.r[i]);
+                        R[12 + i] = float(c.u[i]);
+                    }
+                }
+                ctx.copy_buffer(h, camb, nb);
+                ctx.destroy_buffer(h);
+                std::vector<std::string> names;
+                for (auto& o : s.objs) names.push_back(o.name);
+                editor->objects() = unpack_rows(orows.data(), names);
+                EdFlat ef;
+                ef.has = s.mf.flat.has;
+                for (double x : s.mf.flat.sheets) ef.sheets.push_back(float(x));
+                for (auto& c : s.mf.flat.centers) ef.balls.push_back({float(c[0]), float(c[1]), float(c[2])});
+                ef.rho0 = float(s.mf.flat.rho0);
+                editor->set_flat(ef);
+                force_edit = true;
+                char msg[96];
+                std::snprintf(msg, sizeof(msg), "применено без перекомпиляции (%.1f мс)", ms_since(t_apply));
+                panel.set_status(msg);
+                std::printf("params_apply {\"instant\": 1, \"ms\": %.2f}\n", ms_since(t_apply));
+                std::fflush(stdout);
+                return;
+            }
+            if (!commit) { panel.set_status("меняется структура шейдеров — сборка, когда правка завершится"); return; }
+            if (editor->rebuilding()) { params_pending = true; return; }
+            panel.set_status("сборка шейдеров: структура графа изменилась…");
+            std::printf("params_apply {\"instant\": 0, \"ms\": %.2f}\n", ms_since(t_apply));
+            std::fflush(stdout);
+            editor->rebuild_doc(doc_text, cam, wait);
+        };
+        if (editor) panel.open(editor->config().scene_path);
         if (overlay) {
             IMGUI_CHECKVERSION();
             ImGui::CreateContext();
@@ -678,6 +776,16 @@ int run_app(const std::string& graph_path, RebuildFn rebuild, std::vector<std::s
                         if (on) enter_edit();
                         else exit_edit(camst, true);
                     }
+            for (auto& sp : d.setparams)               // сценарий: правка параметра графа (DD-011 §5)
+                if (sp.frame == frame && editor) {
+                    std::string err;
+                    if (!panel.set(sp.node, sp.param, sp.v, err)) throw std::runtime_error("setparam: " + err);
+                    apply_params(camst, true, true);
+                }
+            if (params_pending && editor && !editor->rebuilding()) {
+                params_pending = false;
+                apply_params(camst, true, false);
+            }
             for (auto& [fi, p] : d.edits)              // сценарий замера: правка объектов перед кадром
                 if (fi == frame) {
                     NpyArray a = npy_read(p);
@@ -728,6 +836,8 @@ int run_app(const std::string& graph_path, RebuildFn rebuild, std::vector<std::s
                     if (act.manifold_now || act.load_now) apply_scene(editor->pending_scene(), act.load_now);
                     if (act.toggle_edit) toggle_req = true;
                     if (act.structural && !edit_mode) enter_edit();      // форма/число объектов — в режиме редактирования
+                    const ParamsPanel::Change pc = panel.draw(!edit_mode);
+                    if (pc.changed || pc.commit) apply_params(camst, pc.commit, false);
                     if (act.objects_changed) {
                         write_rows(pack_rows(editor->objects(), editor->flat()).data());
                         force_edit = true;
@@ -971,7 +1081,18 @@ int run_app(const std::string& graph_path, RebuildFn rebuild, std::vector<std::s
                 if (!next_graph.empty()) {             // перезагрузка графа без закрытия окна
                     const std::string dir = next_graph.substr(0, next_graph.rfind('/'));
                     const std::string next_dyn = dir + "/app_graph_dyn.txt";
-                    if (editor->last_rebuild_kind() != RebuildKind::Manifold) {
+                    if (editor->last_rebuild_kind() == RebuildKind::Graph) {
+                        // DD-011 §5: граф по документу панели «Параметры» — камера и объекты из него; режима
+                        // редактирования DD-008 у графа-документа нет
+                        baked_path = next_graph;
+                        dyn_path.clear();
+                        switch_graph(baked_path, false, false);
+                        edit_mode = false;
+                        pending_exit = false;
+                        baked_struct = structure(editor->objects());
+                        baked_mf = editor->current_manifold_key();
+                        params_pending = true;             // правки, сделанные во время сборки
+                    } else if (editor->last_rebuild_kind() != RebuildKind::Manifold) {
                         // быстрые шейдеры под новую структуру объектов или граф под новое разрешение; камера — прежняя
                         baked_path = next_graph;
                         dyn_path = next_dyn;

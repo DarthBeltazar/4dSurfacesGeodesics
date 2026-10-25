@@ -22,6 +22,10 @@ constexpr int kPtMaxObj = 32;                     // gpu_pt.PT_MAXOBJ
 constexpr int kObjRows = 9 + 6 * kPtMaxObj;       // gpu_pt.OBJ_ROWS
 constexpr int kMfBase = kObjBase + kObjRows;      // gpu_pt.MF_BASE
 constexpr int kMfRows = 7;                        // gpu_pt.MF_ROWS
+// DD-011 §5: слоты параметров графа — строки после строк многообразия (до kMaxSlotRows); дальше — байткод (шаг 5)
+constexpr int kSlotBase = kMfBase + kMfRows;
+constexpr int kMaxSlotRows = 256;
+constexpr int kProgBase = kSlotBase + kMaxSlotRows;
 constexpr int kSceneDynamic = 11;                 // gpu.SCENE_IDS["dynamic"]
 
 std::string fmt9g(double v);                      // f"{v:.9g}"
@@ -52,6 +56,11 @@ fs::path user_cache_dir();
 // geo4d.gpu_pt (виды scenes.slang и дефайны MF_*; режим --legacy-codegen, эталон для сверки)
 std::string scene_header(const Scene& sc, bool dynamic, bool graph = false);
 std::string mf_header(const Scene& sc);           // mf_scene.slang: SCALE, sdf<T>, hcap
+std::string slot_ref(int i);                      // слот i в Slang: gCam[kSlotBase + i / 4].<xyzw>
+std::vector<float> slot_rows(const Scene& sc);    // ⌈слотов / 4⌉ × 4 (пусто при bake)
+// DD-011 §5: всё, что зашито в шейдеры и граф быстрого пути (заголовки, дефайны, push многообразия, фон), — sha256;
+// у той же структуры с другими числами слотов ключ тот же: правку применяет запись строк (без перекомпиляции)
+std::string structure_key(const Scene& sc);
 // gen/<sha256[:16]>/pt_scene.slang (+ mf_scene.slang при graph); CRLF, как Path.write_text
 fs::path write_header(const Dirs& d, const Scene& sc, bool dynamic, bool graph = false);
 Defines defines(const Scene& sc, int nj, bool dynamic, bool graph = false);
@@ -105,6 +114,7 @@ struct AppOptions {
     double fov = 0;                               // 0 — из файла сцены
     bool vsync = false, fullscreen = false;
     bool legacy_codegen = false;                  // виды scenes.slang и MF_* (как Python) вместо формул графа
+    bool bake_params = false;                     // числа графа — литералами вместо слотов (DD-011 §5: сверка, замер)
 };
 
 struct AppGraph {

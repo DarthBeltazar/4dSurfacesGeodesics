@@ -263,7 +263,7 @@ __generic<T : IReal> T sdf(T x, T y, T z, T w)
 float hcap(float4 p) { return max(min(length(p.xyz - MF_C1), length(p.xyz - MF_C2)) - MF_RHO0, 0.25 * MF_B); }
 #endif
 
-#if SCENE == SCENE_DYNAMIC
+#if SCENE == SCENE_DYNAMIC || defined(MF_SLOTS)   // SCALE из буфера: DD-009 или слоты графа (DD-011 §5)
 #define ALPHA (0.1 / SCALE)
 #else
 static const float ALPHA = 0.1 / SCALE;

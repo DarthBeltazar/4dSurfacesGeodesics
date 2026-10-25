@@ -140,7 +140,8 @@ struct FrameInfo {
     bool instant = false;                         // есть граф режима редактирования: многообразие меняется сразу
 };
 
-enum class RebuildKind { Manifold, Structure, Resolution };
+// Graph — документ графа сцены из панели «Параметры» (DD-011 §5): структурная правка, камера и объекты — из нового графа
+enum class RebuildKind { Manifold, Structure, Resolution, Graph };
 
 // Перегенерация в процессе (DD-010, окно без Python): сцена (JSON) и аргументы как у app.py (--res, --cube, --vsync)
 // → граф в каталоге out_dir (memfs: <out_dir>/app_graph.txt). false — ошибка, сообщение в err.
@@ -182,6 +183,12 @@ public:
     void rebuild_structure(const CameraState& cam, bool wait);
     // то же многообразие и объекты, новое разрешение рендера (аргумент --res перегенераций меняется насовсем)
     void rebuild_resolution(const CameraState& cam, uint32_t w, uint32_t h, bool wait);
+    // DD-011 §5: быстрый граф по документу графа сцены (панель «Параметры»); с этого момента документ — источник сцены
+    // для всех перегенераций и сохранения (правки объектов этой панелью в него не попадают — она только для материалов)
+    void rebuild_doc(const std::string& doc_text, const CameraState& cam, bool wait);
+    void set_doc(const std::string& doc_text) { doc_override_ = doc_text; }
+    bool has_doc() const { return !doc_override_.empty(); }
+    void set_flat(const EdFlat& f) { cfg_.flat = f; }
     RebuildKind last_rebuild_kind() const { return rebuild_kind_; }
     double last_rebuild_ms() const { return rebuild_ms_; }     // от запуска перегенерации до готового графа
     const std::vector<std::pair<int, int>>& requested_structure() const { return requested_; }
@@ -208,6 +215,7 @@ private:
     RebuildFn rebuild_fn_;
     std::vector<std::string> inproc_args_;        // --res меняется насовсем (rebuild_resolution)
     std::string rebuild_err_;
+    std::string doc_override_;                    // документ графа из панели «Параметры» (пусто — нет)
     std::chrono::steady_clock::time_point rebuild_t0_{};
     double rebuild_ms_ = 0;
 
