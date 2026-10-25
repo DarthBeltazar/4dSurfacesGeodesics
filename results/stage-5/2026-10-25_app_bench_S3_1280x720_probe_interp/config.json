@@ -1,0 +1,33 @@
+{
+  "scene": "S3",
+  "res": "1280x720",
+  "fullscreen": false,
+  "fov": 0,
+  "cube": 512,
+  "vsync": false,
+  "bench": true,
+  "visible": false,
+  "frames": 60,
+  "tag": "probe_interp",
+  "edit_mode": true,
+  "probe_interp": 8,
+  "probe_variant": "",
+  "dump": "",
+  "graph_only": "",
+  "gpupt": {
+    "tol_kappa": 0.003,
+    "tol_max": 0.01,
+    "c_hit": 0.05,
+    "k_cone": 0.25,
+    "k_lod": 0.0,
+    "max_depth": 16,
+    "rr_depth": 3,
+    "nee": 1,
+    "mis": 0,
+    "s_max": 1000.0,
+    "n_max": 4000,
+    "env_scale": 1.0,
+    "seed": 1
+  },
+  "slangc": "2025.17.2"
+}

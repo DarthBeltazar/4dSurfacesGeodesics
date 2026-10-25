@@ -1,0 +1,1 @@
+.venv/Scripts/python.exe prototype/scripts/app.py --bench --edit-mode --scene S3 --res 1280x720 --probe-interp 8 --tag probe_interp
