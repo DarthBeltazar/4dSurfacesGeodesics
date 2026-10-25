@@ -84,6 +84,90 @@ float4 mf_p() { return gCam[MF_BASE + 1]; }
 float3 mf_c1() { return gCam[MF_BASE + 2].xyz; }
 float3 mf_c2() { return gCam[MF_BASE + 3].xyz; }
 float mf_env_scale() { return gCam[MF_BASE + 4].w; }
+
+#ifdef MF_PROG
+// Проба интерпретатора (docs/design/concept-standalone-nodes.md, п. 3): f — программа-байткод geo4d.bytecode в строках
+// с PROG_BASE (вид в строке MF_BASE по-прежнему задаёт hcap, SCALE и выход). Инструкция:
+// (op + 256·dst + 65536·a, b + 256·c, k, 0). Программа одна на диспетчеризацию — ветвление по op однородно.
+// Над jet-числами — четыре пути: унарная функция (M4: значение и две производные считаются скалярно по op, затем
+// одна операция unary), a ± b, a·b и выбор по значению (M6). Деление и smin раскладывает ассемблер (geo4d.bytecode).
+static const int PROG_BASE = MF_BASE + 7;
+#ifndef PROG_NREG
+#define PROG_NREG 16
+#endif
+__generic<T : IReal> T sdf(T x, T y, T z, T w)
+{
+    T r[PROG_NREG];
+    r[0] = x; r[1] = y; r[2] = z; r[3] = w;
+#ifdef PROG_CONST_ROWS                    // вариант пробы: та же программа константным массивом (не из буфера)
+    static const float4 kProg[] = { PROG_CONST_ROWS };
+    int n = int(kProg[0].x);
+#else
+    int n = int(gCam[PROG_BASE].x);
+#endif
+    for (int i = 0; i < n; i++)
+    {
+#ifdef PROG_CONST_ROWS
+        float4 ins = kProg[1 + i];
+#else
+        float4 ins = gCam[PROG_BASE + 1 + i];
+#endif
+        uint e0 = uint(ins.x), e1 = uint(ins.y);
+        uint op = e0 & 255u, d = (e0 >> 8) & 255u, ia = e0 >> 16, ib = e1 & 255u, ic = e1 >> 8;
+        float k = ins.z;
+#ifdef PROG_STATIC_REGS                   // вариант пробы: регистры без динамического индекса (выбор развёрнутым циклом)
+        T a = r[0], b = r[0], c = r[0];
+        [ForceUnroll] for (int j = 1; j < PROG_NREG; j++)
+        {
+            if (ia == j) a = r[j];
+            if (ib == j) b = r[j];
+            if (ic == j) c = r[j];
+        }
+#else
+        T a = r[ia], b = r[ib], c = r[ic];
+#endif
+        float u = a.value();
+        float g0 = 0, g1 = 0, g2 = 0;
+        int cls = 0;                          // 0 — унарная, 1 — a + g0·b, 2 — a·b, 3 — выбор
+        switch (op)
+        {
+        case 1: g0 = k; break;                                                        // константа
+        case 2: cls = 1; g0 = 1; break;
+        case 3: cls = 1; g0 = -1; break;
+        case 4: cls = 2; break;
+        case 6: g0 = -u; g1 = -1; break;
+        case 7: g0 = u + k; g1 = 1; break;
+        case 8: g0 = u * k; g1 = k; break;
+        case 9: g0 = 1.0 / u; g1 = -g0 * g0; g2 = 2.0 * g0 * g0 * g0; break;
+        case 10: { float s = sqrt(u); g0 = s; g1 = 0.5 / s; g2 = -0.25 / (u * s); break; }
+        case 11: g0 = exp(u); g1 = g0; g2 = g0; break;
+        case 12: g0 = log(u); g1 = 1.0 / u; g2 = -g1 * g1; break;
+        case 13: g0 = cosh(u); g1 = sinh(u); g2 = g0; break;
+        case 14: g0 = sin(u); g1 = cos(u); g2 = -g0; break;
+        case 15: g0 = cos(u); g1 = -sin(u); g2 = -g0; break;
+        case 16:                                                                      // защищённый корень (M6)
+            if (u < LENGTH_EPS2) g0 = sqrt(LENGTH_EPS2);
+            else { float s = sqrt(u); g0 = s; g1 = 0.5 / s; g2 = -0.25 / (u * s); }
+            break;
+        case 17: cls = 3; break;
+        case 19: g0 = u * u; g1 = 2.0 * u; g2 = 2.0; break;
+        default: g0 = sinh(u); g1 = cosh(u); g2 = g0; break;
+        }
+        T v;
+        if (cls == 0) v = a.unary(g0, g1, g2);
+        else if (cls == 1) v = a.add(b.scale(g0));
+        else if (cls == 2) v = a.mul(b);
+        else v = c.value() > k ? a : b;
+#ifdef PROG_STATIC_REGS
+        [ForceUnroll] for (int j = 0; j < PROG_NREG; j++)
+            if (d == j) r[j] = v;
+#else
+        r[d] = v;
+#endif
+    }
+    return r[0];
+}
+#else
 __generic<T : IReal> T sdf(T x, T y, T z, T w)
 {
     int k = mf_kind();
@@ -102,6 +186,7 @@ __generic<T : IReal> T sdf(T x, T y, T z, T w)
     }
     return w;                                                                                     // гиперплоскость
 }
+#endif
 float hcap(float4 q)
 {
     int k = mf_kind();

@@ -11,6 +11,9 @@
 #include <unistd.h>
 #endif
 
+#include <chrono>
+#include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <map>
 #include <stdexcept>
@@ -368,7 +371,11 @@ Pipeline VkContext::create_pipeline(const std::vector<uint32_t>& spirv, const st
     cpi.stage.pName = entry.c_str();
     cpi.layout = p.layout;
     if (exec_props_) cpi.flags = VK_PIPELINE_CREATE_CAPTURE_STATISTICS_BIT_KHR;
+    const auto t_pipe = std::chrono::steady_clock::now();
     check(vkCreateComputePipelines(device_, VK_NULL_HANDLE, 1, &cpi, nullptr, &p.pipe), "vkCreateComputePipelines");
+    if (std::getenv("GEO4D_PIPE_TIME"))     // время сборки конвейера драйвером (проба быстрой перекомпиляции)
+        std::fprintf(stderr, "pipe_time %s %zu %.3f\n", entry.c_str(), spirv.size() * 4,
+                     std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t_pipe).count());
 
     if (exec_props_) {      // регистры, спиллы и пр. — как отдаёт драйвер (DD-004 п. 4)
         VkPipelineInfoKHR pinfo{VK_STRUCTURE_TYPE_PIPELINE_INFO_KHR};

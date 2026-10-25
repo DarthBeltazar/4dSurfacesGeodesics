@@ -71,12 +71,13 @@ def compile_shader(source, entry, defines=None, include=None):
     for d in dirs:
         for p in sorted(d.rglob("*.slang")):
             h.update(p.read_bytes())
-    h.update(json.dumps([source, entry, sorted(defines.items())]).encode())
+    opt = os.environ.get("GEO4D_SLANG_OPT", "-O2")       # проба быстрой перекомпиляции: -O0 без spirv-opt
+    h.update(json.dumps([source, entry, sorted(defines.items())] + ([opt] if opt != "-O2" else [])).encode())
     SPV_DIR.mkdir(parents=True, exist_ok=True)
     out = SPV_DIR / f"{Path(source).stem}_{entry}_{h.hexdigest()[:16]}.spv"
     if not out.exists():
         cmd = [str(SLANGC), str(GPU / "shaders" / source), "-target", "spirv", "-profile", "spirv_1_6",
-               "-entry", entry, "-fvk-use-entrypoint-name", "-O2", "-o", str(out)]
+               "-entry", entry, "-fvk-use-entrypoint-name", opt, "-o", str(out)]
         cmd += [f"-D{k}={v}" for k, v in defines.items()]
         if include:
             cmd += ["-I", str(include)]

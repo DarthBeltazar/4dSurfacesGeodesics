@@ -393,13 +393,15 @@ I_SEED, I_USE_DEN, I_BGRA, I_EXPOSURE = 1, 20, 21, 22     # индексы push-
 
 def app_graph(scene: Scene, cam, td, p: GPUPT = GPUPT(), nfb_move=8, speed=1.0, fmt="bc6h", hidden=False, vsync=False,
               bench=None, margin=0.05, det=None, k_grad=2.0, dumps=(), record=None, editor=None, edits=(), dynamic=False,
-              fullscreen=False, dyn_mips=None):
+              fullscreen=False, dyn_mips=None, prog=None):
     """Граф интерактивного приложения (DD-007): секции move / edit / static / post / snap и директивы app.
     td — каталог для файлов. bench = (файл сценария, json журнала) — режим замера. editor — dict(scene, work_dir, fov,
     env, python, script, args) для редактора сцен (DD-008): тогда рядом пишется и граф режима редактирования
     (dynamic — шейдеры без зашитой структуры объектов и многообразия, app_graph_dyn.txt, директива editgraph; его
     кубмапа — dyn_mips, процедурный фон: фон "none" — масштаб 0 в строках многообразия, DD-009). edits — [(кадр, строки
-    объектов)] — правки в сценарии замера (проверка: правка = холодный старт). Возвращает путь к графу."""
+    объектов)] — правки в сценарии замера (проверка: правка = холодный старт). prog = (строки geo4d.bytecode, число
+    регистров) — проба интерпретатора: f графа режима редактирования исполняется из программы в хвосте буфера камеры
+    (scenes.slang, MF_PROG). Возвращает путь к графу."""
     import dataclasses
     from pathlib import Path
     from .gpu import cube_for_gpu
@@ -412,7 +414,12 @@ def app_graph(scene: Scene, cam, td, p: GPUPT = GPUPT(), nfb_move=8, speed=1.0, 
     N = cam.width * cam.height
     inc = write_header(scene, dynamic)
     envb, env_n = env_buffer(gsc)
-    df = lambda nj=0: _defs(scene, nj, dynamic)
+    pdefs = {"MF_PROG": 1, "PROG_NREG": prog[1]} if dynamic and prog is not None else {}
+    if pdefs and len(prog) > 2 and prog[2] == "const":       # вариант пробы: программа зашита константным массивом
+        pdefs["PROG_CONST_ROWS"] = ",".join("float4(" + ",".join(repr(float(v)) for v in row) + ")" for row in prog[0])
+    if pdefs and len(prog) > 2 and prog[2] == "static":      # вариант пробы: регистры без динамического индекса
+        pdefs["PROG_STATIC_REGS"] = 1
+    df = lambda nj=0: {**_defs(scene, nj, dynamic), **pdefs}
     ptc = gpu.compile_shader("pathtrace.slang", "pt_camera", df(4), include=inc)
     pts = lambda e: gpu.compile_shader("pathtrace.slang", e, {**df(), "PT_STAGE": int(e == "pt_sample")}, include=inc)
     cst = gpu.compile_shader("pathtrace.slang", "cam_step", {**df(), "CAM_STEP": 1}, include=inc)
@@ -421,7 +428,10 @@ def app_graph(scene: Scene, cam, td, p: GPUPT = GPUPT(), nfb_move=8, speed=1.0, 
     g = gpu.groups_for(N)[0]
     pfb = GPUPT(**{**p.__dict__, "seed": p.seed + 7919})
     sfx = "_dyn" if dynamic else ""              # у графа режима редактирования — свой фон (процедурный)
-    np.save(td / f"cam{sfx}.npy", pt_camera_buffer(scene, cam, k_grad, 0.0, det, 0, cube.shape[2], env=env))
+    camb = pt_camera_buffer(scene, cam, k_grad, 0.0, det, 0, cube.shape[2], env=env)
+    if pdefs:
+        camb = np.concatenate([camb, gpu.f32(prog[0])])
+    np.save(td / f"cam{sfx}.npy", camb)
     np.save(td / f"env{sfx}.npy", envb)
     np.save(td / f"cube{sfx}.npy", gpu.f32(cube))
     enc = f" {gpu.compile_shader('bc6h_encode.slang', 'bc6h_encode')}" if fmt == "bc6h" else ""
@@ -472,7 +482,7 @@ def app_graph(scene: Scene, cam, td, p: GPUPT = GPUPT(), nfb_move=8, speed=1.0, 
         L += editor_directives(scene, editor)
         if not dynamic:
             dyn = app_graph(scene, cam, td, p, nfb_move, speed, fmt, margin=margin, det=det, k_grad=k_grad, editor=editor,
-                            dynamic=True, dyn_mips=dyn_mips)
+                            dynamic=True, dyn_mips=dyn_mips, prog=prog)
             L.append(f"editgraph {dyn}")
     for k, (fi, rows) in enumerate(edits):
         np.save(td / f"edit_rows_{k}.npy", gpu.f32(rows))

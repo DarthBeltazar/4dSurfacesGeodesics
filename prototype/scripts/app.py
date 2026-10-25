@@ -66,6 +66,10 @@ def main():
     ap.add_argument("--edit-mode", action="store_true",
                     help="замер в режиме редактирования (DD-008): вход на кадре 1, выход за 3 кадра до конца; "
                          "в summary — время кадров переключения графа")
+    ap.add_argument("--probe-interp", type=int, default=0, metavar="NREG",
+                    help="проба интерпретатора байткода (concept-standalone-nodes.md): в графе режима редактирования f "
+                         "двух горловин исполняется из программы geo4d.bytecode, NREG — размер массива регистров")
+    ap.add_argument("--probe-variant", default="", help="вариант пробы: const — программа константным массивом в шейдере")
     ap.add_argument("--dump", default="", help="кадры для сохранения через запятую (в каталог результатов замера)")
     ap.add_argument("--graph-only", metavar="DIR", default="",
                     help="записать граф и его входные данные в DIR и выйти (запуск/отладка `geo4d_gpu app DIR/app_graph.txt` из IDE)")
@@ -101,8 +105,20 @@ def main():
                           env=json.loads(scene_path.read_text(encoding="utf-8")).get("env"),
                           python=Path(sys.executable).as_posix(), script=Path(__file__).resolve().as_posix(),
                           args=["--res", a.res, "--cube", str(a.cube)] + (["--vsync"] if a.vsync else []))
+        prog = None
+        if a.probe_interp:
+            from geo4d import bytecode
+            prm = sc.shape.params
+            if sc.shape.name == "two_compact_wh":
+                rows = bytecode.two_compact_program(prm["c1"], prm["c2"], prm["b"], prm["rho0"], prm["W"])
+            elif sc.shape.name == "S3":
+                rows = bytecode.s3_program(prm["R"])
+            else:
+                raise SystemExit("проба интерпретатора — только для двух горловин и S³")
+            prog = (rows, a.probe_interp, a.probe_variant)
+            assert a.probe_interp >= prog[0][0, 1], f"программе нужно {int(prog[0][0, 1])} регистров"
         graph = G.app_graph(sc, cam, td, speed=speed, hidden=a.bench and not a.visible, vsync=a.vsync, bench=bench,
-                            dumps=dumps, editor=editor, fullscreen=a.fullscreen and not a.bench, dyn_mips=mips)
+                            dumps=dumps, editor=editor, fullscreen=a.fullscreen and not a.bench, dyn_mips=mips, prog=prog)
         switch = ()
         if a.bench and a.edit_mode:
             switch = (1, len(script) - 3)
