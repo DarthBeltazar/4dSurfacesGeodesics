@@ -1,0 +1,44 @@
+{
+ "frame_ms": {
+  "two_wormholes_1280x720": {
+   "native": 1.61274,
+   "interp": 56.614
+  },
+  "two_wormholes_1920x1080": {
+   "native": 3.39293,
+   "interp": 138.048
+  },
+  "three_wormholes_1280x720": {
+   "native": 1.75002,
+   "interp": 115.848
+  },
+  "three_wormholes_1920x1080": {
+   "native": 3.76227,
+   "interp": 290.503
+  },
+  "csg_objects_1280x720": {
+   "native": 0.218208,
+   "interp": 16.4178
+  },
+  "csg_objects_1920x1080": {
+   "native": 0.356032,
+   "interp": 29.683
+  }
+ },
+ "edit": {
+  "warm": {
+   "preview_switch_ms": 76.3,
+   "rebuild_ms": 167.2,
+   "switch_ms": 142.6,
+   "edit_frame_total_ms": 243.913,
+   "preview_frame_ms": 104.465
+  },
+  "cold": {
+   "preview_switch_ms": 74.0,
+   "rebuild_ms": 2438.4,
+   "switch_ms": 1094.2,
+   "edit_frame_total_ms": 2512.81,
+   "preview_frame_ms": 87.4865
+  }
+ }
+}

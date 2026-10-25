@@ -1,0 +1,12 @@
+{
+  "scenes": [
+    "scenes/two_wormholes.json",
+    "scenes/three_wormholes.g4d",
+    "scenes/csg_objects.g4d"
+  ],
+  "reses": [
+    "1280x720",
+    "1920x1080"
+  ],
+  "frames": 60
+}

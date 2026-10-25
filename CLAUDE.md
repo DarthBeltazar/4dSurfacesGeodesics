@@ -90,6 +90,10 @@ hash and a dirty flag).
   sections, the host picks by the background flag. Keep `gpu_pt.manifold_rows` and `editor.cpp::manifold_info` in sync
   (`mf_check`, like `rows_check`). Opening a scene / changing the manifold applies instantly there; leaving edit mode
   regenerates the fast graph when structure or manifold key differ.
+- Node graph (DD-011): numbers of graph nodes are slots after the manifold rows (`kSlotBase`); manifold numbers are baked
+  by default (`--manifold-slots` to slot them — costs +6…14 %), `--bake-params` bakes all (use it in bitwise comparisons
+  with legacy/Python graphs). Bytecode programs live from `kProgBase`; preview graphs on the interpreter come in variants
+  (`PROG_OBJ`, `PROG_NREG` 8/32) — an interpreter branch inlined into hot code or a wide register array halves speed.
 - Render resolution ≠ window size is fine (blit with letterbox); a resolution change is a Python rebuild with a new
   `--res`. `app.py` caches the procedural background on disk (`procedural_env_cached`) — rebuilds rely on it.
 
