@@ -84,13 +84,13 @@ struct Builder {
                 if (to_disk) npy_write(u8(out_dir / name), n.dtype, n.shape, n.data.data(), n.data.size());
                 memfs::put_npy(u8(out_dir / name), std::move(n));
             }
-            memfs::put_text(u8(out_dir / "app_graph_dyn.txt"), text(g.dyn_lines));
+            if (!g.dyn_lines.empty()) memfs::put_text(u8(out_dir / "app_graph_dyn.txt"), text(g.dyn_lines));
             for (auto& [n, l] : g.prev_graphs) memfs::put_text(u8(out_dir / n), text(l));
             memfs::put_text(u8(out_dir) + "/app_graph.txt", text(g.lines));     // путь, который ждёт редактор
             memfs::put_text(u8(out_dir / "app_graph.txt"), text(g.lines));
             if (to_disk) {
                 std::ofstream(out_dir / "app_graph.txt", std::ios::binary) << text(g.lines);
-                std::ofstream(out_dir / "app_graph_dyn.txt", std::ios::binary) << text(g.dyn_lines);
+                if (!g.dyn_lines.empty()) std::ofstream(out_dir / "app_graph_dyn.txt", std::ios::binary) << text(g.dyn_lines);
                 for (auto& [n, l] : g.prev_graphs) std::ofstream(out_dir / n, std::ios::binary) << text(l);
             }
             auto ms = [](auto a, auto b) { return std::chrono::duration<double, std::milli>(b - a).count(); };

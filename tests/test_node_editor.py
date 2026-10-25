@@ -89,3 +89,18 @@ def test_click_on_object_selects_its_node(tmp_path):
     assert "pick 3 obj 0 node o1" in out
     grab = {int(l.split()[1]): int(l.split()[3]) for l in out.splitlines() if l.startswith("mouse ")}
     assert grab[4] == 0 and grab[7] == 1
+
+
+def test_open_rejects_invalid_scene(tmp_path):
+    """Открыть сцену с недопустимым многообразием (шары кривизны пересекаются): граф не применяется — сообщение,
+    сцена прежняя (кадр = холодный старт исходной), сборки нет."""
+    d = json.loads((Path(__file__).resolve().parents[1] / "scenes" / "two_wormholes.json").read_text(encoding="utf-8"))
+    d["manifold"]["params"]["rho0"] = 4.5                     # |c₁ − c₂| = 8 < 2ρ₀
+    bad = tmp_path / "bad.json"
+    bad.write_text(json.dumps(d), encoding="utf-8")
+    doc = csg_doc()
+    out = _ok(_window(tmp_path / "hot", doc, 8, [7], f"opengraph 3 {bad.as_posix()}\n"))
+    assert 'params_apply {"error": 1}' in out and out.count("standalone_build") == 1
+    _ok(_window(tmp_path / "cold", doc, 8, [7]))
+    for k in ("Frame", "Present"):
+        assert np.array_equal(np.load(tmp_path / "hot" / f"{k}_7.npy"), np.load(tmp_path / "cold" / f"{k}_7.npy")), k

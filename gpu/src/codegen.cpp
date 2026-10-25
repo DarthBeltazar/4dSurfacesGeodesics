@@ -740,8 +740,10 @@ std::vector<std::string> build(const GraphCtx& c, bool dynamic, std::map<std::st
     auto ed = editor_directives(c);
     L.insert(L.end(), ed.begin(), ed.end());
     if (!dynamic) {                               // граф режима редактирования — без vsync/fullscreen, как в Python
-        if (sc.dynamic_ok()) L.push_back("editgraph " + qpath(c.td / "app_graph_dyn.txt"));   // DD-009: только виды scenes.slang
-        else L.push_back("graphdoc");             // сцена не выразима в version 1: редактор сохраняет и перегенерирует граф
+        // граф режима редактирования DD-008/009 — только как у Python (--legacy-codegen, сверка); окно правит сцену
+        // редактором нод (DD-011 §8) и документом графа
+        if (c.o.legacy_codegen && sc.dynamic_ok()) L.push_back("editgraph " + qpath(c.td / "app_graph_dyn.txt"));
+        else L.push_back("graphdoc");
         if (preview && c.prev_ok) {               // DD-011 §6: варианты без / с составными объектами, 8 / 32 регистра
             std::string w = "prevgraph";
             for (const char* n : {"p8", "o8", "p32", "o32"}) w += " " + qpath(c.td / (std::string("app_graph_prev_") + n + ".txt"));
@@ -861,7 +863,7 @@ AppGraph app_graph(const Dirs& d, const Scene& sc0, const AppOptions& o, const f
     AppGraph g;
     GraphCtx c{d, keys, sc, o, work_dir, scene_path, procedural, make_camera(sc.mf, sc.cam, o.width, o.height, fov), fov,
                &g.shaders};
-    if (sc.dynamic_ok()) g.dyn_lines = build(c, true, g.arrays);  // как в Python: граф режима редактирования — первым
+    if (o.legacy_codegen && sc.dynamic_ok()) g.dyn_lines = build(c, true, g.arrays);   // как в Python — первым (сверка)
     if (!o.legacy_codegen) {                      // DD-011 §6: граф предпросмотра на интерпретаторе
         try {
             for (int nreg : {kProgNarrowReg, kProgMaxReg})

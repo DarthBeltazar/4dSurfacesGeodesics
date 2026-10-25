@@ -127,8 +127,9 @@ def main():
                 q = gpu.qpath
                 line = " ".join(["rebuild", q(Path(sys.executable).as_posix()), q(Path(__file__).resolve().as_posix())]
                                 + rebuild_args)
-                for g in ("app_graph.txt", "app_graph_dyn.txt"):
-                    (td / g).write_text((td / g).read_text(encoding="utf-8") + line + "\n", encoding="utf-8")
+                for g in ("app_graph.txt", "app_graph_dyn.txt"):       # граф режима редактирования — только у прежнего кодгена
+                    if (td / g).exists():
+                        (td / g).write_text((td / g).read_text(encoding="utf-8") + line + "\n", encoding="utf-8")
                 print(f"граф: {td / 'app_graph.txt'}\nзапуск: {gpu.EXE} app {td / 'app_graph.txt'}")
                 return
             extra = []

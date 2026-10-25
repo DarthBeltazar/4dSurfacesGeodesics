@@ -19,14 +19,9 @@
 //   window <w> <h>                   размер окна в сценарии (проверка масштабирования кадра в образ swapchain)
 //   ui                               оверлей и в режиме замера/дампа (снимок окна с панелями — проверка оверлея)
 //   bench <сценарий> <json>          движение из файла (строка на кадр: a b c ψ θ φ за кадр), журнал времени, выход
-//   edit <кадр> <строки.npy>         в сценарии замера: заменить строки объектов перед кадром (как правка в окне)
-//   remanifold <кадр> <вид> k=v…     в сценарии: смена многообразия как кнопкой «Применить» — сразу в режиме
-//                                    редактирования (DD-009); без графа режима редактирования — Python и перезагрузка
 //   mouse <кадр> <x> <y> [click]     в сценарии: события мыши SDL (движение в точку окна, щелчок ЛКМ) перед кадром;
 //                                    хост печатает «mouse <кадр> grab <0|1> imgui <WantCaptureMouse>» (проверка панелей)
-//   loadscene <кадр> <сцена.json>    в сценарии: открыть сцену, как кнопкой «Открыть» (сразу, режим редактирования)
 //   resize <кадр> <W> <H>            в сценарии: новое разрешение рендера, как в панели «Рендер» (ждёт перегенерацию)
-//   editgraph <граф>                 граф режима редактирования (шейдеры без зашитой структуры объектов, DD-008)
 //   slots <буфер> <строка> <строк> [mf]   слоты параметров графа сцены (DD-011 §5) в буфере камеры; mf — и числа многообразия
 //   slotkey <sha256>                 ключ структуры быстрого графа (codegen.hpp::structure_key): правка параметра с тем же
 //                                    ключом — запись строк без перекомпиляции, иначе — перегенерация
@@ -43,7 +38,6 @@
 //   preview <объекты 0|1> <регистров>   (в самом графе предпросмотра): секции move/edit — кадр предпросмотра
 //   progrows <буфер> <строка> <строк>   область программ байткода в буфере камеры (bytecode.hpp)
 //   previewmode <кадр> on|off        в сценарии: предпросмотр быстрого графа (секции preview / preview_move), как флажок P
-//   editmode <кадр> on|off           в сценарии: войти в режим редактирования / выйти (ждёт перегенерацию)
 //   record <файл.raw> <период>       дописывать вывод (BGRA8/RGBA8, W·H·4 байт) каждого период-го кадра — для ролика
 //   dump <кадр> <каталог>            сохранить вывод (u32 RGBA8), кадр, выход денойзера и камеру этого кадра (.npy)
 // Управление: W/S, A/D — вперёд/вбок; Q/E — вниз/вверх; мышь (ЛКМ — захват) и стрелки — взгляд; C/Z — крен;
@@ -176,12 +170,8 @@ struct AppDirs {
     std::string present_buf, campipe, presentpipe, bench_in, bench_out, record_path, objbuf;
     std::vector<std::string> den_bufs, seedpipes;
     std::vector<std::pair<uint32_t, std::string>> dumps, edits;
-    std::vector<std::pair<uint32_t, std::vector<std::string>>> remanifold;     // кадр, вид, k=v…
-    std::vector<std::pair<uint32_t, bool>> editmode;                            // кадр, вкл/выкл
     std::vector<std::array<uint32_t, 3>> resize;                                // кадр, W, H
-    std::vector<std::pair<uint32_t, std::string>> loadscene;                     // кадр, файл сцены
     std::vector<std::pair<uint32_t, std::vector<std::string>>> mouse;            // кадр, x, y [click]
-    std::string editgraph;
     uint32_t record_period = 1, W = 0, H = 0;
     size_t i_use_den = 0, i_bgra = 0, i_seed = 1, i_exposure = SIZE_MAX;
     float speed = 1.0f;
@@ -218,7 +208,6 @@ AppDirs parse_dirs(const GraphProgram& prog) {
         else if (w[0] == "speed") d.speed = std::stof(w.at(1));
         else if (w[0] == "bench") { d.bench_in = w.at(1); d.bench_out = w.at(2); }
         else if (w[0] == "dump") d.dumps.emplace_back(uint32_t(std::stoul(w.at(1))), w.at(2));
-        else if (w[0] == "edit") d.edits.emplace_back(uint32_t(std::stoul(w.at(1))), w.at(2));
         else if (w[0] == "record") { d.record_path = w.at(1); d.record_period = uint32_t(std::stoul(w.at(2))); }
         else if (w[0] == "objrows") { d.objbuf = w.at(1); d.obj_base = std::stoi(w.at(2)); }
         else if (w[0] == "mfrows") d.mf_base = std::stoi(w.at(2));
@@ -244,13 +233,8 @@ AppDirs parse_dirs(const GraphProgram& prog) {
             d.setparams.push_back(s);
         }
         else if (w[0] == "mouse") d.mouse.emplace_back(uint32_t(std::stoul(w.at(1))), std::vector<std::string>(w.begin() + 2, w.end()));
-        else if (w[0] == "loadscene") d.loadscene.emplace_back(uint32_t(std::stoul(w.at(1))), w.at(2));
-        else if (w[0] == "editgraph") d.editgraph = w.at(1);
         else if (w[0] == "resize")
             d.resize.push_back({uint32_t(std::stoul(w.at(1))), uint32_t(std::stoul(w.at(2))), uint32_t(std::stoul(w.at(3)))});
-        else if (w[0] == "editmode") d.editmode.emplace_back(uint32_t(std::stoul(w.at(1))), w.at(2) == "on");
-        else if (w[0] == "remanifold") d.remanifold.emplace_back(uint32_t(std::stoul(w.at(1))),
-                                                                 std::vector<std::string>(w.begin() + 2, w.end()));
     }
     return d;
 }
@@ -348,8 +332,8 @@ int run_app(const std::string& graph_path, RebuildFn rebuild, std::vector<std::s
             d = parse_dirs(*prog);
             if (!old.present_buf.empty()) {            // перезагрузка: сценарий, дампы и запись — из исходного графа
                 d.bench_in = old.bench_in; d.bench_out = old.bench_out;
-                d.dumps = old.dumps; d.edits = old.edits; d.remanifold = old.remanifold; d.editmode = old.editmode;
-                d.resize = old.resize; d.loadscene = old.loadscene; d.mouse = old.mouse; d.setparams = old.setparams;
+                d.dumps = old.dumps;
+                d.resize = old.resize; d.mouse = old.mouse; d.setparams = old.setparams;
                 d.graphops = old.graphops;
                 d.previewmode = old.previewmode;
                 d.record_path = old.record_path; d.record_period = old.record_period;
@@ -411,13 +395,10 @@ int run_app(const std::string& graph_path, RebuildFn rebuild, std::vector<std::s
         std::unique_ptr<Editor> editor;
         bool show_ui = true;
         VkFormat ui_format = sc.format;                // ImGui хранит указатель до создания конвейера
-        // быстрый граф (структура объектов зашита) и граф режима редактирования (DD-008)
-        std::string baked_path = graph_path, dyn_path = d.editgraph;
-        std::vector<std::pair<int, int>> baked_struct;
-        bool edit_mode = false, pending_exit = false, force_edit = false;
-        // многообразие, зашитое в быстрые шейдеры (DD-009: после мгновенной смены выход из режима редактирования их
-        // перегенерирует); есть ли у текущего многообразия фон — секции кадра с режимом A или без (_nobg)
-        std::string baked_mf;
+        // быстрый граф сцены (его перегенерации — смена разрешения и правки графа, DD-011)
+        std::string baked_path = graph_path;
+        bool force_edit = false;
+        // есть ли у многообразия фон — секции кадра с режимом A или без (_nobg)
         bool mf_bg = true;
         auto read_bg = [&]() {
             if (d.mf_base < 0) return;
@@ -426,142 +407,24 @@ int run_app(const std::string& graph_path, RebuildFn rebuild, std::vector<std::s
         };
         if (editor_on) {
             editor = std::make_unique<Editor>(parse_editor_config(prog->extra()));
-            editor->set_config(parse_editor_config(prog->extra()), read_rows());
+            editor->set_config(parse_editor_config(prog->extra()));
             if (rebuild) editor->set_inproc_rebuild(rebuild, rebuild_args);
-            baked_struct = structure(editor->objects());
-            baked_mf = editor->current_manifold_key();
         }
         read_bg();
-        // смена графа без закрытия окна; keep_cam — камера старого графа побитово, ed_rows — сцена редактора (объекты,
-        // многообразие и fov после мгновенной смены, DD-009)
-        auto switch_graph = [&](const std::string& path, bool keep_cam, bool ed_rows) {
+        // смена графа без закрытия окна; keep_cam — камера старого графа побитово
+        auto switch_graph = [&](const std::string& path, bool keep_cam) {
             ctx.copy_buffer(prog->buffer("cam"), cam_host, 64);
             std::vector<uint8_t> camb(static_cast<uint8_t*>(cam_host.mapped), static_cast<uint8_t*>(cam_host.mapped) + 64);
-            auto flat = editor->flat();
             vkDeviceWaitIdle(ctx.device());
             load(path);
-            if (ed_rows) write_rows(pack_rows(editor->objects(), flat).data());
             if (keep_cam) {
                 std::memcpy(cam_host.mapped, camb.data(), 64);
                 ctx.copy_buffer(cam_host, prog->buffer("cam"), 64);
             }
-            if (ed_rows && d.mf_base >= 0) {
-                const EditorConfig& ec = editor->config();
-                ManifoldInfo mi = manifold_info(ec.kind, ec.params, ec.env);
-                if (mi.ok) {
-                    Buffer h = ctx.create_buffer(mi.rows.size() * 4, true);
-                    std::memcpy(h.mapped, mi.rows.data(), h.size);
-                    ctx.copy_buffer(h, prog->buffer(d.objbuf), h.size, 0, size_t(d.mf_base) * 16);
-                    ctx.destroy_buffer(h);
-                }
-                const float gfov = parse_editor_config(prog->extra()).fov;
-                if (keep_cam && ec.fov != gfov) {     // fov сцены, открытой в окне, — строки 4 и 6 (tf, θ_pix)
-                    Buffer h = ctx.create_buffer(128, true);
-                    ctx.copy_buffer(prog->buffer(d.objbuf), h, 128);
-                    float* R = static_cast<float*>(h.mapped);
-                    const double tf = std::tan(double(ec.fov) * (3.14159265358979323846 / 180.0) / 2.0);
-                    R[16] = float(tf);
-                    R[24] = float(2.0 * tf / double(R[17]));
-                    ctx.copy_buffer(h, prog->buffer(d.objbuf), 128);
-                    ctx.destroy_buffer(h);
-                }
-            }
-            editor->set_config(parse_editor_config(prog->extra()), read_rows(), ed_rows);
+            editor->set_config(parse_editor_config(prog->extra()));
             read_bg();
             // выбор денойзера (R) сохраняется: у графа предпросмотра денойзера нет, при возврате он снова включён
             force_edit = true;
-        };
-        auto enter_edit = [&]() {
-            if (edit_mode || dyn_path.empty()) return;
-            switch_graph(dyn_path, true, true);
-            edit_mode = true;
-        };
-        auto exit_edit = [&](const CameraState& cam, bool wait) {
-            if (!edit_mode || editor->rebuilding()) return;
-            if (structure(editor->objects()) == baked_struct && editor->current_manifold_key() == baked_mf) {
-                // структура и многообразие прежние — быстрый граф уже есть
-                switch_graph(baked_path, true, true);
-                edit_mode = false;
-            } else {
-                pending_exit = true;
-                editor->rebuild_structure(cam, wait);
-            }
-        };
-        // DD-009: сцена с другим многообразием (файл или панель) — сразу, в графе режима редактирования (шейдеры с
-        // многообразием из строк): строки камеры (подсказки), объектов и многообразия → pt_snap проецирует точку
-        // камеры и центры on_M на новое M → касательный базис (как make_camera) → кадр секцией edit. Камера не
-        // проецируется (Ньютон не сошёлся) — всё возвращается как было, сообщение в окне. false — не применено.
-        auto apply_scene = [&](const SceneDesc& sd, bool from_file) -> bool {
-            const auto t_apply = std::chrono::steady_clock::now();
-            ManifoldInfo mi = manifold_info(sd.kind, sd.params, sd.env);
-            if (!mi.ok) { editor->set_status(mi.err + " — сцена не изменена"); return false; }
-            if (dyn_path.empty() || d.mf_base < 0) { editor->set_status("нет графа режима редактирования"); return false; }
-            if (!edit_mode) {
-                enter_edit();
-                edit_mode = true;
-            }
-            const size_t nb = size_t(d.mf_base + kMfRows) * 16;
-            Buffer save = ctx.create_buffer(nb, true), h = ctx.create_buffer(nb, true);
-            Buffer& camb = prog->buffer(d.objbuf);
-            ctx.copy_buffer(camb, save, nb);
-            std::memcpy(h.mapped, save.mapped, nb);
-            float* R = static_cast<float*>(h.mapped);
-            std::copy(sd.cam.x, sd.cam.x + 4, R);
-            std::copy(sd.cam.f, sd.cam.f + 4, R + 4);
-            std::copy(sd.cam.r, sd.cam.r + 4, R + 8);
-            std::copy(sd.cam.u, sd.cam.u + 4, R + 12);
-            if (sd.fov != editor->config().fov) {
-                const double tf = std::tan(double(sd.fov) * (3.14159265358979323846 / 180.0) / 2.0);
-                R[16] = float(tf);
-                R[24] = float(2.0 * tf / double(R[17]));
-            }
-            auto obj_rows = pack_rows(sd.objs, mi.flat);
-            std::copy(obj_rows.begin(), obj_rows.end(), R + size_t(d.obj_base) * 4);
-            std::copy(mi.rows.begin(), mi.rows.end(), R + size_t(d.mf_base) * 4);
-            ctx.copy_buffer(h, camb, nb);
-            prog->set_push_f32("snap", 3, 1.0f);       // pt_snap: и точку камеры
-            prog->run("snap");
-            prog->set_push_f32("snap", 3, 0.0f);
-            ctx.copy_buffer(camb, h, nb);
-            const float* n = R + size_t(d.mf_base + 6) * 4;
-            const float res = R[size_t(d.mf_base + 5) * 4 + 3];
-            bool ok = std::isfinite(res) && std::fabs(res) <= 1e-3f * std::max(1.0f, mi.scale);
-            for (int i = 0; i < 4; ++i) ok = ok && std::isfinite(R[i]) && std::isfinite(n[i]);
-            std::vector<EdObject> objs = sd.objs;
-            if (ok) {
-                try {
-                    float f[4], u[4], r[4];
-                    tangent_basis(n, sd.cam.f, sd.cam.u, sd.cam.r, sd.has_right, f, u, r);
-                    std::copy(f, f + 4, R + 4);
-                    std::copy(r, r + 4, R + 8);
-                    std::copy(u, u + 4, R + 12);
-                } catch (const std::exception&) { ok = false; }
-            }
-            if (ok) {
-                auto snapped = unpack_rows(R + size_t(d.obj_base) * 4, {});
-                for (size_t k = 0; k < objs.size() && k < snapped.size(); ++k)
-                    if (objs[k].on_M && objs[k].geom != 2) std::copy(snapped[k].c, snapped[k].c + 4, objs[k].c);
-                obj_rows = pack_rows(objs, mi.flat);                  // M34 — по центрам на новом M
-                std::copy(obj_rows.begin(), obj_rows.end(), R + size_t(d.obj_base) * 4);
-                ctx.copy_buffer(h, camb, nb);
-            } else {
-                ctx.copy_buffer(save, camb, nb);
-            }
-            ctx.destroy_buffer(save);
-            ctx.destroy_buffer(h);
-            if (!ok) {
-                editor->set_status("камера не проецируется на новое M (Ньютон не сошёлся) — сцена не изменена");
-                return false;
-            }
-            editor->commit_scene(sd, mi, objs);
-            std::printf("apply_scene_ms %.1f\n", ms_since(t_apply));     // вход в режим редактирования + строки + pt_snap
-            std::fflush(stdout);
-            mf_bg = mi.background;
-            if (from_file) speed = sd.speed;
-            force_edit = true;
-            editor->set_status((from_file ? "открыта " + sd.path : "многообразие: " + sd.kind) +
-                               " — режим редактирования; быстрые шейдеры — при выходе из него (Tab)");
-            return true;
         };
         // DD-011 §5: правка параметров графа сцены (панель «Параметры», директива setparam) — сцена на CPU. Ключ
         // структуры тот же — запись строк объектов, многообразия и слотов и кадр секцией edit (без перекомпиляции);
@@ -628,15 +491,6 @@ int run_app(const std::string& graph_path, RebuildFn rebuild, std::vector<std::s
             }
             ctx.copy_buffer(h, camb, nb);
             ctx.destroy_buffer(h);
-            std::vector<std::string> names;
-            for (auto& o : s.objs) names.push_back(o.name);
-            editor->objects() = unpack_rows(orows.data(), names);
-            EdFlat ef;
-            ef.has = s.mf.flat.has;
-            for (double x : s.mf.flat.sheets) ef.sheets.push_back(float(x));
-            for (auto& c : s.mf.flat.centers) ef.balls.push_back({float(c[0]), float(c[1]), float(c[2])});
-            ef.rho0 = float(s.mf.flat.rho0);
-            editor->set_flat(ef);
             force_edit = true;
         };
         // opened — открыт другой файл сцены: камера из него (DD-009: сразу, как прежнее «Открыть»), сборка — в фоне
@@ -655,7 +509,6 @@ int run_app(const std::string& graph_path, RebuildFn rebuild, std::vector<std::s
             }
             const std::string doc_text = panel.doc().dump(1) + "\n";
             editor->set_doc(doc_text);
-            dyn_path.clear();                          // граф режима редактирования собран по старой сцене
             auto done = [&](const char* how, int instant) {
                 char msg[128];
                 std::snprintf(msg, sizeof(msg), "%s (%.1f мс)", how, ms_since(t_apply));
@@ -663,7 +516,7 @@ int run_app(const std::string& graph_path, RebuildFn rebuild, std::vector<std::s
                 std::printf("params_apply {\"instant\": %d, \"ms\": %.2f}\n", instant, ms_since(t_apply));
                 std::fflush(stdout);
             };
-            if (!edit_mode && !d.is_preview && d.slot_base >= 0 && geo4d::structure_key(s) == d.slotkey) {
+            if (!d.is_preview && d.slot_base >= 0 && geo4d::structure_key(s) == d.slotkey) {
                 write_scene_rows(s, nullptr, opened);
                 done("применено без перекомпиляции", 1);
                 return;
@@ -671,7 +524,7 @@ int run_app(const std::string& graph_path, RebuildFn rebuild, std::vector<std::s
             // DD-011 §6: другая структура — сразу предпросмотр на интерпретаторе (шейдеры от сцены не зависят), быстрый
             // граф — в фоне (при commit); программа не помещается в пределы байткода — только сборка
             bool shown = false;
-            if (!edit_mode && prev_paths.size() == 4) {
+            if (prev_paths.size() == 4) {
                 try {
                     int nreg = 0;
                     const std::vector<float> progs = geo4d::program_rows(s, &nreg);
@@ -680,7 +533,7 @@ int run_app(const std::string& graph_path, RebuildFn rebuild, std::vector<std::s
                     const int want = nreg <= geo4d::kProgNarrowReg ? geo4d::kProgNarrowReg : geo4d::kProgMaxReg;
                     if (!d.is_preview || d.preview_obj != objs || d.preview_nreg != want) {
                         const auto t_sw = std::chrono::steady_clock::now();
-                        switch_graph(prev_paths[(want == geo4d::kProgNarrowReg ? 0 : 2) + (objs ? 1 : 0)], true, false);
+                        switch_graph(prev_paths[(want == geo4d::kProgNarrowReg ? 0 : 2) + (objs ? 1 : 0)], true);
                         std::printf("preview_switch_ms %.1f\n", ms_since(t_sw));
                     }
                     write_scene_rows(s, &progs, opened);
@@ -701,7 +554,8 @@ int run_app(const std::string& graph_path, RebuildFn rebuild, std::vector<std::s
             if (opened) open_pending = true;
             editor->rebuild_doc(doc_text, cam, wait, opened);
         };
-        if (editor) panel.open(editor->config().scene_path);
+        if (editor && panel.open(editor->config().scene_path))   // сцена — документ редактора нод
+            editor->set_doc(panel.doc().dump(1) + "\n");
         if (overlay) {
             IMGUI_CHECKVERSION();
             ImGui::CreateContext();
@@ -774,7 +628,7 @@ int run_app(const std::string& graph_path, RebuildFn rebuild, std::vector<std::s
         }
         std::ofstream log;
         if (!d.bench_out.empty()) { log.open(d.bench_out); log << "[\n"; }
-        bool quit = false, grab = false, minimized = false, toggle_req = false, toggle_preview_req = false;
+        bool quit = false, grab = false, minimized = false, toggle_preview_req = false;
         bool click_pending = false;                    // ЛКМ при панелях: панель или сцена — решает ImGui этого кадра
         // DD-011 §8: докспейс на всё окно (граф по умолчанию — снизу); кадр рисуется в центральном узле (пиксели)
         bool dock_built = false;
@@ -841,7 +695,6 @@ int run_app(const std::string& graph_path, RebuildFn rebuild, std::vector<std::s
                     if (grab) { grab = false; SDL_SetWindowRelativeMouseMode(win, false); }
                     else quit = true;
                 } else if (e.type == SDL_EVENT_KEY_DOWN && e.key.key == SDLK_F1 && overlay) show_ui = !show_ui;
-                else if (e.type == SDL_EVENT_KEY_DOWN && e.key.key == SDLK_TAB && overlay && !ui_kb) toggle_req = true;
                 else if (e.type == SDL_EVENT_KEY_DOWN && e.key.key == SDLK_R && has_den && !ui_kb) { use_den = !use_den; accum = 0; }
                 else if (e.type == SDL_EVENT_KEY_DOWN && e.key.key == SDLK_P && !e.key.repeat && !ui_kb) toggle_preview_req = true;
                 else if (e.type == SDL_EVENT_MOUSE_BUTTON_DOWN && e.button.button == SDL_BUTTON_LEFT) {
@@ -883,15 +736,10 @@ int run_app(const std::string& graph_path, RebuildFn rebuild, std::vector<std::s
             if (editor)
                 for (auto& [fi, w] : d.mouse)
                     if (fi + 1 == frame || fi == frame) {
-                        std::printf("mouse %u grab %d imgui %d pos %.0f %.0f edit %d\n", frame, int(grab),
+                        std::printf("mouse %u grab %d imgui %d pos %.0f %.0f\n", frame, int(grab),
                                     int(overlay && ImGui::GetIO().WantCaptureMouse), ImGui::GetIO().MousePos.x,
-                                    ImGui::GetIO().MousePos.y, int(edit_mode));
+                                    ImGui::GetIO().MousePos.y);
                         std::fflush(stdout);
-                    }
-                for (auto& [fi, on] : d.editmode)      // сценарий: режим редактирования
-                    if (fi == frame) {
-                        if (on) enter_edit();
-                        else exit_edit(camst, true);
                     }
             for (auto& [fi, on] : d.previewmode)       // сценарий: предпросмотр быстрого графа (DD-011 §6)
                 if (fi == frame && on != preview_mode) toggle_preview_req = true;
@@ -920,19 +768,6 @@ int run_app(const std::string& graph_path, RebuildFn rebuild, std::vector<std::s
                 params_pending = false;
                 apply_params(camst, true, !d.bench_in.empty());   // в сценарии — с ожиданием сборки (детерминированно)
             }
-            for (auto& [fi, p] : d.edits)              // сценарий замера: правка объектов перед кадром
-                if (fi == frame) {
-                    NpyArray a = npy_read(p);
-                    if (a.data.size() != rows_host.size) throw std::runtime_error("edit: размер строк " + p);
-                    const float* rows = reinterpret_cast<const float*>(a.data.data());
-                    write_rows(rows);
-                    if (editor) {                      // редактор видит правку (имена — по номеру)
-                        std::vector<std::string> names;
-                        for (auto& o : editor->objects()) names.push_back(o.name);
-                        editor->objects() = unpack_rows(rows, names);
-                    }
-                    force_edit = true;
-                }
             // панели редактора (до кадра: правка видна в этом же кадре)
             if (overlay) {
                 ImGui_ImplVulkan_NewFrame();
@@ -958,8 +793,7 @@ int run_app(const std::string& graph_path, RebuildFn rebuild, std::vector<std::s
                         ImGui::DockBuilderSplitNode(rest, ImGuiDir_Right, 0.27f, &right, nullptr);
                         ImGui::DockBuilderDockWindow("Граф", down);
                         ImGui::DockBuilderDockWindow("Сцена (F1 — скрыть панели)", right);
-                        ImGui::DockBuilderDockWindow("Объекты", right);
-                        ImGui::DockBuilderFinish(dock);
+                                ImGui::DockBuilderFinish(dock);
                     }
                     ImGui::DockSpaceOverViewport(dock, ImGui::GetMainViewport(), ImGuiDockNodeFlags_PassthruCentralNode);
                     view[2] = 0;
@@ -998,17 +832,13 @@ int run_app(const std::string& graph_path, RebuildFn rebuild, std::vector<std::s
                     fi.res_choice = res_choice;
                     fi.fullscreen = (SDL_GetWindowFlags(win) & SDL_WINDOW_FULLSCREEN) != 0;
                     fi.interactive = interactive;
-                    fi.instant = !dyn_path.empty() && d.mf_base >= 0;
                     fi.preview_avail = !d.is_preview && prog->has_section("preview");
                     fi.preview = preview_mode || d.is_preview;
-                    UiActions act = editor->draw(fi, camst, edit_mode, use_den, exposure, speed);
+                    UiActions act = editor->draw(fi, camst, use_den, exposure, speed);
                     if (act.res_choice >= 0) res_choice = act.res_choice;
                     if (act.toggle_fullscreen) SDL_SetWindowFullscreen(win, !fi.fullscreen);
                     if (act.toggle_preview) toggle_preview_req = true;
-                    if (act.manifold_now || act.load_now) apply_scene(editor->pending_scene(), act.load_now);
-                    if (act.toggle_edit) toggle_req = true;
-                    if (act.structural && !edit_mode) enter_edit();      // форма/число объектов — в режиме редактирования
-                    const NodeEditor::Change pc = panel.draw(!edit_mode, camst.x, camst.f);
+                    const NodeEditor::Change pc = panel.draw(true, camst.x, camst.f);
                     if (pc.opened) apply_params(camst, true, false, true);   // другой файл: камера — из него
                     else if (pc.changed || pc.commit) apply_params(camst, pc.commit, false);
                     if (!pc.save_path.empty()) {
@@ -1016,26 +846,9 @@ int run_app(const std::string& graph_path, RebuildFn rebuild, std::vector<std::s
                         editor->save_scene(pc.save_path, camst);
                         panel.set_status(editor->status());
                     }
-                    if (act.objects_changed) {
-                        write_rows(pack_rows(editor->objects(), editor->flat()).data());
-                        force_edit = true;
-                        if (act.snap && prog->has_section("snap")) {   // центры on_M — на M (pt_snap), обратно в редактор
-                            prog->run("snap");
-                            auto snapped = unpack_rows(read_rows(), {});
-                            auto& objs = editor->objects();
-                            for (size_t k = 0; k < objs.size() && k < snapped.size(); ++k)
-                                std::copy(snapped[k].c, snapped[k].c + 4, objs[k].c);
-                            write_rows(pack_rows(objs, editor->flat()).data());     // M34 — по новым центрам
-                        }
-                    }
                 }
                 ImGui::Render();
             }
-            if (toggle_req && editor) {
-                if (edit_mode) exit_edit(camst, false);
-                else enter_edit();
-            }
-            toggle_req = false;
             if (toggle_preview_req) {                  // предпросмотр ↔ рендер: кадр заново
                 toggle_preview_req = false;
                 if (!d.is_preview && prog->has_section("preview")) {
@@ -1246,30 +1059,10 @@ int run_app(const std::string& graph_path, RebuildFn rebuild, std::vector<std::s
             if (editor) {                              // камера для панелей (положение, «перед камерой», сохранение)
                 ctx.copy_buffer(prog->buffer("cam"), cam_host, 64);
                 std::memcpy(&camst, cam_host.mapped, sizeof(camst));
-                for (auto& [fi, w] : d.remanifold)
-                    if (fi == frame) {
-                        std::vector<ManifoldParam> ps;
-                        for (size_t i = 1; i < w.size(); ++i) {
-                            auto eq = w[i].find('=');
-                            ManifoldParam p{w[i].substr(0, eq), {}};
-                            std::stringstream ss(w[i].substr(eq + 1));
-                            for (std::string t; std::getline(ss, t, ',');) p.v.push_back(std::stof(t));
-                            ps.push_back(p);
-                        }
-                        if (!dyn_path.empty() && d.mf_base >= 0) {
-                            if (!apply_scene(editor->with_manifold(w.at(0), ps, camst), false))
-                                throw std::runtime_error("remanifold: " + editor->status());
-                        } else {
-                            editor->rebuild(w.at(0), ps, camst, true);
-                        }
-                    }
-                for (auto& [fi, path] : d.loadscene)
-                    if (fi == frame && !apply_scene(read_scene_json(path), true))
-                        throw std::runtime_error("loadscene: " + editor->status());
                 for (auto& r : d.resize)
                     if (r[0] == frame) editor->rebuild_resolution(camst, r[1], r[2], true);
                 // разрешение рендера: перегенерация графа (Python, шейдеры из кэша), окно пока масштабирует старый кадр
-                if (res_choice >= 0 && !editor->rebuilding() && !pending_exit && ms_since(last_resize) > 400) {
+                if (res_choice >= 0 && !editor->rebuilding() && ms_since(last_resize) > 400) {
                     auto [tw, th] = preset_size(res_choice, sc.extent.width, sc.extent.height);
                     if (tw != W || th != H) editor->rebuild_resolution(camst, tw, th, false);
                 }
@@ -1277,54 +1070,17 @@ int run_app(const std::string& graph_path, RebuildFn rebuild, std::vector<std::s
                 if (next_graph.empty() && !editor->rebuilding() && editor->last_rebuild_kind() == RebuildKind::Resolution &&
                     !editor->status().empty() && editor->status().rfind("ошибка", 0) == 0)
                     res_choice = -1;                   // не повторять неудачную перегенерацию каждый кадр
-                if (next_graph.empty() && !editor->rebuilding() && !d.remanifold.empty() && !editor->status().empty() &&
-                    editor->status().rfind("ошибка", 0) == 0) {
-                    std::fprintf(stderr, "%s\n", editor->status().c_str());
-                    throw std::runtime_error("remanifold: перегенерация не удалась");
-                }
-                if (pending_exit && next_graph.empty() && !editor->rebuilding()) pending_exit = false;   // ошибка Python
                 const auto t_switch = std::chrono::steady_clock::now();
                 if (!next_graph.empty()) {             // перезагрузка графа без закрытия окна
-                    const std::string dir = next_graph.substr(0, next_graph.rfind('/'));
-                    const std::string next_dyn = dir + "/app_graph_dyn.txt";
-                    if (editor->last_rebuild_kind() == RebuildKind::Graph) {
-                        // DD-011 §5: граф по документу панели «Параметры» — камера и объекты из него; режима
-                        // редактирования DD-008 у графа-документа нет
-                        baked_path = next_graph;
-                        dyn_path.clear();
-                        // из предпросмотра — камера, с которой летали в нём (многообразие то же); иначе (и при открытии
-                        // другого файла) — из нового графа
-                        switch_graph(baked_path, d.is_preview && !open_pending, false);
+                    baked_path = next_graph;
+                    if (editor->last_rebuild_kind() == RebuildKind::Resolution) {
+                        switch_graph(baked_path, true);    // граф под новое разрешение; камера — прежняя
+                    } else {
+                        // DD-011: граф по документу редактора нод; из предпросмотра — камера, с которой летали в нём
+                        // (многообразие то же), иначе (и при открытии другого файла) — из нового графа
+                        switch_graph(baked_path, d.is_preview && !open_pending);
                         open_pending = false;
-                        edit_mode = false;
-                        pending_exit = false;
-                        baked_struct = structure(editor->objects());
-                        baked_mf = editor->current_manifold_key();
                         params_pending = true;             // правки, сделанные во время сборки
-                    } else if (editor->last_rebuild_kind() != RebuildKind::Manifold) {
-                        // быстрые шейдеры под новую структуру объектов или граф под новое разрешение; камера — прежняя
-                        baked_path = next_graph;
-                        dyn_path = next_dyn;
-                        baked_struct = editor->requested_structure();
-                        baked_mf = editor->requested_manifold_key();
-                        const bool same = structure(editor->objects()) == baked_struct &&
-                                          editor->current_manifold_key() == baked_mf;
-                        if (pending_exit && same) {
-                            switch_graph(baked_path, true, true);
-                            edit_mode = false;
-                            pending_exit = false;
-                        } else {
-                            if (editor->last_rebuild_kind() == RebuildKind::Resolution)
-                                switch_graph(edit_mode ? dyn_path : baked_path, true, true);
-                            if (pending_exit) editor->rebuild_structure(camst, false);   // структура менялась во время перегенерации
-                        }
-                    } else {                                       // новое многообразие: камера и объекты — из Python
-                        baked_path = next_graph;
-                        dyn_path = next_dyn;
-                        switch_graph(edit_mode ? dyn_path : baked_path, false, false);
-                        baked_struct = structure(editor->objects());
-                        baked_mf = editor->current_manifold_key();
-                        pending_exit = false;
                     }
                     // замер (DD-010): перегенерация (Python или в процессе) и смена графа (буферы, конвейеры, денойзер)
                     std::printf("graph_switch {\"kind\": %d, \"rebuild_ms\": %.1f, \"switch_ms\": %.1f}\n",

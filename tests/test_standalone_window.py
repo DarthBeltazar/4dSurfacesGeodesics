@@ -81,41 +81,6 @@ def test_standalone_resize_equals_cold_start(tmp_path):
     assert log[6]["moving"] and log[-1]["accum"] == 10
 
 
-def test_standalone_structural_cycle_equals_cold_start(tmp_path):
-    """Режим редактирования, правка со сменой структуры (новый источник), выход — быстрые шейдеры собираются в
-    процессе; итог = холодный старт отредактированной сцены (как test_app_edit_mode_structural_cycle для Python)."""
-    d = json.loads((ROOT / "scenes" / "two_wormholes.json").read_text(encoding="utf-8"))
-    d["objects"][1]["center"][0] += 1.0
-    d["objects"][2]["material"]["rough"] = 0.6
-    d["objects"][5]["material"]["emit"] = [20.0, 40.0, 30.0]
-    d["objects"].append(dict(name="new_light", kind="ball4", center=[0.0, 3.0, 1.0, 1.5], r=0.3,
-                             material=dict(kind="emit", emit=[5.0, 20.0, 5.0])))
-    edited = tmp_path / "edited.json"
-    SF.save(edited, d)
-    sc1, _, _ = SF.build(d, PT.procedural_env(8))
-    rows = tmp_path / "rows.npy"
-    np.save(rows, G.object_rows(sc1))
-    out = _standalone(tmp_path / "hot", ROOT / "scenes" / "two_wormholes.json", 40, [39],
-                      f"editmode 5 on\nedit 6 {gpu.qpath(rows)}\neditmode 10 off\n")
-    builds = [json.loads(t.split(" ", 1)[1]) for t in out.splitlines() if t.startswith("standalone_build")]
-    assert len(builds) == 2 and builds[1]["shaders"] == 39     # выход: новая структура — граф и шейдеры в процессе (27 + предпросмотр и выбор кликом: 2 нативных и 10 ядер интерпретатора; вывод — общий с графом режима редактирования)
-    _standalone(tmp_path / "cold", edited, 29, [28])
-    _same(_dumps(tmp_path / "hot", 39), _dumps(tmp_path / "cold", 28))
-    log = json.loads((tmp_path / "hot" / "f.json").read_text(encoding="utf-8"))
-    assert log[5]["moving"] and log[6]["moving"] and log[11]["moving"] and log[-1]["accum"] == 29
-
-
-@pytest.mark.parametrize("target", ["S3", "ellis"])
-def test_standalone_load_other_topology(tmp_path, target):
-    """Открыть сцену с другим многообразием (loadscene) — сразу в режиме редактирования; выход — быстрые шейдеры
-    нового многообразия собираются в процессе (без Python), кадр после — не пустой."""
-    path = ROOT / "scenes" / f"{target}.json"
-    out = _standalone(tmp_path / "hot", ROOT / "scenes" / "two_wormholes.json", 30, [29],
-                      f"loadscene 5 {gpu.qpath(path)}\neditmode 10 off\n")
-    assert out.count("standalone_build") == 2 and out.count("rows_check") == 3
-    edit = json.loads((tmp_path / "hot" / "work" / "edit_1.json").read_text(encoding="utf-8"))
-    assert edit["manifold"]["kind"] == json.loads(path.read_text(encoding="utf-8"))["manifold"]["kind"]
-    assert (np.load(tmp_path / "hot" / "Present_29.npy") & 0xFFFFFF).std() > 0
 
 
 def test_standalone_cyrillic_paths(tmp_path):
@@ -152,7 +117,33 @@ def test_installed_layout(tmp_path):
                        env=dict(ENV, GEO4D_CACHE_DIR=str(cache)), cwd=tmp_path)
     assert r.returncode == 0, r.stdout + r.stderr
     assert sorted(p.relative_to(inst) for p in inst.rglob("*")) == before
-    assert len(list((cache / "spv").glob("*.spv"))) == 39 and list((cache / "gen").rglob("pt_scene.slang"))
+    assert len(list((cache / "spv").glob("*.spv"))) == 27 and list((cache / "gen").rglob("pt_scene.slang"))
     assert (cache / "pipelines.bin").exists()
     assert not list((td / "work").glob("edit_*.json"))          # перегенераций не было
     assert (np.load(td / "Present_3.npy") & 0xFFFFFF).std() > 0
+
+
+def test_standalone_graph_edits_equal_cold_start(tmp_path):
+    """Правки графа в окне (директивы холста редактора нод, DD-011 §8): сдвиг шара, шероховатость металла, цвет
+    источника — сразу (строки), новый источник из нод — сборка быстрых шейдеров в процессе; итог = холодный старт
+    отредактированной сцены побитово (раньше — режим редактирования DD-008 и выход из него)."""
+    d = json.loads((ROOT / "scenes" / "two_wormholes.json").read_text(encoding="utf-8"))
+    c1 = list(d["objects"][1]["center"])
+    c1[0] += 1.0
+    d["objects"][1]["center"] = c1
+    d["objects"][2]["material"]["rough"] = 0.6
+    d["objects"][5]["material"]["emit"] = [20.0, 40.0, 30.0]
+    d["objects"].append(dict(name="new_light", kind="ball4", center=[0.0, 3.0, 1.0, 1.5], r=0.3,
+                             material=dict(kind="emit", albedo=[0.8, 0.8, 0.8], rough=0.3, emit=[5.0, 20.0, 5.0])))
+    edited = tmp_path / "edited.json"
+    edited.write_text(json.dumps(d), encoding="utf-8")
+    ops = (f"setparam 5 shape_1 c {' '.join(map(str, c1))}\nsetparam 5 mat_2 rough 0.6\nsetparam 5 mat_5 emit 20 40 30\n"
+           "addnode 5 nl obj.ball4\naddnode 5 nlm mat.emit\naddnode 5 nlo out.object\n"
+           "setparam 5 nl c 0 3 1 1.5\nsetparam 5 nl r 0.3\nsetparam 5 nlm albedo 0.8 0.8 0.8\nsetparam 5 nlm rough 0.3\n"
+           "setparam 5 nlm emit 5 20 5\n"
+           "link 6 nl.out nlo.shape\nlink 6 nlm.out nlo.material\nlink 6 nlo.out scene.objects\n")
+    out = _standalone(tmp_path / "hot", ROOT / "scenes" / "two_wormholes.json", 14, [13], ops)
+    builds = [json.loads(t.split(" ", 1)[1]) for t in out.splitlines() if t.startswith("standalone_build")]
+    assert len(builds) == 2                                   # новый источник — новая структура: сборка в процессе
+    _standalone(tmp_path / "cold", edited, 7, [6])            # кадр 7 (после сборки в кадре 6) = кадр 0
+    _same(_dumps(tmp_path / "hot", 13), _dumps(tmp_path / "cold", 6))

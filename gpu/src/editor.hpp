@@ -119,13 +119,6 @@ extern const int kNumResPresets;
 std::pair<uint32_t, uint32_t> preset_size(int i, uint32_t ww, uint32_t wh);
 
 struct UiActions {
-    bool objects_changed = false;                 // загрузить строки, сбросить накопление
-    bool structural = false;                      // изменилась структура (число/формы/оси) — нужен режим редактирования
-    bool toggle_edit = false;                     // войти в режим редактирования / выйти из него
-    bool snap = false;                            // спроецировать центры on_M на M (ядро pt_snap) и прочитать обратно
-    bool need_camera = false;                     // прочитать камеру (поставить объект перед ней) — следующий кадр
-    bool manifold_now = false;                    // DD-009: применить вид/параметры многообразия сразу (режим редактирования)
-    bool load_now = false;                        // DD-009: открыть сцену pending_scene() сразу (режим редактирования)
     int res_choice = -1;                          // выбран пресет разрешения (индекс kResPresets)
     bool toggle_fullscreen = false;
     bool toggle_preview = false;                  // DD-011 §6: предпросмотр (первичный луч, «фонарь у камеры») / рендер
@@ -139,64 +132,43 @@ struct FrameInfo {
     uint32_t rw = 0, rh = 0, ww = 0, wh = 0;      // разрешение рендера и окна (пиксели)
     int res_choice = -1;                          // текущий пресет (−1 — заданное в --res)
     bool fullscreen = false, interactive = false;
-    bool instant = false;                         // есть граф режима редактирования: многообразие меняется сразу
 };
 
-// Graph — документ графа сцены из панели «Параметры» (DD-011 §5): структурная правка, камера и объекты — из нового графа
-enum class RebuildKind { Manifold, Structure, Resolution, Graph };
+// Что пересобирается: граф под новое разрешение (сцена прежняя) или граф по документу редактора нод (DD-011); номера —
+// как у прежних видов перегенерации (строка graph_switch журнала)
+enum class RebuildKind { Resolution = 2, Graph = 3 };
 
 // Перегенерация в процессе (DD-010, окно без Python): сцена (JSON) и аргументы как у app.py (--res, --cube, --vsync)
 // → граф в каталоге out_dir (memfs: <out_dir>/app_graph.txt). false — ошибка, сообщение в err.
 using RebuildFn = std::function<bool(const std::string& scene_json, const std::vector<std::string>& args,
                                      const std::string& out_dir, std::string& err)>;
 
+// Окно сцены: панель «Сцена» (рендер), сохранение и перегенерации графа (в процессе или Python) по документу графа
+// сцены. Саму сцену правит редактор нод (node_editor.hpp); объекты и многообразие прежних панелей DD-008/009 — его ноды.
 class Editor {
 public:
     explicit Editor(const EditorConfig& cfg);
     ~Editor();
-    // после перезагрузки графа; keep_objs — оставить объекты редактора (имена, порядок), строки уже записаны хостом
-    void set_config(const EditorConfig& cfg, const float* rows, bool keep_objs = false);
-    const std::vector<EdObject>& objects() const { return objs_; }
-    std::vector<EdObject>& objects() { return objs_; }
-    const EdFlat& flat() const { return cfg_.flat; }
+    void set_config(const EditorConfig& cfg);     // после перезагрузки графа (каталог перегенераций — прежний)
     const EditorConfig& config() const { return cfg_; }
-    // ключ многообразия, зашитого в быстрые шейдеры последней перегенерации (или исходного графа)
-    std::string current_manifold_key() const { return manifold_key(cfg_.kind, cfg_.params, cfg_.env); }
-    std::string requested_manifold_key() const { return requested_mf_; }
-
-    // DD-009: сцена для мгновенного применения — открытая из файла или текущая с новым многообразием из панели
-    const SceneDesc& pending_scene() const { return pending_; }
-    // текущая сцена с другим многообразием (как кнопка «Применить»; параметры поверх значений по умолчанию вида)
-    SceneDesc with_manifold(const std::string& kind, const std::vector<ManifoldParam>& params, const CameraState& cam) const;
-    // мгновенное применение удалось: многообразие, объекты (центры уже на M), fov, скорость — состояние редактора
-    void commit_scene(const SceneDesc& sd, const ManifoldInfo& mi, const std::vector<EdObject>& objs);
     void set_status(const std::string& s) { status_ = s; }
-
-    // панели; cam — текущая камера (для «перед камерой» и сохранения)
-    UiActions draw(const FrameInfo& fi, const CameraState& cam, bool edit_mode, bool& use_den, float& exposure,
-                   float& speed);
-
-    // перегенерация: готово — путь к новому графу (иначе пусто); ошибка — сообщение в окне
-    std::string poll_rebuild();
-    // то же, что кнопка «Применить», из сценария (директива remanifold); wait — дождаться Python
-    void rebuild(const std::string& kind, const std::vector<ManifoldParam>& params, const CameraState& cam, bool wait);
     const std::string& status() const { return status_; }
-    // быстрые шейдеры под текущую структуру объектов (многообразие и камера прежние) — при выходе из режима редактирования
-    void rebuild_structure(const CameraState& cam, bool wait);
-    // то же многообразие и объекты, новое разрешение рендера (аргумент --res перегенераций меняется насовсем)
-    void rebuild_resolution(const CameraState& cam, uint32_t w, uint32_t h, bool wait);
-    // DD-011 §5: быстрый граф по документу графа сцены (панель «Параметры»); с этого момента документ — источник сцены
-    // для всех перегенераций и сохранения (правки объектов этой панелью в него не попадают — она только для материалов)
-    // keep_camera — камера из документа (открыт другой файл), иначе — текущая
-    void rebuild_doc(const std::string& doc_text, const CameraState& cam, bool wait, bool keep_camera = false);
-    // сохранить сцену (документ графа, если задан, с текущей камерой) — как кнопка «Сохранить сцену»
-    void save_scene(const std::string& path, const CameraState& cam) { save(path, cam); }
+    // панель «Сцена»; cam — текущая камера (положение)
+    UiActions draw(const FrameInfo& fi, const CameraState& cam, bool& use_den, float& exposure, float& speed);
+
+    // документ графа сцены — источник всех перегенераций и сохранения
     void set_doc(const std::string& doc_text) { doc_override_ = doc_text; }
     bool has_doc() const { return !doc_override_.empty(); }
-    void set_flat(const EdFlat& f) { cfg_.flat = f; }
+    // быстрый граф по документу; keep_camera — камера из документа (открыт другой файл), иначе — текущая
+    void rebuild_doc(const std::string& doc_text, const CameraState& cam, bool wait, bool keep_camera = false);
+    // та же сцена, новое разрешение рендера (аргумент --res перегенераций меняется насовсем)
+    void rebuild_resolution(const CameraState& cam, uint32_t w, uint32_t h, bool wait);
+    // сохранить сцену (документ с текущей камерой)
+    void save_scene(const std::string& path, const CameraState& cam);
+    // перегенерация: готово — путь к новому графу (иначе пусто); ошибка — сообщение в status()
+    std::string poll_rebuild();
     RebuildKind last_rebuild_kind() const { return rebuild_kind_; }
     double last_rebuild_ms() const { return rebuild_ms_; }     // от запуска перегенерации до готового графа
-    const std::vector<std::pair<int, int>>& requested_structure() const { return requested_; }
     bool rebuilding() const { return worker_ != nullptr; }
     // перегенерация функцией в процессе вместо Python (директива rebuild не нужна); args — как у app.py
     void set_inproc_rebuild(RebuildFn fn, std::vector<std::string> args) {
@@ -206,11 +178,6 @@ public:
 
 private:
     EditorConfig cfg_;
-    std::vector<EdObject> objs_;
-    int sel_ = -1;
-    std::string kind_edit_;
-    std::vector<ManifoldParam> params_edit_;
-    char save_path_[512] = {};
     std::string status_;
     int rebuild_n_ = 0;
     std::unique_ptr<std::thread> worker_;
@@ -220,19 +187,11 @@ private:
     RebuildFn rebuild_fn_;
     std::vector<std::string> inproc_args_;        // --res меняется насовсем (rebuild_resolution)
     std::string rebuild_err_;
-    std::string doc_override_;                    // документ графа из редактора нод (пусто — нет)
+    std::string doc_override_;                    // документ графа из редактора нод (пусто — файл сцены)
     bool keep_doc_camera_ = false;                // перегенерация: камера — из документа
     std::chrono::steady_clock::time_point rebuild_t0_{};
     double rebuild_ms_ = 0;
-
-    RebuildKind rebuild_kind_ = RebuildKind::Manifold;
-    std::vector<std::pair<int, int>> requested_;
-    std::string requested_mf_;
-    SceneDesc pending_;
-    std::vector<std::string> scene_files_;        // scenes/*.json для списка «Открыть»
-    int scene_sel_ = -1;
+    RebuildKind rebuild_kind_ = RebuildKind::Graph;
     void start_rebuild(const CameraState& cam, RebuildKind kind);
-    void save(const std::string& path, const CameraState& cam);
-    std::string scene_text(const std::string& kind, const std::vector<ManifoldParam>& params, const std::string& env,
-                           const CameraState& cam) const;
+    std::string scene_text(const CameraState& cam) const;
 };

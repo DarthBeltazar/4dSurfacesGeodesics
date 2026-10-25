@@ -381,73 +381,20 @@ std::string scene_json(const std::string& kind, const std::vector<ManifoldParam>
 
 // ---- редактор -------------------------------------------------------------------------------------------
 
-Editor::Editor(const EditorConfig& cfg) : cfg_(cfg) {
-    std::snprintf(save_path_, sizeof(save_path_), "%s", cfg.scene_path.c_str());
-    kind_edit_ = cfg.kind;
-    params_edit_ = cfg.params;
-}
+Editor::Editor(const EditorConfig& cfg) : cfg_(cfg) {}
 
 Editor::~Editor() {
     if (worker_ && worker_->joinable()) worker_->join();
 }
 
-std::vector<std::pair<int, int>> structure(const std::vector<EdObject>& objs) {
-    std::vector<std::pair<int, int>> s;
-    for (auto& o : objs) s.emplace_back(o.geom, o.geom == 2 ? o.axis : -1);
-    return s;
+void Editor::set_config(const EditorConfig& cfg) {
+    std::string wd = cfg_.work_dir;                // перегенерации — в каталоге первого графа (без вложенности)
+    cfg_ = cfg;
+    if (!wd.empty()) cfg_.work_dir = wd;
 }
 
-void Editor::set_config(const EditorConfig& cfg, const float* rows, bool keep_objs) {
-    // keep_objs: сцена — состояние редактора (объекты, многообразие после мгновенной смены, fov, разрешение), граф —
-    // только исполнитель; иначе — сцена нового графа (перегенерация с другим многообразием)
-    if (!keep_objs) {
-        std::string wd = cfg_.work_dir;                // перегенерации — в каталоге первого графа (без вложенности)
-        cfg_ = cfg;
-        if (!wd.empty()) cfg_.work_dir = wd;
-        kind_edit_ = cfg.kind;
-        params_edit_ = cfg.params;
-        objs_ = unpack_rows(rows, cfg.names);
-    }
-    if (sel_ >= int(objs_.size()) || sel_ < 0) sel_ = objs_.empty() ? -1 : 0;
-}
-
-SceneDesc Editor::with_manifold(const std::string& kind, const std::vector<ManifoldParam>& params,
-                                const CameraState& cam) const {
-    SceneDesc sd;
-    sd.path = cfg_.scene_path;
-    sd.kind = kind;
-    sd.params = default_params(kind);
-    for (auto& p : params)
-        for (auto& q : sd.params)
-            if (q.key == p.key && q.v.size() == p.v.size()) q.v = p.v;
-    sd.env = kind == cfg_.kind ? cfg_.env : "";          // другой вид — фон по умолчанию для вида
-    sd.objs = objs_;
-    sd.cam = cam;
-    sd.has_right = true;
-    sd.fov = cfg_.fov;
-    sd.speed = cfg_.speed;
-    return sd;
-}
-
-void Editor::commit_scene(const SceneDesc& sd, const ManifoldInfo& mi, const std::vector<EdObject>& objs) {
-    cfg_.kind = sd.kind;
-    cfg_.params = sd.params;
-    cfg_.env = sd.env;
-    cfg_.flat = mi.flat;
-    cfg_.fov = sd.fov;
-    cfg_.speed = sd.speed;
-    cfg_.scene_path = sd.path;
-    kind_edit_ = sd.kind;
-    params_edit_ = sd.params;
-    objs_ = objs;
-    sel_ = objs_.empty() ? -1 : 0;
-}
-
-// Текст сцены для сохранения и перегенерации: version 1 — из состояния редактора; документ-граф (DD-011) — исходный
-// .g4d с текущей камерой (правки материалов ползунками до шага 6 в него не попадают)
-std::string Editor::scene_text(const std::string& kind, const std::vector<ManifoldParam>& params, const std::string& env,
-                               const CameraState& cam) const {
-    if (!cfg_.graph_doc && doc_override_.empty()) return scene_json(kind, params, env, objs_, cam, cfg_.fov, cfg_.speed);
+// Текст сцены для сохранения и перегенерации: документ графа редактора нод (или файл сцены) с текущей камерой
+std::string Editor::scene_text(const CameraState& cam) const {
     nlohmann::json doc;
     if (!doc_override_.empty()) doc = nlohmann::json::parse(doc_override_);
     else {
@@ -461,11 +408,11 @@ std::string Editor::scene_text(const std::string& kind, const std::vector<Manifo
     return doc.dump(1) + "\n";
 }
 
-void Editor::save(const std::string& path, const CameraState& cam) {
+void Editor::save_scene(const std::string& path, const CameraState& cam) {
     std::ofstream f(path, std::ios::binary);
     if (!f) { status_ = "не удалось записать " + path; return; }
     try {
-        f << scene_text(cfg_.kind, cfg_.params, cfg_.env, cam);
+        f << scene_text(cam);
     } catch (const std::exception& e) {
         status_ = e.what();
         return;
@@ -474,7 +421,6 @@ void Editor::save(const std::string& path, const CameraState& cam) {
 }
 
 void Editor::start_rebuild(const CameraState& cam, RebuildKind rk) {
-    const bool same_manifold = rk != RebuildKind::Manifold;
     if (cfg_.python.empty() && !rebuild_fn_) { status_ = "перегенерация недоступна (нет директивы rebuild)"; return; }
     ++rebuild_n_;
     rebuild_t0_ = std::chrono::steady_clock::now();
@@ -482,22 +428,14 @@ void Editor::start_rebuild(const CameraState& cam, RebuildKind rk) {
     std::string json = base + ".json";
     graph_out_ = base;
     log_path_ = base + ".log";
-    rebuild_kind_ = rk;                         // структура объектов или разрешение: многообразие прежнее, камера — та же
-    requested_ = structure(objs_);
-    requested_mf_ = same_manifold ? current_manifold_key() : manifold_key(kind_edit_, params_edit_, "");
-    const std::string& kind = same_manifold ? cfg_.kind : kind_edit_;
-    const auto& params = same_manifold ? cfg_.params : params_edit_;
-    std::string env = kind == cfg_.kind ? cfg_.env : "";              // другой вид — фон по умолчанию для вида
+    rebuild_kind_ = rk;
     {
         std::ofstream f(json, std::ios::binary);
-        f << scene_text(kind, params, env, cam);
+        f << scene_text(cam);
     }
+    done_ = false;
+    status_ = rk == RebuildKind::Resolution ? "граф под новое разрешение…" : "сборка шейдеров (структура графа сцены изменилась)…";
     if (rebuild_fn_) {                              // в процессе (DD-010): кодген и компиляция в потоке
-        done_ = false;
-        status_ = rk == RebuildKind::Structure    ? "сборка быстрых шейдеров (новая структура объектов)…"
-                  : rk == RebuildKind::Resolution ? "граф под новое разрешение…"
-                  : rk == RebuildKind::Graph      ? "сборка шейдеров (структура графа сцены изменилась)…"
-                                                  : "сборка шейдеров и графа…";
         worker_ = std::make_unique<std::thread>([this, fn = rebuild_fn_, json, base, args = inproc_args_]() {
             std::string err;
             rc_ = fn(json, args, base, err) ? 0 : 1;
@@ -507,31 +445,17 @@ void Editor::start_rebuild(const CameraState& cam, RebuildKind rk) {
         return;
     }
     auto q = [](const std::string& s) { return "\"" + s + "\""; };
-    // -X utf8: лог Python (сообщение об ошибке в окне) — в UTF-8 и при перенаправлении в файл на Windows
+    // граф Python (app.py --python-graph): перегенерация этим же скриптом; -X utf8 — лог в UTF-8 и при перенаправлении
     std::string cmd = q(cfg_.python) + " -X utf8 " + q(cfg_.script) + " --scene " + q(json) + " --graph-only " + q(base);
     for (auto& a : cfg_.rebuild_args) cmd += " " + a;
     cmd += " > " + q(log_path_) + " 2>&1";
 #ifdef _WIN32
     cmd = "\"" + cmd + "\"";                       // cmd /c снимает внешние кавычки
 #endif
-    done_ = false;
-    status_ = rk == RebuildKind::Structure    ? "перегенерация быстрых шейдеров (новая структура объектов)…"
-              : rk == RebuildKind::Resolution ? "перегенерация графа под новое разрешение…"
-                                              : "перегенерация: шейдеры и граф (Python)…";
     worker_ = std::make_unique<std::thread>([this, cmd]() {
         rc_ = std::system(cmd.c_str());
         done_ = true;
     });
-}
-
-void Editor::rebuild(const std::string& kind, const std::vector<ManifoldParam>& params, const CameraState& cam, bool wait) {
-    kind_edit_ = kind;
-    params_edit_ = default_params(kind);
-    for (auto& p : params)
-        for (auto& q : params_edit_)
-            if (q.key == p.key) q.v = p.v;
-    start_rebuild(cam, RebuildKind::Manifold);
-    while (wait && worker_ && !done_) std::this_thread::sleep_for(std::chrono::milliseconds(20));
 }
 
 void Editor::rebuild_doc(const std::string& doc_text, const CameraState& cam, bool wait, bool keep_camera) {
@@ -539,11 +463,6 @@ void Editor::rebuild_doc(const std::string& doc_text, const CameraState& cam, bo
     keep_doc_camera_ = keep_camera;
     start_rebuild(cam, RebuildKind::Graph);
     keep_doc_camera_ = false;
-    while (wait && worker_ && !done_) std::this_thread::sleep_for(std::chrono::milliseconds(20));
-}
-
-void Editor::rebuild_structure(const CameraState& cam, bool wait) {
-    start_rebuild(cam, RebuildKind::Structure);
     while (wait && worker_ && !done_) std::this_thread::sleep_for(std::chrono::milliseconds(20));
 }
 
@@ -563,10 +482,7 @@ std::string Editor::poll_rebuild() {
     worker_.reset();
     rebuild_ms_ = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - rebuild_t0_).count();
     if (rc_ == 0) {
-        status_ = rebuild_kind_ == RebuildKind::Structure    ? "быстрый режим: шейдеры с новой структурой объектов"
-                  : rebuild_kind_ == RebuildKind::Resolution ? "разрешение рендера обновлено"
-                  : rebuild_kind_ == RebuildKind::Graph      ? "граф сцены пересобран"
-                                                             : "многообразие обновлено";
+        status_ = rebuild_kind_ == RebuildKind::Resolution ? "разрешение рендера обновлено" : "граф сцены пересобран";
         return graph_out_ + "/app_graph.txt";
     }
     if (rebuild_fn_) {
@@ -581,22 +497,23 @@ std::string Editor::poll_rebuild() {
     return "";
 }
 
-UiActions Editor::draw(const FrameInfo& fi, const CameraState& cam, bool edit_mode, bool& use_den, float& exposure,
-                       float& speed) {
+// панель «Сцена»: время кадра, положение камеры, рендер (денойзер, предпросмотр, экспозиция, скорость, разрешение,
+// полноэкранный режим) и сообщение перегенерации. Сцену правит редактор нод (DD-011 §8), объекты и многообразие
+// прежних панелей DD-008/009 — его нодами
+UiActions Editor::draw(const FrameInfo& fi, const CameraState& cam, bool& use_den, float& exposure, float& speed) {
     UiActions act;
     ImGui::SetNextWindowPos(ImVec2(10, 10), ImGuiCond_FirstUseEver);
     ImGui::SetNextWindowSize(ImVec2(360, 0), ImGuiCond_FirstUseEver);
     ImGui::Begin("Сцена (F1 — скрыть панели)");
     ImGui::Text("%.1f мс (%.0f к/с), накоплено %u spp", fi.ms, fi.ms > 0 ? 1000.0 / fi.ms : 0.0, fi.spp);
     ImGui::TextDisabled("x = (%.2f, %.2f, %.2f, %.2f)", cam.x[0], cam.x[1], cam.x[2], cam.x[3]);
-
     if (ImGui::CollapsingHeader("Рендер", ImGuiTreeNodeFlags_DefaultOpen)) {
         if (fi.has_den && !fi.preview) ImGui::Checkbox("денойзер (R)", &use_den);
+        else if (!fi.has_den && !fi.preview) ImGui::TextDisabled("денойзер недоступен");
         if (fi.preview_avail) {
             bool pv = fi.preview;
             if (ImGui::Checkbox("предпросмотр (P)", &pv)) act.toggle_preview = true;
         }
-        else ImGui::TextDisabled("денойзер недоступен");
         ImGui::SliderFloat("экспозиция", &exposure, 0.05f, 20.0f, "%.2f", ImGuiSliderFlags_Logarithmic);
         ImGui::SliderFloat("скорость", &speed, 0.05f, 20.0f, "%.2f", ImGuiSliderFlags_Logarithmic);
         if (fi.interactive) {
@@ -620,212 +537,10 @@ UiActions Editor::draw(const FrameInfo& fi, const CameraState& cam, bool edit_mo
             if (ImGui::Checkbox("полноэкранный режим (F11)", &fs)) act.toggle_fullscreen = true;
             ImGui::TextDisabled("окно %u×%u", fi.ww, fi.wh);
         }
-        ImGui::TextDisabled("WASD, Q/E — полёт; ЛКМ — взгляд мышью; C/Z — крен");
+        ImGui::TextDisabled("WASD, Q/E — полёт; ЛКМ по фону — взгляд мышью, по объекту — его нода; C/Z — крен");
     }
-
-    const bool busy = rebuilding();
-    if (ImGui::CollapsingHeader("Многообразие", ImGuiTreeNodeFlags_DefaultOpen)) {
-        int cur = 0;
-        for (int i = 0; i < IM_ARRAYSIZE(kKinds); ++i) if (kind_edit_ == kKinds[i]) cur = i;
-        if (has_doc()) ImGui::TextDisabled("граф сцены правится в панели «Параметры»");
-        ImGui::BeginDisabled(busy || has_doc());
-        if (ImGui::Combo("вид", &cur, kKindNames, IM_ARRAYSIZE(kKindNames)) && kind_edit_ != kKinds[cur]) {
-            kind_edit_ = kKinds[cur];
-            params_edit_ = kind_edit_ == cfg_.kind ? cfg_.params : default_params(kind_edit_);
-        }
-        for (auto& p : params_edit_) {
-            if (p.v.size() == 3) ImGui::DragFloat3(p.key.c_str(), p.v.data(), 0.02f);
-            else ImGui::DragFloat(p.key.c_str(), p.v.data(), 0.01f, 0.0f, 0.0f, "%.3f");
-        }
-        if (fi.instant) {          // DD-009: сразу, в режиме редактирования; быстрые шейдеры — при выходе из него
-            if (ImGui::Button("Применить")) {
-                pending_ = with_manifold(kind_edit_, params_edit_, cam);
-                act.manifold_now = true;
-            }
-        } else if (ImGui::Button("Применить (перекомпиляция)")) start_rebuild(cam, RebuildKind::Manifold);
-        ImGui::SameLine();
-        if (ImGui::Button("Сброс")) { kind_edit_ = cfg_.kind; params_edit_ = cfg_.params; }
-        ImGui::EndDisabled();
-        if (busy) ImGui::TextColored(ImVec4(1, 0.8f, 0.3f, 1), "идёт перегенерация…");
-    }
-
-    if (ImGui::CollapsingHeader("Файл", ImGuiTreeNodeFlags_DefaultOpen)) {
-        if (fi.instant) {           // DD-009: сцены из каталога файла сцены (scenes/) — открываются сразу
-            if (scene_files_.empty()) {
-                std::error_code ec;
-                auto dir = std::filesystem::path(cfg_.scene_path).parent_path();
-                for (auto& de : std::filesystem::directory_iterator(dir, ec))
-                    if (de.path().extension() == ".json") scene_files_.push_back(de.path().generic_string());
-                std::sort(scene_files_.begin(), scene_files_.end());
-            }
-            auto stem = [](const std::string& p) { return std::filesystem::path(p).stem().string(); };
-            std::string cur = scene_sel_ >= 0 && scene_sel_ < int(scene_files_.size()) ? stem(scene_files_[scene_sel_]) : "сцена…";
-            ImGui::BeginDisabled(busy);
-            if (ImGui::BeginCombo("##scenes", cur.c_str())) {
-                for (int i = 0; i < int(scene_files_.size()); ++i)
-                    if (ImGui::Selectable(stem(scene_files_[i]).c_str(), i == scene_sel_)) {
-                        scene_sel_ = i;
-                        std::snprintf(save_path_, sizeof(save_path_), "%s", scene_files_[i].c_str());
-                    }
-                ImGui::EndCombo();
-            }
-            ImGui::EndDisabled();
-        }
-        ImGui::InputText("##path", save_path_, sizeof(save_path_));
-        ImGui::BeginDisabled(busy);
-        if (ImGui::Button("Сохранить сцену")) save(save_path_, cam);
-        if (fi.instant) {
-            ImGui::SameLine();
-            if (ImGui::Button("Открыть")) {
-                try {
-                    pending_ = read_scene_json(save_path_);
-                    act.load_now = true;
-                } catch (const std::exception& e) {
-                    status_ = std::string("не удалось открыть сцену: ") + e.what();
-                }
-            }
-        }
-        ImGui::EndDisabled();
-    }
+    if (rebuilding()) ImGui::TextColored(ImVec4(1, 0.8f, 0.3f, 1), "идёт сборка шейдеров…");
     if (!status_.empty()) ImGui::TextWrapped("%s", status_.c_str());
-    ImGui::End();
-
-    const ImVec2 disp = ImGui::GetIO().DisplaySize;
-    ImGui::SetNextWindowPos(ImVec2(disp.x - 370, 10), ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowSize(ImVec2(360, 0), ImGuiCond_FirstUseEver);
-    ImGui::Begin("Объекты");
-    {
-        // режим редактирования: шейдеры без зашитой структуры — добавление, удаление и смена формы сразу (кадр медленнее);
-        // выход — быстрые шейдеры (при новой структуре перегенерируются в фоне, окно пока в режиме редактирования)
-        bool em = edit_mode;
-        ImGui::BeginDisabled(busy && edit_mode);
-        if (ImGui::Checkbox("режим редактирования (Tab)", &em)) act.toggle_edit = true;
-        ImGui::EndDisabled();
-        if (!edit_mode) ImGui::TextDisabled("быстрый режим: форма и число объектов — в режиме редактирования");
-        ImGui::BeginDisabled(busy && !edit_mode);
-        auto lights = nee_lights(objs_, cfg_.flat);
-        auto is_light = [&](int k) { return std::find(lights.begin(), lights.end(), k) != lights.end(); };
-        if (ImGui::BeginListBox("##objs", ImVec2(-FLT_MIN, 6.5f * ImGui::GetTextLineHeightWithSpacing()))) {
-            for (int k = 0; k < int(objs_.size()); ++k) {
-                std::string label = objs_[k].name + (is_light(k) ? "  [NEE]" : "") + "##" + std::to_string(k);
-                if (ImGui::Selectable(label.c_str(), sel_ == k)) sel_ = k;
-            }
-            ImGui::EndListBox();
-        }
-        auto add = [&](int geom) {
-            if (objs_.size() >= size_t(kMaxObj)) { status_ = "не больше 32 объектов"; return; }
-            EdObject o;
-            o.geom = geom;
-            o.name = geom == 0 ? "ball" : geom == 1 ? "torus" : "plane";
-            if (geom == 2) { o.axis = 2; o.offset = cam.x[2] - 1.0f; }
-            else {
-                float d = geom == 0 ? 2.5f : 4.0f;
-                for (int i = 0; i < 4; ++i) o.c[i] = cam.x[i] + d * cam.f[i];
-                o.on_M = true;
-                if (geom == 1) { o.a = 0.6f; o.b = 0.15f; }
-                act.snap = true;
-            }
-            objs_.push_back(o);
-            sel_ = int(objs_.size()) - 1;
-            act.objects_changed = true;
-            act.structural = true;
-        };
-        // без графа режима редактирования (сцены-графы DD-011) структура правится в графе (редактор нод, шаг 6)
-        ImGui::BeginDisabled(!fi.instant);
-        if (ImGui::Button("+ шар")) add(0);
-        ImGui::SameLine();
-        if (ImGui::Button("+ тор")) add(1);
-        ImGui::SameLine();
-        if (ImGui::Button("+ плоскость")) add(2);
-        if (sel_ >= 0) {
-            if (ImGui::Button("копия") && objs_.size() < size_t(kMaxObj) && objs_[sel_].geom != 3) {
-                EdObject o = objs_[sel_];
-                o.name += "_copy";
-                if (o.geom != 2) o.c[0] += 2.2f * o.a;
-                objs_.push_back(o);
-                sel_ = int(objs_.size()) - 1;
-                act.objects_changed = true;
-                act.structural = true;
-                act.snap = o.on_M;
-            }
-            ImGui::SameLine();
-            if (ImGui::Button("удалить")) {
-                objs_.erase(objs_.begin() + sel_);
-                sel_ = -1;
-                act.objects_changed = true;
-                act.structural = true;
-            }
-        }
-        ImGui::EndDisabled();
-        if (!fi.instant) ImGui::TextDisabled("структура сцены-графа правится в графе (.g4d)");
-        if (sel_ >= 0 && sel_ < int(objs_.size())) {
-            EdObject& o = objs_[sel_];
-            bool ch = false, moved = false;
-            ImGui::SeparatorText("свойства");
-            char name[64];
-            std::snprintf(name, sizeof(name), "%s", o.name.c_str());
-            if (ImGui::InputText("имя", name, sizeof(name))) {
-                o.name = name;
-                std::replace(o.name.begin(), o.name.end(), ' ', '_');   // имена — слова директив графа
-            }
-            const char* geoms[] = {"4D-шар", "тор в листе", "полупространство"};
-            if (o.geom == 3) {
-                ImGui::TextDisabled("составная форма графа (M36): форма правится в графе");
-            } else if (!fi.instant) {
-                ImGui::TextDisabled("форма: %s", geoms[o.geom]);
-            } else if (ImGui::Combo("форма", &o.geom, geoms, 3)) {
-                ch = true;
-                act.structural = true;
-                if (o.geom == 1 && o.b <= 0) o.b = 0.15f;
-            }
-            if (o.geom == 3) {
-            } else if (o.geom != 2) {
-                moved |= ImGui::DragFloat4("центр", o.c, 0.01f);
-                if (ImGui::Checkbox("на M (проекция центра)", &o.on_M)) moved = true;
-                if (ImGui::Button("перед камерой")) {
-                    float d = std::max(2.0f, 4.0f * o.a);
-                    for (int i = 0; i < 4; ++i) o.c[i] = cam.x[i] + d * cam.f[i];
-                    o.on_M = true;
-                    moved = true;
-                }
-                if (cfg_.flat.has) {
-                    ImGui::SameLine();
-                    if (ImGui::Button("на другой лист")) { o.c[3] = -o.c[3]; moved = true; }
-                }
-                if (o.geom == 0) ch |= ImGui::DragFloat("r", &o.a, 0.005f, 0.01f, 100.0f);
-                else {
-                    ch |= ImGui::DragFloat("R", &o.a, 0.005f, 0.01f, 100.0f);
-                    ch |= ImGui::DragFloat("r##t", &o.b, 0.005f, 0.005f, 100.0f);
-                }
-            } else {
-                const char* axes[] = {"x", "y", "z", "w"};
-                if (fi.instant && ImGui::Combo("ось", &o.axis, axes, 4)) { ch = true; act.structural = true; }
-                ch |= ImGui::DragFloat("смещение", &o.offset, 0.01f);
-                bool up = o.sign > 0;
-                if (ImGui::Checkbox("внутрь — в сторону «−»", &up)) { o.sign = up ? 1.0f : -1.0f; ch = true; }
-            }
-            const char* mats[] = {"диффузный", "металл", "излучатель"};
-            ch |= ImGui::Combo("материал", &o.mat, mats, 3);
-            if (o.mat != 2) ch |= ImGui::ColorEdit3("альбедо", o.albedo);
-            if (o.mat == 1) ch |= ImGui::SliderFloat("шероховатость", &o.rough, 0.01f, 1.0f);
-            if (o.mat == 2) {
-                float s = max3(o.emit), col[3] = {1, 1, 1};
-                if (s > 0) for (int i = 0; i < 3; ++i) col[i] = o.emit[i] / s;
-                bool ec = ImGui::ColorEdit3("цвет", col);
-                ec |= ImGui::DragFloat("яркость", &s, 0.1f, 0.0f, 1000.0f);
-                if (ec) {
-                    for (int i = 0; i < 3; ++i) o.emit[i] = col[i] * s;
-                    ch = true;
-                }
-                if (is_light(sel_)) ImGui::TextColored(ImVec4(0.5f, 1, 0.5f, 1), "NEE-источник (M34)");
-                else ImGui::TextDisabled(cfg_.flat.has ? "не в плоской зоне / не на листе: только BSDF (M34)"
-                                                       : "плоских зон нет: свет только через BSDF");
-            }
-            if (ch || moved) act.objects_changed = true;
-            if (moved && o.on_M && o.geom != 2 && o.geom != 3) act.snap = true;
-        }
-        ImGui::EndDisabled();
-    }
     ImGui::End();
     return act;
 }
