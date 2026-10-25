@@ -187,7 +187,10 @@ public:
     void rebuild_resolution(const CameraState& cam, uint32_t w, uint32_t h, bool wait);
     // DD-011 §5: быстрый граф по документу графа сцены (панель «Параметры»); с этого момента документ — источник сцены
     // для всех перегенераций и сохранения (правки объектов этой панелью в него не попадают — она только для материалов)
-    void rebuild_doc(const std::string& doc_text, const CameraState& cam, bool wait);
+    // keep_camera — камера из документа (открыт другой файл), иначе — текущая
+    void rebuild_doc(const std::string& doc_text, const CameraState& cam, bool wait, bool keep_camera = false);
+    // сохранить сцену (документ графа, если задан, с текущей камерой) — как кнопка «Сохранить сцену»
+    void save_scene(const std::string& path, const CameraState& cam) { save(path, cam); }
     void set_doc(const std::string& doc_text) { doc_override_ = doc_text; }
     bool has_doc() const { return !doc_override_.empty(); }
     void set_flat(const EdFlat& f) { cfg_.flat = f; }
@@ -217,7 +220,8 @@ private:
     RebuildFn rebuild_fn_;
     std::vector<std::string> inproc_args_;        // --res меняется насовсем (rebuild_resolution)
     std::string rebuild_err_;
-    std::string doc_override_;                    // документ графа из панели «Параметры» (пусто — нет)
+    std::string doc_override_;                    // документ графа из редактора нод (пусто — нет)
+    bool keep_doc_camera_ = false;                // перегенерация: камера — из документа
     std::chrono::steady_clock::time_point rebuild_t0_{};
     double rebuild_ms_ = 0;
 

@@ -456,7 +456,8 @@ std::string Editor::scene_text(const std::string& kind, const std::vector<Manifo
         doc = nlohmann::json::parse(in);
     }
     auto v4 = [](const float* a) { return nlohmann::json::array({a[0], a[1], a[2], a[3]}); };
-    doc["camera"] = {{"x", v4(cam.x)}, {"f", v4(cam.f)}, {"up", v4(cam.u)}, {"right", v4(cam.r)}, {"fov", cfg_.fov}};
+    if (!keep_doc_camera_)
+        doc["camera"] = {{"x", v4(cam.x)}, {"f", v4(cam.f)}, {"up", v4(cam.u)}, {"right", v4(cam.r)}, {"fov", cfg_.fov}};
     return doc.dump(1) + "\n";
 }
 
@@ -533,9 +534,11 @@ void Editor::rebuild(const std::string& kind, const std::vector<ManifoldParam>& 
     while (wait && worker_ && !done_) std::this_thread::sleep_for(std::chrono::milliseconds(20));
 }
 
-void Editor::rebuild_doc(const std::string& doc_text, const CameraState& cam, bool wait) {
+void Editor::rebuild_doc(const std::string& doc_text, const CameraState& cam, bool wait, bool keep_camera) {
     doc_override_ = doc_text;
+    keep_doc_camera_ = keep_camera;
     start_rebuild(cam, RebuildKind::Graph);
+    keep_doc_camera_ = false;
     while (wait && worker_ && !done_) std::this_thread::sleep_for(std::chrono::milliseconds(20));
 }
 

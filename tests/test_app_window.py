@@ -79,14 +79,15 @@ def test_click_on_panel_is_not_camera_grab(tmp_path):
     """Клик ЛКМ по панели редактора не включает взгляд мышью, даже если мышь пришла на панель со сцены в той же пачке
     событий (решение — после ImGui::NewFrame, а не по WantCaptureMouse прошлого кадра); клик по сцене включает,
     повторный — выключает. События мыши — директива mouse (как от SDL), оверлей в скрытом окне — директива ui."""
-    out = _run(tmp_path, 1280, 720, 14, 13, editor=True,    # (640, 660) — кадр вне панелей при любом масштабе экрана
-               extra="ui\nmouse 2 640 660\nmouse 3 100 15 click\nmouse 7 640 660 click\nmouse 10 640 660 click\n")
+    # раскладка DD-011 §8: граф — нижняя треть окна, «Сцена» и «Объекты» — правая колонка; (400, 200) — кадр
+    out = _run(tmp_path, 1280, 720, 14, 13, editor=True,
+               extra="ui\nmouse 2 400 200\nmouse 3 640 660 click\nmouse 7 400 200 click\nmouse 10 400 200 click\n")
     st = {}
     for line in out.splitlines():
         if line.startswith("mouse "):
             w = line.split()
             st[int(w[1])] = dict(grab=int(w[3]), imgui=int(w[5]))
-    assert st[3]["grab"] == 0 and st[4]["grab"] == 0 and st[4]["imgui"] == 1     # заголовок панели «Сцена»
+    assert st[3]["grab"] == 0 and st[4]["grab"] == 0 and st[4]["imgui"] == 1     # панель «Граф»
     assert st[8]["grab"] == 1                                                    # сцена — взгляд мышью
     assert st[11]["grab"] == 0                                                   # повторный щелчок — отпустить
 

@@ -30,8 +30,10 @@
 //   slots <буфер> <строка> <строк> [mf]   слоты параметров графа сцены (DD-011 §5) в буфере камеры; mf — и числа многообразия
 //   slotkey <sha256>                 ключ структуры быстрого графа (codegen.hpp::structure_key): правка параметра с тем же
 //                                    ключом — запись строк без перекомпиляции, иначе — перегенерация
-//   setparam <кадр> <нода> <параметр> <числа…>   в сценарии: правка параметра ноды графа, как панелью «Параметры»
-//                                    (структурная — ждёт перегенерацию)
+//   setparam <кадр> <нода> <параметр> <числа…>   в сценарии: правка параметра ноды графа, как в инспекторе редактора
+//                                    нод (структурная — ждёт перегенерацию)
+//   addnode <кадр> <id> <тип> | link <кадр> <id.out> <id.вход> | unlink <кадр> <id.вход> | delnode <кадр> <id> |
+//   graphundo <кадр> | graphredo <кадр>   в сценарии: действия на холсте редактора нод (DD-011 §8)
 //   prevgraph <p8> <o8> <p32> <o32>  графы предпросмотра на интерпретаторе (DD-011 §6): o — с составными объектами-
 //                                    программами (дороже), 8/32 — регистров интерпретатора (8 — вдвое быстрее); шейдеры
 //                                    от сцены не зависят, сцена —
@@ -74,7 +76,8 @@
 #include "denoiser.hpp"
 #endif
 #include "editor.hpp"
-#include "params_panel.hpp"
+#include "node_editor.hpp"
+#include <imgui_internal.h>
 #include "scene_graph.hpp"
 #include "bytecode.hpp"
 #include "graph_program.hpp"
@@ -192,6 +195,7 @@ struct AppDirs {
     std::vector<std::pair<uint32_t, bool>> previewmode;
     struct SetParam { uint32_t frame; std::string node, param; std::vector<double> v; };
     std::vector<SetParam> setparams;
+    std::vector<std::pair<uint32_t, std::vector<std::string>>> graphops;       // addnode, link, …: (кадр, слова)
 };
 
 AppDirs parse_dirs(const GraphProgram& prog) {
@@ -227,6 +231,12 @@ AppDirs parse_dirs(const GraphProgram& prog) {
         }
         else if (w[0] == "progrows") { d.prog_base = std::stoi(w.at(2)); d.prog_rows = std::stoi(w.at(3)); }
         else if (w[0] == "previewmode") d.previewmode.emplace_back(uint32_t(std::stoul(w.at(1))), w.at(2) == "on");
+        else if (w[0] == "addnode" || w[0] == "link" || w[0] == "unlink" || w[0] == "delnode" || w[0] == "graphundo" ||
+                 w[0] == "graphredo") {
+            std::vector<std::string> a = {w[0]};
+            a.insert(a.end(), w.begin() + 2, w.end());
+            d.graphops.emplace_back(uint32_t(std::stoul(w.at(1))), a);
+        }
         else if (w[0] == "setparam") {
             AppDirs::SetParam s{uint32_t(std::stoul(w.at(1))), w.at(2), w.at(3), {}};
             for (size_t i = 4; i < w.size(); ++i) s.v.push_back(std::stod(w[i]));
@@ -339,6 +349,7 @@ int run_app(const std::string& graph_path, RebuildFn rebuild, std::vector<std::s
                 d.bench_in = old.bench_in; d.bench_out = old.bench_out;
                 d.dumps = old.dumps; d.edits = old.edits; d.remanifold = old.remanifold; d.editmode = old.editmode;
                 d.resize = old.resize; d.loadscene = old.loadscene; d.mouse = old.mouse; d.setparams = old.setparams;
+                d.graphops = old.graphops;
                 d.previewmode = old.previewmode;
                 d.record_path = old.record_path; d.record_period = old.record_period;
             }
@@ -456,7 +467,7 @@ int run_app(const std::string& graph_path, RebuildFn rebuild, std::vector<std::s
             }
             editor->set_config(parse_editor_config(prog->extra()), read_rows(), ed_rows);
             read_bg();
-            use_den = use_den && has_den;
+            // выбор денойзера (R) сохраняется: у графа предпросмотра денойзера нет, при возврате он снова включён
             force_edit = true;
         };
         auto enter_edit = [&]() {
@@ -555,7 +566,8 @@ int run_app(const std::string& graph_path, RebuildFn rebuild, std::vector<std::s
         // структуры тот же — запись строк объектов, многообразия и слотов и кадр секцией edit (без перекомпиляции);
         // иначе — перегенерация быстрого графа по документу (commit: ползунок отпущен). Если правка многообразия
         // увела M от камеры — проекция и касательный базис на CPU, как при холодном старте.
-        ParamsPanel panel;
+        NodeEditor panel;                              // DD-011 §8: редактор нод (холст и инспектор)
+        bool open_pending = false;                     // открыт другой файл: камера нового графа — из него
         bool params_pending = false;                   // структурная правка ждёт конца идущей перегенерации
         // DD-011 §6: граф предпросмотра на интерпретаторе (из быстрого графа) и предпросмотр быстрого графа (флажок P)
         std::vector<std::string> prev_paths = d.is_preview ? std::vector<std::string>{} : d.prevgraphs;
@@ -680,6 +692,7 @@ int run_app(const std::string& graph_path, RebuildFn rebuild, std::vector<std::s
             ImGui::CreateContext();
             ImGuiIO& io = ImGui::GetIO();
             io.IniFilename = nullptr;
+            io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;   // DD-011 §8: панели пристёгиваются к сторонам окна
             float scale = SDL_GetWindowDisplayScale(win);
             if (scale <= 0) scale = 1;
             // латиница, греческий (ρ), кириллица, пунктуация (—, …), индексы (ρ₀)
@@ -748,6 +761,9 @@ int run_app(const std::string& graph_path, RebuildFn rebuild, std::vector<std::s
         if (!d.bench_out.empty()) { log.open(d.bench_out); log << "[\n"; }
         bool quit = false, grab = false, minimized = false, toggle_req = false, toggle_preview_req = false;
         bool click_pending = false;                    // ЛКМ при панелях: панель или сцена — решает ImGui этого кадра
+        // DD-011 §8: докспейс на всё окно (граф по умолчанию — снизу); кадр рисуется в центральном узле (пиксели)
+        bool dock_built = false;
+        int32_t view[4] = {0, 0, 0, 0};                // x, y, w, h; w = 0 — всё окно
         // разрешение рендера (DD-009): пресет из панели; доли окна пересчитываются после изменения размера окна
         int res_choice = -1;
         auto last_resize = std::chrono::steady_clock::now();
@@ -848,6 +864,19 @@ int run_app(const std::string& graph_path, RebuildFn rebuild, std::vector<std::s
             for (auto& [fi, on] : d.previewmode)       // сценарий: предпросмотр быстрого графа (DD-011 §6)
                 if (fi == frame && on != preview_mode) toggle_preview_req = true;
             if (!d.is_preview && !d.prevgraphs.empty()) prev_paths = d.prevgraphs;
+            for (auto& [fi, w] : d.graphops)           // сценарий: действия на холсте (DD-011 §8)
+                if (fi == frame && editor) {
+                    std::string err;
+                    bool ok = true;
+                    if (w[0] == "addnode") ok = panel.add_node(w.at(1), w.at(2), err);
+                    else if (w[0] == "link") ok = panel.link(w.at(1), w.at(2), err);
+                    else if (w[0] == "unlink") ok = panel.unlink(w.at(1), err);
+                    else if (w[0] == "delnode") ok = panel.del_node(w.at(1), err);
+                    else if (w[0] == "graphundo") panel.undo();
+                    else panel.redo();
+                    if (!ok) throw std::runtime_error(w[0] + ": " + err);
+                    apply_params(camst, true, true);
+                }
             for (auto& sp : d.setparams)               // сценарий: правка параметра графа (DD-011 §5)
                 if (sp.frame == frame && editor) {
                     std::string err;
@@ -884,6 +913,31 @@ int run_app(const std::string& graph_path, RebuildFn rebuild, std::vector<std::s
                     ImGui::GetIO().AddMousePosEvent(mx, my);
                 }
                 ImGui::NewFrame();
+                {
+                    const ImGuiID dock = ImGui::GetID("geo4d_dock");
+                    if (!dock_built) {                 // раскладка по умолчанию: граф — снизу, сцена и объекты — справа
+                        dock_built = true;
+                        ImGui::DockBuilderRemoveNode(dock);
+                        ImGui::DockBuilderAddNode(dock, ImGuiDockNodeFlags_DockSpace);
+                        ImGui::DockBuilderSetNodeSize(dock, ImGui::GetMainViewport()->Size);
+                        ImGuiID down = 0, right = 0, rest = 0;
+                        ImGui::DockBuilderSplitNode(dock, ImGuiDir_Down, 0.36f, &down, &rest);
+                        ImGui::DockBuilderSplitNode(rest, ImGuiDir_Right, 0.27f, &right, nullptr);
+                        ImGui::DockBuilderDockWindow("Граф", down);
+                        ImGui::DockBuilderDockWindow("Сцена (F1 — скрыть панели)", right);
+                        ImGui::DockBuilderDockWindow("Объекты", right);
+                        ImGui::DockBuilderFinish(dock);
+                    }
+                    ImGui::DockSpaceOverViewport(dock, ImGui::GetMainViewport(), ImGuiDockNodeFlags_PassthruCentralNode);
+                    view[2] = 0;
+                    if (ImGuiDockNode* cn = ImGui::DockBuilderGetCentralNode(dock)) {
+                        const ImVec2 fs = ImGui::GetIO().DisplayFramebufferScale;
+                        view[0] = int32_t(cn->Pos.x * fs.x);
+                        view[1] = int32_t(cn->Pos.y * fs.y);
+                        view[2] = int32_t(cn->Size.x * fs.x);
+                        view[3] = int32_t(cn->Size.y * fs.y);
+                    }
+                }
                 if (click_pending) {
                     click_pending = false;
                     if (!ImGui::GetIO().WantCaptureMouse) {            // нажатие не над панелью — взгляд мышью
@@ -911,8 +965,18 @@ int run_app(const std::string& graph_path, RebuildFn rebuild, std::vector<std::s
                     if (act.manifold_now || act.load_now) apply_scene(editor->pending_scene(), act.load_now);
                     if (act.toggle_edit) toggle_req = true;
                     if (act.structural && !edit_mode) enter_edit();      // форма/число объектов — в режиме редактирования
-                    const ParamsPanel::Change pc = panel.draw(!edit_mode);
-                    if (pc.changed || pc.commit) apply_params(camst, pc.commit, false);
+                    const NodeEditor::Change pc = panel.draw(!edit_mode);
+                    if (pc.opened) {                   // другой файл: сборка по нему, камера — из файла
+                        editor->set_doc(panel.doc().dump(1) + "\n");
+                        dyn_path.clear();
+                        open_pending = true;
+                        editor->rebuild_doc(panel.doc().dump(1) + "\n", camst, false, true);
+                    } else if (pc.changed || pc.commit) apply_params(camst, pc.commit, false);
+                    if (!pc.save_path.empty()) {
+                        editor->set_doc(panel.doc().dump(1) + "\n");
+                        editor->save_scene(pc.save_path, camst);
+                        panel.set_status(editor->status());
+                    }
                     if (act.objects_changed) {
                         write_rows(pack_rows(editor->objects(), editor->flat()).data());
                         force_edit = true;
@@ -962,7 +1026,7 @@ int run_app(const std::string& graph_path, RebuildFn rebuild, std::vector<std::s
 #ifdef GEO4D_OPTIX
             if (use_den && den && !previewing) den_ms = den->invoke(dptr[0], dptr[1], dptr[2], dptr[3]);
 #endif
-            prog->set_push_u32(d.presentpipe, d.i_use_den, use_den && !previewing ? 1u : 0u);
+            prog->set_push_u32(d.presentpipe, d.i_use_den, use_den && has_den && !previewing ? 1u : 0u);
             if (d.i_exposure != SIZE_MAX) prog->set_push_f32(d.presentpipe, d.i_exposure, exposure);
             auto tp = std::chrono::steady_clock::now();
             prog->run("post");
@@ -991,7 +1055,16 @@ int run_app(const std::string& graph_path, RebuildFn rebuild, std::vector<std::s
             reg.bufferRowLength = W;
             reg.bufferImageHeight = H;
             reg.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
-            if ((W == sc.extent.width && H == sc.extent.height) || !can_blit) {     // размеры равны — копия как есть
+            // прямоугольник кадра: центральный узел докспейса (панели пристёгнуты к сторонам) или всё окно
+            int32_t rx = 0, ry = 0, rw = int32_t(sc.extent.width), rh = int32_t(sc.extent.height);
+            if (overlay && show_ui && view[2] > 0 && view[3] > 0) {
+                rx = std::clamp(view[0], 0, rw - 1);
+                ry = std::clamp(view[1], 0, rh - 1);
+                rw = std::min(view[2], rw - rx);
+                rh = std::min(view[3], rh - ry);
+            }
+            const bool full = rx == 0 && ry == 0 && rw == int32_t(sc.extent.width) && rh == int32_t(sc.extent.height);
+            if ((W == sc.extent.width && H == sc.extent.height && full) || !can_blit) {     // размеры равны — копия как есть
                 reg.imageExtent = {std::min(W, sc.extent.width), std::min(H, sc.extent.height), 1};
                 vkCmdCopyBufferToImage(cb, prog->buffer(d.present_buf).buf, sc.images[idx], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &reg);
             } else {               // кадр → образ W×H → blit в прямоугольник с теми же пропорциями, поля — чёрные
@@ -1016,9 +1089,9 @@ int run_app(const std::string& graph_path, RebuildFn rebuild, std::vector<std::s
                 cl.srcAccessMask = cl.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
                 VkImageMemoryBarrier bs[2] = {sb, cl};
                 vkCmdPipelineBarrier(cb, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 2, bs);
-                const double k = std::min(double(sc.extent.width) / W, double(sc.extent.height) / H);
+                const double k = std::min(double(rw) / W, double(rh) / H);
                 const int32_t dw = std::max(1, int32_t(std::lround(W * k))), dh = std::max(1, int32_t(std::lround(H * k)));
-                const int32_t ox = (int32_t(sc.extent.width) - dw) / 2, oy = (int32_t(sc.extent.height) - dh) / 2;
+                const int32_t ox = rx + (rw - dw) / 2, oy = ry + (rh - dh) / 2;
                 VkImageBlit bl{};
                 bl.srcSubresource = bl.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
                 bl.srcOffsets[1] = {int32_t(W), int32_t(H), 1};
@@ -1173,8 +1246,10 @@ int run_app(const std::string& graph_path, RebuildFn rebuild, std::vector<std::s
                         // редактирования DD-008 у графа-документа нет
                         baked_path = next_graph;
                         dyn_path.clear();
-                        // из предпросмотра — камера, с которой летали в нём (многообразие то же); иначе — из нового графа
-                        switch_graph(baked_path, d.is_preview, false);
+                        // из предпросмотра — камера, с которой летали в нём (многообразие то же); иначе (и при открытии
+                        // другого файла) — из нового графа
+                        switch_graph(baked_path, d.is_preview && !open_pending, false);
+                        open_pending = false;
                         edit_mode = false;
                         pending_exit = false;
                         baked_struct = structure(editor->objects());
