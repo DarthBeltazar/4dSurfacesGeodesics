@@ -237,6 +237,84 @@ def two_compact_wormholes(c1=(-4.0, 0.0, 0.0), c2=(4.0, 0.0, 0.0), b=1.0, rho0=3
 
 
 # ----------------------------------------------------------------------------------------------
+# M38 (черн.): CSG многообразий — гладкий минимум с компактным носителем
+
+CSMIN_C = 0.25   # σ(0) = √c = ½; σ выпукла при c ≲ 0.3 (|σ′| ≤ 1) — проверка в test_manifold_csg
+
+
+def csabs(t, k):
+    """M38: s(t) = √(t² + c·k²·e^{1 − 1/(1 − t²/k²)}) при |t| < k, иначе |t| = √(t²). C∞, чётная, выпуклая, s ≥ |t|.
+    Ветвь — по значению (как compact_psi): при 1 − t²/k² ≤ 1e-2 отброшенный хвост ≤ e^{-98}·k²."""
+    q = 1.0 - t * t * (1.0 / (k * k))
+    inside = ops.value(q) > 1e-2
+    q_safe = ops.where(inside, q, 1.0)
+    beta = ops.where(inside, (CSMIN_C * k * k) * ops.exp(1.0 - 1.0 / q_safe), 0.0)
+    return ops.sqrt(t * t + beta)
+
+
+def _cs(a, b, k, sign):
+    """(a + b)/2 + sign·s(a − b)/2. Вне полосы — сам аргумент (та же гладкая функция, хвост ≤ e^{-98}·k):
+    формула дала бы min с ошибкой округления ~eps·|b| — лист сдвигался бы и кривизна была бы не ровно 0."""
+    t = a - b
+    q = 1.0 - t * t * (1.0 / (k * k))
+    inside = ops.value(q) > 1e-2
+    q_safe = ops.where(inside, q, 1.0)
+    blend = 0.5 * (a + b) + (0.5 * sign) * ops.sqrt(t * t + (CSMIN_C * k * k) * ops.exp(1.0 - 1.0 / q_safe))
+    a_wins = (ops.value(a) < ops.value(b)) if sign < 0 else (ops.value(a) > ops.value(b))
+    return ops.where(inside, blend, ops.where(a_wins, a, b))
+
+
+def csmin(a, b, k):
+    """M38: объединение «внутренностей» {f < 0}: (a + b)/2 − s(a − b)/2. Вне |a − b| < k — ровно min(a, b)."""
+    return _cs(a, b, k, -1.0)
+
+
+def csmax(a, b, k):
+    """M38: пересечение: −csmin(−a, −b); вычитание a ∖ b = csmax(a, −b)."""
+    return _cs(a, b, k, 1.0)
+
+
+def plane_sphere_union(R=3.0, d=0.5, k=2.0):
+    """M38: гиперплоскость w = 0 (внутри — w < 0) ∪ 3-сфера радиуса R с центром (0, 0, 0, R + d) над ней.
+    При k > 2d зазор заполняется — шейка из R³ в почти целую S³ («мешок с золотом» Уилера); при k < 2d — две
+    несвязные компоненты. Носитель кривизны — шар |q| < R + 1.25k (накрывает и сферу, и полосу склейки)."""
+    C = R + d
+
+    def f(p):
+        return csmin(p[3], ops.length(p[0], p[1], p[2], p[3] - C) - R, k)
+
+    def raw(rng, n):
+        m = n // 3
+        rho = (R + 2 * k) * np.sqrt(rng.random(m))
+        A = np.c_[rho[:, None] * _unit(rng, m, 3), np.zeros(m)]                      # плоскость
+        B = _unit(rng, m, 4) * R + np.array([0, 0, 0, C])                              # сфера
+        r = n - 2 * m                                                                  # около шейки
+        Cn = np.c_[rng.uniform(0, 2 * k, r)[:, None] * _unit(rng, r, 3), rng.uniform(-0.5 * k, d + k, r)]
+        return np.r_[A, B, Cn]
+
+    return Shape("plane_sphere", f, min(R, k), raw, params=dict(R=R, d=d, k=k),
+                 hcap=lambda x: jnp.maximum(jnp.linalg.norm(x[:3]) - (R + 1.25 * k), 0.25 * min(R, k)))
+
+
+def slab_minus_ball(W=1.5, B=2.0, k=1.0):
+    """M38: слой |w| < W (f = (w² − W²)/(2W) — у листов |∇f| = 1) минус 4-шар радиуса B > W: два листа,
+    соединённые трубкой (червоточина). Носитель кривизны — шар |q| < B + k."""
+    def f(p):
+        return csmax((p[3] * p[3] - W * W) * (0.5 / W), B - ops.length(p[0], p[1], p[2], p[3]), k)
+
+    def raw(rng, n):
+        m = n // 2
+        rho = (B + 2 * k) * np.sqrt(rng.random(m))
+        A = np.c_[rho[:, None] * _unit(rng, m, 3), W * rng.choice([-1.0, 1.0], m)]
+        r = n - m
+        Bp = np.c_[B * _unit(rng, r, 3), rng.uniform(-W, W, r)]
+        return np.r_[A, Bp]
+
+    return Shape("slab_ball", f, min(k, np.sqrt(B * B - W * W)), raw, params=dict(W=W, B=B, k=k),
+                 hcap=lambda x: jnp.maximum(jnp.linalg.norm(x[:3]) - (B + k), 0.25 * min(k, B - W)))
+
+
+# ----------------------------------------------------------------------------------------------
 
 def all_shapes():
     return [hyperplane(), sphere3(), sphere2_x_r(), sphere1_x_r2(), ellipsoid(), spheritorus(),
