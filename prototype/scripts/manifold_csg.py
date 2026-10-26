@@ -49,7 +49,7 @@ def surface_stats(sh, r_c, seed=0):
 
 
 def neck_radius(f_vec, w_lo, w_hi, rho_max):
-    """Минимум по w ∈ [w_lo, w_hi] наименьшего ρ > 0 с f(ρ, 0, 0, w) = 0 (на оси f < 0 — внутри шейки)."""
+    """Минимум по w ∈ [w_lo, w_hi] наименьшего ρ > 0 со сменой знака f(ρ, 0, 0, w) (inf — нет корня до rho_max)."""
     ws = np.linspace(w_lo, w_hi, 201)
     best = np.inf
     rho = np.linspace(0, rho_max, 4001)
@@ -57,11 +57,10 @@ def neck_radius(f_vec, w_lo, w_hi, rho_max):
     for w in ws:
         X = jnp.asarray(np.c_[rho, np.zeros((len(rho), 2)), np.full(len(rho), w)])
         fv = np.asarray(fj(X))
-        if fv[0] >= 0:
-            return 0.0                                     # ось вне — шейки нет (или разрыв)
-        i = np.argmax(fv > 0)
-        if fv[i] <= 0:
+        ch = np.sign(fv) != np.sign(fv[0])
+        if not ch.any():
             continue
+        i = np.argmax(ch)
         best = min(best, rho[i])
     return float(best)
 
@@ -80,7 +79,8 @@ def geodesics(sh, naive_scale, r_c, w0=0.0, n=12, L=40.0, tol=1e-7):
     X = np.c_[np.full(n, x0), b, np.zeros(n), np.full(n, w0)]
     V = np.tile([1.0, 0.0, 0.0, 0.0], (n, 1))
     t = time.time()
-    xr, _ = dop853(sh, X, V, L, alpha=0.1 / naive_scale)
+    path = dop853(sh, X, V, L, alpha=0.1 / naive_scale, t_eval=np.linspace(0.0, L, 801))
+    xr = path[:, -1, :4]
     print(f"  DOP853 {time.time() - t:.0f} с", flush=True)
     out = {}
     for name, s in [("derived", sh), ("naive", Shape(sh.name, sh.f, naive_scale, sh.sample_raw))]:
@@ -88,8 +88,9 @@ def geodesics(sh, naive_scale, r_c, w0=0.0, n=12, L=40.0, tol=1e-7):
         e = np.linalg.norm(np.asarray(p["x"]) - xr, axis=1)
         out[name] = dict(err_max=float(e.max()), err_med=float(np.median(e)), nsdf_mean=float(np.mean(p["nsdf"])),
                          status=np.asarray(p["status"]).tolist())
-    out["final_w"] = xr[:, 3].tolist()
-    out["crossed"] = int(np.sum(np.abs(xr[:, 3] - w0) > 0.1))       # ушли с исходного листа (в S³ / на другой лист)
+    dw = np.abs(path[:, :, 3] - w0)
+    out["max_dw"] = dw.max(axis=1).tolist()
+    out["crossed"] = int(np.sum(dw.max(axis=1) > 0.5 * r_c))        # прошли шейку (в S³ / на другой лист)
     return out
 
 
