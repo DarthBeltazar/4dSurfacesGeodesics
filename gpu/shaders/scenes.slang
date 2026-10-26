@@ -179,6 +179,16 @@ float3 mf_ball(int i)
     return i == 0 ? mf_c1() : mf_c2();
 #endif
 }
+// радиус шара i: у многообразия-программы — w строки шара (свой у многообразий графа, DD-014; 0 — общий ρ₀)
+float mf_ball_r(int i)
+{
+#ifdef MF_PROG
+    float r = gCam[PROG_BASE + 1 + i].w;
+    return r > 0 ? r : gCam[MF_BASE + 4].z;
+#else
+    return gCam[MF_BASE + 4].z;
+#endif
+}
 
 #ifdef MF_PROG
 __generic<T : IReal> T sdf(T x, T y, T z, T w) { return prog_eval(PROG_MF, x, y, z, w); }
@@ -214,8 +224,8 @@ float hcap(float4 q)
     if (k == SCENE_GRAPH && nb > 0)
     {
         float d = 1e30;
-        for (int i = 0; i < nb; i++) d = min(d, length(q.xyz - mf_ball(i)));
-        return max(d - gCam[MF_BASE + 4].z, 0.25 * SCALE);
+        for (int i = 0; i < nb; i++) d = min(d, length(q.xyz - mf_ball(i)) - mf_ball_r(i));
+        return max(d, 0.25 * SCALE);
     }
 #endif
     return SCALE;

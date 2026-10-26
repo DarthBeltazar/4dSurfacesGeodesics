@@ -211,10 +211,19 @@ float pt_hit_floor(float4 x) { return ulp_floor(x); }
 #else
 static const float RHO_IN = PT_RHO0 * (1 - 1e-5);
 #endif
+// радиус шара i: свой у многообразий графа (DD-014: PT_BALL_R_DEFINED в заголовке сцены; в графе предпросмотра —
+// w строки шара, mf_ball_r), иначе общий ρ₀
+#if defined(PT_BALL_R_DEFINED)
+float pt_rho_in(int i) { return pt_ball_r(i) * (1 - 1e-5); }
+#elif PT_DYNAMIC && defined(MF_PROG)
+float pt_rho_in(int i) { return mf_ball_r(i) * (1 - 1e-5); }
+#else
+float pt_rho_in(int i) { return RHO_IN; }
+#endif
 
 bool in_flat(float4 x)
 {
-    for (int i = 0; i < PT_NBALL; i++) if (length(x.xyz - pt_ball_c(i)) < RHO_IN) return false;
+    for (int i = 0; i < PT_NBALL; i++) if (length(x.xyz - pt_ball_c(i)) < pt_rho_in(i)) return false;
     return PT_HAS_FLAT != 0;
 }
 
@@ -224,7 +233,7 @@ bool ray_clear_balls(float4 x, float4 d)
     {
         float3 q = x.xyz - pt_ball_c(i);
         float t = max(-dot(q, d.xyz) / dot(d.xyz, d.xyz), 0.0);
-        if (length(q + t * d.xyz) < RHO_IN) return false;
+        if (length(q + t * d.xyz) < pt_rho_in(i)) return false;
     }
     return true;
 }
@@ -236,7 +245,7 @@ bool seg_clear_balls(float4 x, float4 y)
     {
         float3 q = x.xyz - pt_ball_c(i);
         float t = clamp(-dot(q, d) / max(dot(d, d), 1e-30), 0.0, 1.0);
-        if (length(q + t * d) < RHO_IN) return false;
+        if (length(q + t * d) < pt_rho_in(i)) return false;
     }
     return true;
 }
@@ -248,7 +257,8 @@ float ball_entry(float4 x, float4 d)
     for (int i = 0; i < PT_NBALL; i++)
     {
         float3 q = x.xyz - pt_ball_c(i);
-        float b = dot(q, d.xyz), c = dot(q, q) - RHO_IN * RHO_IN;
+        float ri = pt_rho_in(i);
+        float b = dot(q, d.xyz), c = dot(q, q) - ri * ri;
         float disc = b * b - c;
         if (disc > 0) { float t = -b - sqrt(disc); if (t >= 0) tb = min(tb, t); }
     }

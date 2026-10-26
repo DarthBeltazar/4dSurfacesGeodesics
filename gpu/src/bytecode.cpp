@@ -192,7 +192,9 @@ std::vector<float> program_rows(const Scene& sc, int* max_reg) {
     const auto& balls = sc.mf.flat.centers;
     if (balls.size() > size_t(kProgMaxBall)) throw std::runtime_error("шаров кривизны больше " + std::to_string(kProgMaxBall));
     R[0][0] = float(balls.size());
-    for (size_t i = 0; i < balls.size(); ++i) R[1 + i] = {float(balls[i][0]), float(balls[i][1]), float(balls[i][2]), 0};
+    for (size_t i = 0; i < balls.size(); ++i)        // w — свой радиус шара (граф, DD-014); 0 — общий ρ₀ (mf_ball_r)
+        R[1 + i] = {float(balls[i][0]), float(balls[i][1]), float(balls[i][2]),
+                    sc.mf.flat.radii.empty() ? 0.0f : float(sc.mf.flat.radii[i])};
     auto [e, vals] = manifold_expr(sc);
     Program mf = compile_program(e, vals);
     int mr = mf.nreg;

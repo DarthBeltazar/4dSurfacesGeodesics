@@ -17,7 +17,7 @@ import pytest
 from geo4d import gpu
 from test_node_manifolds import sheets_doc
 from test_node_slots import csg_doc, set_param
-from test_node_csg import slab_doc
+from test_node_csg import mixed_doc, slab_doc
 
 ROOT = Path(__file__).resolve().parents[1]
 pytestmark = [pytest.mark.gpu, pytest.mark.skipif(not gpu.available(), reason="нет geo4d_gpu или slangc")]
@@ -29,7 +29,7 @@ def _scene(tmp_path, name):
         return ROOT / "scenes" / f"{name}.json"
     if name == "bubble":
         return ROOT / "scenes" / "bubble.g4d"
-    doc = {"throats": sheets_doc, "csg": csg_doc, "slab": slab_doc}[name]()
+    doc = {"throats": sheets_doc, "csg": csg_doc, "slab": slab_doc, "mixed": mixed_doc}[name]()
     p = tmp_path / f"{name}.g4d"
     p.write_text(json.dumps(doc, ensure_ascii=False), encoding="utf-8")
     return p
@@ -75,7 +75,7 @@ def _close(a, b):
 SCENES = sorted(p.stem for p in (ROOT / "scenes").glob("*.json"))
 
 
-@pytest.mark.parametrize("name", ["throats", "csg", "bubble", "slab"] + SCENES)
+@pytest.mark.parametrize("name", ["throats", "csg", "bubble", "slab", "mixed"] + SCENES)
 def test_interpreter_equals_native_preview(tmp_path, name):
     """Все прежние виды (выход Эллиса, компактные пространства, плоские зоны) — ветви SCENE_DYNAMIC, на которых работают
     графы предпросмотра, — и многообразия и объекты графа."""

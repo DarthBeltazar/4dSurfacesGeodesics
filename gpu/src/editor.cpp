@@ -47,6 +47,7 @@ geo4d::FlatZones to_flat(const EdFlat& f) {
     z.sheets.assign(f.sheets.begin(), f.sheets.end());
     for (auto& b : f.balls) z.centers.push_back({b[0], b[1], b[2]});
     z.rho0 = f.rho0;
+    z.radii.assign(f.radii.begin(), f.radii.end());
     return z;
 }
 
@@ -56,6 +57,7 @@ EdFlat from_flat(const geo4d::FlatZones& z) {
     for (double s : z.sheets) f.sheets.push_back(float(s));
     for (auto& c : z.centers) f.balls.push_back({float(c[0]), float(c[1]), float(c[2])});
     f.rho0 = float(z.rho0);
+    for (double r : z.radii) f.radii.push_back(float(r));
     return f;
 }
 
@@ -316,7 +318,7 @@ EditorConfig parse_editor_config(const std::vector<std::vector<std::string>>& ex
                 for (std::string t; std::getline(ss, t, ',');) p.v.push_back(std::stof(t));
                 c.params.push_back(p);
             }
-        } else if (w[0] == "flat") {          // flat <n листов> w… <n шаров> ρ₀ cx cy cz …
+        } else if (w[0] == "flat") {          // flat <n листов> w… <n шаров> ρ₀ cx cy cz … [radii r…]
             size_t i = 1;
             c.flat.has = true;
             int ns = std::stoi(w.at(i++));
@@ -328,6 +330,8 @@ EditorConfig parse_editor_config(const std::vector<std::vector<std::string>>& ex
                 for (auto& v : b) v = std::stof(w.at(i++));
                 c.flat.balls.push_back(b);
             }
+            if (i < w.size() && w[i] == "radii")      // свои радиусы шаров (граф, DD-014)
+                for (int k = 0; k < nb; ++k) c.flat.radii.push_back(std::stof(w.at(i + 1 + k)));
         } else if (w[0] == "objname") {       // objname <k> <имя>
             size_t k = std::stoul(w.at(1));
             if (c.names.size() <= k) c.names.resize(k + 1);

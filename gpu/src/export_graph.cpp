@@ -154,6 +154,7 @@ int run_eval_graph(int argc, char** argv) {
     for (auto& c : m.flat.centers) centers.push_back(c);
     out["meta"] = {{"kind", m.kind}, {"scale", m.scale}, {"exit", m.exit}, {"compact", m.compact},
                    {"flat", m.flat.has}, {"sheets", m.flat.sheets}, {"centers", centers}, {"rho0", m.flat.rho0},
+                   {"radii", m.flat.radii},
                    {"s_max", m.has_s_max ? m.s_max : 1000.0}, {"legacy", m.legacy()}};
     // объекты: g и ∇g в тех же точках, ограничивающая сфера
     nlohmann::json objs = nlohmann::json::array();
@@ -184,6 +185,7 @@ int run_eval_graph(int argc, char** argv) {
                         {"radius", std::isinf(o.bound()) ? -1.0 : o.bound()}});
     }
     out["objects"] = objs;
+    out["nee"] = nee_lights(sc.objs, m.flat);      // M34: индексы излучателей, допустимых для NEE
     out["mf_scene"] = mf_header(sc);
     out["include"] = u8(write_header(d, sc, false, true));
     std::ofstream(argv[4], std::ios::binary) << out.dump();

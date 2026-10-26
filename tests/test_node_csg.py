@@ -180,3 +180,37 @@ def test_gpu_geodesics_vs_dop853(tmp_path, case):
     e_p = np.max(np.linalg.norm(np.asarray(p["x"]) - xr, axis=1))
     assert np.all(g["status"] == 1)
     assert e_g < 4 * e_p + 1e-5 * R, (e_g, e_p)
+
+
+# ---- свой радиус шара носителя (DD-014, шаг B) ----------------------------------------------------------------------
+
+WM = 1.4                                          # W у ламп _doc (лампа (0, −3, 1, W), r = 0.3)
+
+
+def mixed_doc(k=2.0, objects=True):
+    """Листы ±W с горловиной ρ₀ = 2 рядом с лампой (|q − c| = 2.5) ∪ сфера R = 3 над верхним листом далеко справа."""
+    nodes = [{"id": "base", "type": "mf.two_sheets", "params": {"W": WM}},
+             {"id": "t", "type": "mf.throat", "params": {"c": [-2.5, -3.0, 1.0], "b": 0.8, "rho0": 2.0}},
+             {"id": "s", "type": "mf.sphere", "params": {"c": [8.0, 0.0, 0.0, WM + 3.5], "R": 3.0}},
+             {"id": "u", "type": "mf.union", "params": {"k": k}}]
+    links = [{"from": "base.out", "to": "t.base"}, {"from": "t.out", "to": "u.a"}, {"from": "s.out", "to": "u.b"}]
+    return _doc(nodes, links, "u", objects=objects)
+
+
+def test_own_radii_meta_and_nee(tmp_path):
+    r, out = _eval_graph(tmp_path, mixed_doc(), [[0.0, 0.0, 0.0, WM]])
+    assert r.returncode == 0, r.stderr
+    m = out["meta"]
+    assert m["centers"] == [[-2.5, -3.0, 1.0], [8.0, 0.0, 0.0]] and m["radii"] == [2.0, 3.0 + 1.25 * 2.0]
+    assert m["rho0"] == 5.5 and m["sheets"] == [WM, -WM]
+    # лампа в 2.5 от горловины ρ₀ = 2 (r = 0.3) — источник NEE; с общим радиусом 5.5 её бы не было
+    assert out["nee"] == [0]
+
+
+def test_throats_with_different_rho0(tmp_path):
+    from test_node_manifolds import sheets_doc
+    doc = sheets_doc()
+    doc["graphs"]["main"]["nodes"][2]["params"]["rho0"] = 2.5
+    r, out = _eval_graph(tmp_path, doc, [[0.0, 0.0, 0.0, 0.0]])
+    assert r.returncode == 0, r.stderr
+    assert out["meta"]["radii"] == [2.8, 2.5, 2.8] and out["meta"]["rho0"] == 2.8

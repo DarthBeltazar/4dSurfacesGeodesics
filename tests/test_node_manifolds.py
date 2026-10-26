@@ -3,7 +3,7 @@
 Эталон M35 — независимая формула на Python (shapes.compact_h), не текст из C++:
 - CPU (`geo4d_gpu eval-graph`) = эталон (значение, градиент, гессиан, float64); M35 с двумя одинаковыми
   горловинами = M12;
-- ошибки графа: пересечение шаров носителей, разный ρ₀, b ≥ ρ₀, горловина не на листах, формула с ошибкой;
+- ошибки графа: пересечение шаров носителей, b ≥ ρ₀, горловина не на листах, формула с ошибкой;
 - GPU (mf_scene.slang): jet-производные (как test_gpu_u1) и геодезические против DOP853 и прототипа (≤ 4×);
 - mf.formula, равная S³ сцены S3.json, даёт побитово тот же кадр; сцена с тремя горловинами рисуется в окне."""
 import json
@@ -128,7 +128,6 @@ def test_m35_equals_m12(tmp_path):
 
 BAD = {
     "overlap": (sheets_doc(throats=[((0.0, 0.0, 0.0), 1.0), ((5.0, 0.0, 0.0), 1.0)]), "пересекается"),
-    "rho0_differs": (None, "один ρ₀"),
     "b_ge_rho0": (sheets_doc(throats=[((0.0, 0.0, 0.0), 3.0)]), "0 < b < ρ₀"),
     "throat_on_S3": (_doc([{"id": "s", "type": "mf.S3"}, {"id": "t", "type": "mf.throat"}],
                           [{"from": "s.out", "to": "t.base"}], "t", objects=False), "только в «Два листа»"),
@@ -140,9 +139,6 @@ BAD = {
 @pytest.mark.parametrize("case", sorted(BAD))
 def test_errors(tmp_path, case):
     doc, word = BAD[case]
-    if case == "rho0_differs":
-        doc = sheets_doc()
-        doc["graphs"]["main"]["nodes"][2]["params"]["rho0"] = 2.5
     r, _ = _eval_graph(tmp_path, doc, [[0, 0, 0, 0]])
     assert r.returncode != 0 and word in r.stderr, r.stderr
 

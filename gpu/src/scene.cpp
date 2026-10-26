@@ -172,10 +172,12 @@ int Slots::scalar(double x) {
     return int(v.size()) - 1;
 }
 
-int Slots::row3(const std::array<double, 3>& c) {
+int Slots::row3(const std::array<double, 3>& c) { return row4({c[0], c[1], c[2], 0.0}); }
+
+int Slots::row4(const std::array<double, 4>& c) {
     while (v.size() % 4) v.push_back(0.0);
     const int i = int(v.size());
-    v.insert(v.end(), {c[0], c[1], c[2], 0.0});
+    v.insert(v.end(), c.begin(), c.end());
     return i;
 }
 
@@ -286,10 +288,11 @@ std::vector<int> nee_lights(const std::vector<Object>& objs, const FlatZones& fz
         for (double s : fz.sheets) dmin = std::min(dmin, std::abs(o.center[3] - s));
         if (dmin >= 1e-6) continue;
         bool inside = false;
-        for (auto& c : fz.centers) {
+        for (size_t i = 0; i < fz.centers.size(); ++i) {
+            const auto& c = fz.centers[i];
             double d = std::sqrt((c[0] - o.center[0]) * (c[0] - o.center[0]) + (c[1] - o.center[1]) * (c[1] - o.center[1]) +
                                  (c[2] - o.center[2]) * (c[2] - o.center[2]));
-            if (d < fz.rho0 + o.r) inside = true;
+            if (d < fz.r(i) + o.r) inside = true;
         }
         if (inside) continue;
         out.push_back(int(k));

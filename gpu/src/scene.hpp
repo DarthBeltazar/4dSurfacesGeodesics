@@ -44,7 +44,9 @@ struct FlatZones {                                // M29 (geo4d.pathtrace.FlatZo
     bool has = false;
     std::vector<double> sheets;
     std::vector<std::array<double, 3>> centers;
-    double rho0 = 0;
+    double rho0 = 0;                              // у прежних видов — радиус всех шаров; у графа — наибольший из radii
+    std::vector<double> radii;                    // свой радиус шара i (многообразия графа, DD-014); пусто — все rho0
+    double r(size_t i) const { return radii.empty() ? rho0 : radii[i]; }
 };
 
 // Слоты параметров (DD-011 §5): числа графа, которые правятся без перекомпиляции. Слот i — компонента i % 4 строки
@@ -55,6 +57,7 @@ struct Slots {
     std::vector<double> v;
     int scalar(double x);
     int row3(const std::array<double, 3>& c);     // с начала новой строки: (x, y, z) — одна строка float4
+    int row4(const std::array<double, 4>& c);     // с начала новой строки: (x, y, z, w)
     std::map<std::string, double> values() const; // «$i» → число (eval_expr, bind_params)
 };
 

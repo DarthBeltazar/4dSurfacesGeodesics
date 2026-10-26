@@ -398,6 +398,7 @@ Scene scene_from_document(const nlohmann::json& doc0, const std::string& path, b
             bool flat = false;
             std::vector<double> sheets;
             std::vector<std::array<double, 3>> centers;
+            std::vector<double> radii;            // свой радиус шара носителя (горловины: ρ₀ᵢ)
             double rho0 = 0, scale = std::numeric_limits<double>::infinity();
             std::vector<CsgBall> balls;
             double ksum = 0;                      // сумма k узлов CSG (носители сфер, M38)
@@ -428,15 +429,14 @@ Scene scene_from_document(const nlohmann::json& doc0, const std::string& path, b
                 for (size_t i = 0; i < th.size(); ++i) {
                     const T& u = th[i];
                     if (!(u.b > 0 && u.b < u.rho0)) fail(u.id, "нужно 0 < b < ρ₀");
-                    if (i > 0 && u.rho0 != th[0].rho0)
-                        fail(u.id, "пока у всех горловин один ρ₀ (трассировщик: один радиус плоских зон, PT_RHO0)");
                     for (size_t j = 0; j < i; ++j) {
                         const T& o = th[j];
                         double d = std::sqrt((u.cx - o.cx) * (u.cx - o.cx) + (u.cy - o.cy) * (u.cy - o.cy) + (u.cz - o.cz) * (u.cz - o.cz));
                         if (!(d > u.rho0 + o.rho0)) fail(u.id, "шар носителя пересекается с горловиной «" + o.id + "» (нужно |cᵢ − cⱼ| > ρ₀ᵢ + ρ₀ⱼ)");
                     }
                     p.centers.push_back({u.cx, u.cy, u.cz});
-                    p.rho0 = u.rho0;
+                    p.radii.push_back(u.rho0);
+                    p.rho0 = std::max(p.rho0, u.rho0);
                     p.scale = i == 0 ? u.b : std::min(p.scale, u.b);
                     const std::string cx = sl(u.cx), cy = sl(u.cy), cz = sl(u.cz), b = sl(u.b), r0 = sl(u.rho0);
                     p.f += " + (" + Wn + " * " + Wn + " - compact_h(length(x - " + cx + ", y - " + cy + ", z - " + cz + "), " + b +
@@ -466,6 +466,7 @@ Scene scene_from_document(const nlohmann::json& doc0, const std::string& path, b
                 p.flat = base.flat;
                 p.sheets = base.sheets;
                 p.centers = base.centers;
+                p.radii = base.radii;
                 p.rho0 = base.rho0;
                 p.scale = std::min(a.scale, b.scale);
                 p.balls = a.balls;
@@ -495,12 +496,14 @@ Scene scene_from_document(const nlohmann::json& doc0, const std::string& path, b
             m.flat.has = true;
             m.flat.sheets = p.sheets;
             m.flat.centers = p.centers;
+            m.flat.radii = p.radii;
             m.flat.rho0 = p.rho0;
             if (!p.balls.empty()) {
-                // M38: носитель кривизны сферы — шар |q − c_q| < R + 1.25·Σk; общий радиус шаров (PT_RHO0) — наибольший
+                // M38: носитель кривизны сферы — шар |q − c_q| < R + 1.25·Σk (свой радиус у каждого шара)
                 for (auto& b : p.balls) {
                     m.flat.centers.push_back({b.c[0], b.c[1], b.c[2]});
-                    m.flat.rho0 = std::max(m.flat.rho0, b.R + 1.25 * p.ksum);
+                    m.flat.radii.push_back(b.R + 1.25 * p.ksum);
+                    m.flat.rho0 = std::max(m.flat.rho0, m.flat.radii.back());
                 }
                 csg_check_connected(m.expr, vals, p.balls, p.sheets, p.ksum);
                 const CsgCurvature cv = csg_curvature(m.expr, vals, p.balls, p.sheets, p.ksum);
@@ -564,12 +567,14 @@ Scene scene_from_document(const nlohmann::json& doc0, const std::string& path, b
     sc.mf_values = mv;
     for (auto& [k, x] : mv) sc.mf.slot_of[k] = sc.slots.scalar(x);
     }
-    // производные числа многообразия — тоже слоты: SCALE (шаг, α, hcap), ρ₀ и центры шаров кривизны (M29) подряд
+    // производные числа многообразия — тоже слоты: SCALE (шаг, α, hcap), ρ₀ и центры шаров кривизны (M29) подряд;
+    // у многообразий графа в w строки шара — его радиус
     sc.mf.scale_slot = sc.slots.scalar(sc.mf.scale);
     if (sc.mf.flat.has) {
         sc.mf.rho0_slot = sc.slots.scalar(sc.mf.flat.rho0);
         for (size_t i = 0; i < sc.mf.flat.centers.size(); ++i) {
-            const int s = sc.slots.row3(sc.mf.flat.centers[i]);
+            const auto& c = sc.mf.flat.centers[i];
+            const int s = sc.mf.flat.radii.empty() ? sc.slots.row3(c) : sc.slots.row4({c[0], c[1], c[2], sc.mf.flat.radii[i]});
             if (i == 0) sc.mf.ball_slot = s;
         }
     }

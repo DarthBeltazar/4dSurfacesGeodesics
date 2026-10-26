@@ -311,15 +311,19 @@ std::string mf_header(const Scene& sc) {
     std::string hcap = "SCALE";
     if (m.exit == 1) hcap = "0.5 * length(p.xyz)";
     else if (m.flat.has && !m.flat.centers.empty()) {
+        // свои радиусы шаров (граф, DD-014): min по шарам (|q − cᵢ| − ρᵢ); иначе один ρ₀ — прежний текст
+        const bool own = !m.flat.radii.empty();
         std::string mn;
         for (size_t i = 0; i < m.flat.centers.size(); ++i) {
             const auto& c = m.flat.centers[i];
-            std::string t = slots && m.ball_slot >= 0
-                                ? "length(p.xyz - " + slot_row(m.ball_slot / 4 + int(i)) + ".xyz)"
-                                : "length(p.xyz - float3(" + param_lit(c[0]) + ", " + param_lit(c[1]) + ", " + param_lit(c[2]) + "))";
+            const bool sr = slots && m.ball_slot >= 0;
+            std::string t = sr ? "length(p.xyz - " + slot_row(m.ball_slot / 4 + int(i)) + ".xyz)"
+                               : "length(p.xyz - float3(" + param_lit(c[0]) + ", " + param_lit(c[1]) + ", " + param_lit(c[2]) + "))";
+            if (own) t += " - " + (sr ? slot_row(m.ball_slot / 4 + int(i)) + ".w" : param_lit(m.flat.radii[i]));
             mn = mn.empty() ? t : "min(" + mn + ", " + t + ")";
         }
-        hcap = "max(" + mn + " - " + num(m.rho0_slot, m.flat.rho0) + ", 0.25 * " + scale + ")";
+        hcap = own ? "max(" + mn + ", 0.25 * " + scale + ")"
+                   : "max(" + mn + " - " + num(m.rho0_slot, m.flat.rho0) + ", 0.25 * " + scale + ")";
     }
     std::string head = "// Сгенерировано из графа сцены (DD-011, нода " + def->type + ") — не редактировать.\n";
     if (!sc.bake)                                 // слоты — строки буфера камеры (привязка 0 у всех ядер окна)
@@ -371,6 +375,8 @@ std::string scene_header(const Scene& sc, bool dynamic, bool graph) {
         L.insert(L.end(), {"#define PT_FLAT_DYNAMIC 1", "#define PT_HAS_FLAT 1", "#define PT_NBALL " + nb, load,
                            "float pt_rho0() { pt_flat_load(); return sPtFlat[" + nb + "].x; }", "#define PT_RHO0 (pt_rho0())",
                            "float3 pt_ball_c(int i) { pt_flat_load(); return sPtFlat[i].xyz; }"});
+        if (!fz.radii.empty())                    // свои радиусы шаров (DD-014) — в w строк шаров
+            L.insert(L.end(), {"#define PT_BALL_R_DEFINED 1", "float pt_ball_r(int i) { pt_flat_load(); return sPtFlat[i].w; }"});
     } else {
     L.push_back("#define PT_FLAT_DYNAMIC 0");
     if (fz.has) {
@@ -378,6 +384,12 @@ std::string scene_header(const Scene& sc, bool dynamic, bool graph) {
         for (auto& c : fz.centers) cs.push_back("float3(" + fmt9g(c[0]) + ", " + fmt9g(c[1]) + ", " + fmt9g(c[2]) + ")");
         L.insert(L.end(), {"#define PT_HAS_FLAT 1", "#define PT_NBALL " + std::to_string(fz.centers.size()),
                            "static const float PT_RHO0 = " + fmt9g(fz.rho0) + ";", arr("float3", "PT_BALL_C", cs, fz.centers.size())});
+        if (!fz.radii.empty()) {                  // свои радиусы шаров (граф, DD-014); у прежних видов текст как в Python
+            std::vector<std::string> rs;
+            for (double r : fz.radii) rs.push_back(fmt9g(r));
+            L.insert(L.end(), {"#define PT_BALL_R_DEFINED 1", arr("float", "PT_BALL_R", rs, fz.radii.size()),
+                               "float pt_ball_r(int i) { return PT_BALL_R[i]; }"});
+        }
     } else {
         L.insert(L.end(), {"#define PT_HAS_FLAT 0", "#define PT_NBALL 0", "static const float PT_RHO0 = 0;",
                            "static const float3 PT_BALL_C[1] = { float3(0) };"});
@@ -576,6 +588,10 @@ std::vector<std::string> scene_directives(const Scene& sc) {
         w.push_back(std::to_string(fz.centers.size()));
         w.push_back(fmt9g(fz.rho0));
         for (auto& c : fz.centers) for (double a : c) w.push_back(fmt9g(a));
+        if (!fz.radii.empty()) {                  // свои радиусы шаров (граф, DD-014): «radii r…» в конце
+            w.push_back("radii");
+            for (double r : fz.radii) w.push_back(fmt9g(r));
+        }
         L.push_back(join(w, " "));
     }
     for (size_t k = 0; k < sc.objs.size(); ++k) {

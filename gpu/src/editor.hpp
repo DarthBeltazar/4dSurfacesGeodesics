@@ -38,6 +38,7 @@ struct EdFlat {                                   // плоские зоны м�
     std::vector<float> sheets;
     std::vector<std::array<float, 3>> balls;
     float rho0 = 0;
+    std::vector<float> radii;                     // свой радиус шара (граф, DD-014); пусто — все rho0
 };
 
 std::vector<int> nee_lights(const std::vector<EdObject>& objs, const EdFlat& flat);
