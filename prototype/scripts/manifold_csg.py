@@ -8,6 +8,7 @@
 Пишет results/stage-5/<дата>_manifold_csg/."""
 import json
 import sys
+import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -22,7 +23,7 @@ from geo4d.results import new_run
 from geo4d.shapes import Shape, plane_sphere_union, sample, slab_minus_ball
 
 R, D = 3.0, 0.5
-RATIOS = [1.02, 1.1, 1.25, 1.5, 2.0, 3.0, 4.0]          # k / 2d
+RATIOS = [1.1, 1.25, 1.5, 2.0, 3.0, 4.0]          # k / 2d
 N_PTS = 6000
 
 
@@ -71,20 +72,24 @@ def derive(sh, ell_s, r_c):
     sh.hcap = lambda x: jnp.maximum(jnp.linalg.norm(x[:3]) - r_c, 0.25 * ell_s)
 
 
-def geodesics(sh, naive_scale, r_c, n=12, L=40.0, tol=1e-7):
-    """Лучи с плоскости из x = −(r_c + 3) на шейку с разными прицельными параметрами (в плоскости xy)."""
+def geodesics(sh, naive_scale, r_c, w0=0.0, n=12, L=40.0, tol=1e-7):
+    """Лучи с листа w = w0 из x = −(r_c + 3) на шейку с разными прицельными параметрами (в плоскости xy).
+    Эталон DOP853 — с α = 0.1/naive_scale: на M член с α равен нулю, а α = 0.1/ℓ_s при малом ℓ_s делает систему жёсткой."""
     x0 = -(r_c + 3.0)
     b = np.linspace(0.0, 1.2 * sh.params.get("k", 1.0), n)
-    X = np.c_[np.full(n, x0), b, np.zeros(n), np.zeros(n)]
+    X = np.c_[np.full(n, x0), b, np.zeros(n), np.full(n, w0)]
     V = np.tile([1.0, 0.0, 0.0, 0.0], (n, 1))
-    xr, _ = dop853(sh, X, V, L)
+    t = time.time()
+    xr, _ = dop853(sh, X, V, L, alpha=0.1 / naive_scale)
+    print(f"  DOP853 {time.time() - t:.0f} с", flush=True)
     out = {}
     for name, s in [("derived", sh), ("naive", Shape(sh.name, sh.f, naive_scale, sh.sample_raw))]:
         p = make_integrator(s, Config(tol=tol, s_max=L))(jnp.asarray(X), jnp.asarray(V))
         e = np.linalg.norm(np.asarray(p["x"]) - xr, axis=1)
         out[name] = dict(err_max=float(e.max()), err_med=float(np.median(e)), nsdf_mean=float(np.mean(p["nsdf"])),
                          status=np.asarray(p["status"]).tolist())
-    out["into_sphere"] = int(np.sum(xr[:, 3] > 0.5 * sh.params.get("d", 0.0) + 1e-3))
+    out["final_w"] = xr[:, 3].tolist()
+    out["crossed"] = int(np.sum(np.abs(xr[:, 3] - w0) > 0.1))       # ушли с исходного листа (в S³ / на другой лист)
     return out
 
 
@@ -106,7 +111,7 @@ def main():
         print(f"k/2d={r:4.2f} k={k:.2f} neck={st['neck']:.3f} min|∇f|={st['min_grad']:.3e} κmax={st['kappa_max']:.3f} "
               f"q_curved≤{st['max_q_curved']:.2f} (r_c={r_c:.2f}) κ_out={st['max_kappa_outside_carrier']:.1e} | "
               f"err derived={g['derived']['err_max']:.2e} naive={g['naive']['err_max']:.2e} "
-              f"nsdf {g['derived']['nsdf_mean']:.0f}/{g['naive']['nsdf_mean']:.0f} into S³: {g["into_sphere"]}/12",
+              f"nsdf {g['derived']['nsdf_mean']:.0f}/{g['naive']['nsdf_mean']:.0f} into S³: {g["crossed"]}/12",
               flush=True)
     s = cfg["slab"]
     sh = slab_minus_ball(**s)
@@ -114,7 +119,7 @@ def main():
     st = surface_stats(sh, r_c)
     st.update(neck=neck_radius(sh.f_vec, -0.2, 0.2, 2 * s["B"]))
     derive(sh, st["ell_s"], r_c)
-    st["geodesics"] = geodesics(sh, s["B"], r_c)
+    st["geodesics"] = geodesics(sh, s["B"], r_c, w0=s["W"])
     print("slab−ball:", json.dumps({k: v for k, v in st.items() if k != "geodesics"}),
           {k: v["err_max"] for k, v in st["geodesics"].items() if isinstance(v, dict)})
     (out_dir / "results.json").write_text(json.dumps(dict(plane_sphere=rows, slab_ball=st), indent=2), encoding="utf-8")
