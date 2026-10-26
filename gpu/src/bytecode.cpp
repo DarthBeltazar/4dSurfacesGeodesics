@@ -103,6 +103,19 @@ struct Builder {
             int psi = emit(SELGT, {emit(ADDK, {emit(NEG, {ex})}, 1.0), one, q}, 1e-2);
             return emit(MULK, {psi}, W * W);
         }
+        if (n == "csmin" || n == "csmax") {       // M38, как jcsmin/jcsmax в jet.slang
+            const double k = uval(A[2]), sg = n == "csmin" ? -1.0 : 1.0;
+            int a = val(A[0]), b = val(A[1]);
+            int one = emit(CONST, {}, 1.0);
+            int t = emit(SUB, {a, b}), tt = emit(SQ, {t});
+            int q = emit(ADDK, {emit(MULK, {tt}, -1.0 / (k * k))}, 1.0);
+            int qs = emit(SELGT, {q, one, q}, 1e-2);
+            int ex = emit(EXP, {emit(ADDK, {emit(NEG, {emit(RECIP, {qs})})}, 1.0)});
+            int s = emit(SQRT, {emit(ADD, {tt, emit(MULK, {ex}, 0.25 * k * k)})});
+            int blend = emit(ADD, {emit(MULK, {emit(ADD, {a, b})}, 0.5), emit(MULK, {s}, 0.5 * sg)});
+            int win = sg < 0 ? emit(SELGT, {b, a, t}, 0.0) : emit(SELGT, {a, b, t}, 0.0);   // t > 0 ⇔ a > b
+            return emit(SELGT, {blend, win, q}, 1e-2);
+        }
         throw ExprError("функция «" + n + "» не переводится в байткод", e->pos);
     }
 };

@@ -17,6 +17,7 @@ from geo4d import bytecode as B, gpu, gpu_pt as G
 from test_node_manifolds import sheets_doc
 from test_node_objects import CASES, N, scene
 from test_node_slots import csg_doc
+from test_node_csg import slab_doc
 
 ROOT = Path(__file__).resolve().parents[1]
 pytestmark = pytest.mark.skipif(not gpu.EXE.exists(), reason="нет geo4d_gpu")
@@ -40,7 +41,8 @@ def csg_cases_doc():
 
 
 def _docs(tmp_path):
-    docs = {"throats": sheets_doc(), "csg": csg_doc(), "csg_cases": csg_cases_doc(), "formula": formula_doc()}
+    docs = {"throats": sheets_doc(), "csg": csg_doc(), "csg_cases": csg_cases_doc(), "formula": formula_doc(),
+            "bubble": ROOT / "scenes" / "bubble.g4d", "slab": slab_doc()}                    # M38 (DD-014)
     for p in sorted((ROOT / "scenes").glob("*.json")):
         docs[p.stem] = p
     return docs
@@ -77,7 +79,7 @@ def _prog(p):
     return lambda q: B.evaluate(r64, q[0], q[1], q[2], q[3])
 
 
-@pytest.mark.parametrize("name", ["throats", "csg", "csg_cases", "formula"] + sorted(p.stem for p in (ROOT / "scenes").glob("*.json")))
+@pytest.mark.parametrize("name", ["throats", "csg", "csg_cases", "formula", "bubble", "slab"] + sorted(p.stem for p in (ROOT / "scenes").glob("*.json")))
 def test_bc_check(tmp_path, name):
     doc = _docs(tmp_path)[name]
     P = _points()
@@ -144,7 +146,7 @@ def _errs(o, prog, P32, W32):
 
 @pytest.mark.gpu
 @pytest.mark.skipif(not gpu.available(), reason="нет geo4d_gpu или slangc")
-@pytest.mark.parametrize("name", ["throats", "formula", "csg"])
+@pytest.mark.parametrize("name", ["throats", "formula", "csg", "bubble", "slab"])
 def test_interpreter_gpu_jets(tmp_path, name):
     """Интерпретатор (prog_u1: SCENE_DYNAMIC + MF_PROG, программа с PROG_MF) — Jet7, HVP, Jet15 программ C++ с той же
     точностью float32, что нативный заголовок графа (jets_u1, SCENE_GRAPH) у многообразия; у объектов — та же граница."""
@@ -167,7 +169,7 @@ def test_interpreter_gpu_jets(tmp_path, name):
         assert max(e) < 2e-5, (label, e)
     # многообразие: нативный путь на тех же точках — того же порядка
     (tmp_path / "h").mkdir()
-    src = tmp_path / name / "s.g4d"
+    src = doc if isinstance(doc, Path) else tmp_path / name / "s.g4d"
     r = subprocess.run([str(gpu.EXE), "eval-graph", str(src), str(tmp_path / name / "in.json"), str(tmp_path / "h" / "o.json")],
                        capture_output=True, text=True, encoding="utf-8")
     inc = json.loads((tmp_path / "h" / "o.json").read_text(encoding="utf-8"))["include"]

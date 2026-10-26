@@ -15,6 +15,7 @@ namespace {
 
 constexpr double kPi = 3.14159265358979323846;
 constexpr double kLengthEps2 = 1e-36;            // jet.slang LENGTH_EPS2 (M6, float32)
+constexpr double kCsminC = 0.25;                 // M38: c (geo4d.shapes.CSMIN_C, jet.slang CSMIN_C)
 
 // функции языка: имя → (число аргументов, мин–макс; 0 — переменное), какие аргументы обязаны быть однородными
 struct Fn {
@@ -27,7 +28,8 @@ const std::map<std::string, Fn>& functions() {
         {"sqrt", {1, 1, {}, false}}, {"exp", {1, 1, {}, false}}, {"log", {1, 1, {}, false}},
         {"sin", {1, 1, {}, false}},  {"cos", {1, 1, {}, false}}, {"cosh", {1, 1, {}, false}},
         {"sinh", {1, 1, {}, false}}, {"length", {2, 4, {}, false}},
-        {"smin", {3, 3, {2}, true}}, {"compact_h", {4, 4, {1, 2, 3}, true}}};
+        {"smin", {3, 3, {2}, true}}, {"compact_h", {4, 4, {1, 2, 3}, true}},
+        {"csmin", {3, 3, {2}, true}}, {"csmax", {3, 3, {2}, true}}};                 // M38
     return f;
 }
 // негладкие — только в текстурах (DD-011 §2)
@@ -262,6 +264,8 @@ struct Emitter {
                 if (n == "length") return "jlength" + std::to_string(a.size()) + "(" + join() + ")";
                 if (n == "smin") return "jsmin(" + join() + ")";
                 if (n == "compact_h") return "compact_h(" + join() + ")";
+                if (n == "csmin") return "jcsmin(" + join() + ")";
+                if (n == "csmax") return "jcsmax(" + join() + ")";
                 // одноаргументные функции поля: аргумент — поле (иначе вызов однородный)
                 return "j" + n + "(" + join() + ")";
             }
@@ -394,6 +398,17 @@ struct Evaluator {
             J2 qs = inside ? q : J2::cst(1.0);
             J2 psi = inside ? jexp(jrecip(qs).scale(1.0).neg().add(J2::cst(1.0))).neg().add(J2::cst(1.0)) : J2::cst(1.0);
             r.j = psi.scale(W * W);
+            return r;
+        }
+        if (n == "csmin" || n == "csmax") {       // M38, как jcsmin/jcsmax в jet.slang (geo4d.shapes._cs)
+            J2 x = as_jet(a[0]), y = as_jet(a[1]);
+            const double k = a[2].u, sg = n == "csmin" ? -1.0 : 1.0;
+            J2 t = x.add(y.neg()), tt = t.mul(t);
+            J2 q = tt.scale(-1.0 / (k * k)).add(J2::cst(1.0));
+            if (q.a > 1e-2) {
+                J2 beta = jexp(jrecip(q).neg().add(J2::cst(1.0))).scale(kCsminC * k * k);
+                r.j = x.add(y).scale(0.5).add(jsqrt(tt.add(beta)).scale(0.5 * sg));
+            } else r.j = (sg < 0 ? x.a < y.a : x.a > y.a) ? x : y;
             return r;
         }
         J2 u = as_jet(a[0]);

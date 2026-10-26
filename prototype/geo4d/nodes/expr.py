@@ -18,7 +18,8 @@ GEOMETRY, TEXTURE = "geometry", "texture"
 # имя → (мин. и макс. число аргументов, индексы однородных аргументов, только для полей)
 FUNCTIONS = {"sqrt": (1, 1, (), False), "exp": (1, 1, (), False), "log": (1, 1, (), False), "sin": (1, 1, (), False),
              "cos": (1, 1, (), False), "cosh": (1, 1, (), False), "sinh": (1, 1, (), False),
-             "length": (2, 4, (), False), "smin": (3, 3, (2,), True), "compact_h": (4, 4, (1, 2, 3), True)}
+             "length": (2, 4, (), False), "smin": (3, 3, (2,), True), "compact_h": (4, 4, (1, 2, 3), True),
+             "csmin": (3, 3, (2,), True), "csmax": (3, 3, (2,), True)}         # M38
 NON_SMOOTH = ("abs", "min", "max", "floor", "ceil", "fract", "mod", "step", "smoothstep", "mix", "clamp", "sign", "round")
 
 
@@ -231,6 +232,8 @@ def evaluate(e: Expr, params: dict, p):
         return ops.smin(a[0], a[1], a[2])
     if n == "compact_h":
         return shapes.compact_h(a[0], a[1], a[2], a[3])
+    if n in ("csmin", "csmax"):
+        return getattr(shapes, n)(a[0], a[1], a[2])
     if not e.field:
         import math
         return getattr(math, n)(a[0])

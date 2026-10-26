@@ -9,6 +9,7 @@
 #include <filesystem>
 #include <fstream>
 #include <mutex>
+#include <random>
 #include <set>
 #include <stdexcept>
 
@@ -30,6 +31,152 @@ std::pair<std::string, std::string> split_port(const std::string& s) {
     auto d = s.rfind('.');
     if (d == std::string::npos) throw std::runtime_error("связь «" + s + "»: нужно <id>.<порт>");
     return {s.substr(0, d), s.substr(d + 1)};
+}
+
+// ---- M38 (DD-014): CSG многообразий — метаданные по выборке ------------------------------------------------------
+
+constexpr double kPi = 3.14159265358979323846;
+constexpr double kCsgMinGrad = 0.02;              // min |∇f| на M: меньше — шейка почти пережата (куски с |∇f| = 1)
+constexpr double kCsgScaleSafety = 0.5;           // ℓ_s = запас / κ_max: выборка может недобрать максимум (DD-014)
+constexpr int kCsgSeeds = 1500;                   // затравок Ньютона на сферу: оболочка
+constexpr int kCsgNeckSeeds = 500;                // и цилиндр шейки
+
+bool is_csg(const std::string& t) { return t == "mf.union" || t == "mf.intersect" || t == "mf.subtract"; }
+
+struct CsgBall {
+    std::string id;
+    std::array<double, 4> c;
+    double R;
+};
+
+// наибольшее |собственное значение| симметричной 4×4 (вращения Якоби)
+double sym4_max_abs_eig(std::array<std::array<double, 4>, 4> A) {
+    for (int sweep = 0; sweep < 50; ++sweep) {
+        double off = 0;
+        for (int p = 0; p < 4; ++p)
+            for (int q = p + 1; q < 4; ++q) off += A[p][q] * A[p][q];
+        if (off < 1e-30) break;
+        for (int p = 0; p < 4; ++p)
+            for (int q = p + 1; q < 4; ++q) {
+                if (std::abs(A[p][q]) < 1e-300) continue;
+                const double th = (A[q][q] - A[p][p]) / (2 * A[p][q]);
+                const double t = (th >= 0 ? 1.0 : -1.0) / (std::abs(th) + std::sqrt(th * th + 1));
+                const double c = 1 / std::sqrt(t * t + 1), s = t * c;
+                for (int k = 0; k < 4; ++k) {
+                    const double akp = A[k][p], akq = A[k][q];
+                    A[k][p] = c * akp - s * akq;
+                    A[k][q] = s * akp + c * akq;
+                }
+                for (int k = 0; k < 4; ++k) {
+                    const double apk = A[p][k], aqk = A[q][k];
+                    A[p][k] = c * apk - s * aqk;
+                    A[q][k] = s * apk + c * aqk;
+                }
+            }
+    }
+    double m = 0;
+    for (int i = 0; i < 4; ++i) m = std::max(m, std::abs(A[i][i]));
+    return m;
+}
+
+struct CsgCurvature {
+    double kmax = 0, gmin = std::numeric_limits<double>::infinity();
+    int n = 0;
+};
+
+// κ_max = max |собств. значение S|, S = P H P / |∇f| (P — проектор на касательное), и min |∇f| по точкам M около сфер:
+// затравки в оболочке R ± 1.25·Σk (там и кромка шейки, M38), проекция Ньютоном вдоль ∇f
+CsgCurvature csg_curvature(const ExprPtr& e, const std::map<std::string, double>& vals, const std::vector<CsgBall>& balls,
+                           const std::vector<double>& sheets, double ksum) {
+    CsgCurvature r;
+    std::mt19937_64 rng(20261026);
+    std::normal_distribution<double> nd;
+    std::uniform_real_distribution<double> ud(-1.0, 1.0);
+    const double band = 1.25 * ksum;
+    for (const CsgBall& b : balls) {
+        double wj = sheets[0];                    // ближайший лист: шейка — на прямой под центром сферы
+        for (double w : sheets) if (std::abs(b.c[3] - w) < std::abs(b.c[3] - wj)) wj = w;
+        const double sg = b.c[3] > wj ? 1.0 : -1.0, w_lo = wj - sg * 0.25 * band, w_hi = b.c[3] - sg * (b.R - 0.25 * band);
+        for (int i = 0; i < kCsgSeeds + kCsgNeckSeeds; ++i) {
+            std::array<double, 4> u;
+            double un = 0;
+            for (auto& x : u) { x = nd(rng); un += x * x; }
+            un = std::sqrt(un);
+            std::array<double, 4> x;
+            if (i < kCsgSeeds) {                  // оболочка сферы R ± 1.25·Σk
+                const double rad = std::max(b.R + band * ud(rng), 1e-3 * b.R);
+                for (int k = 0; k < 4; ++k) x[k] = b.c[k] + rad * u[k] / un;
+            } else {                              // цилиндр шейки: |q − c_q| < 1.25·Σk, w между листом и низом сферы
+                const double q3 = std::sqrt(u[0] * u[0] + u[1] * u[1] + u[2] * u[2]) + 1e-300;
+                const double rho = band * std::sqrt(0.5 * (1 + ud(rng)));
+                for (int k = 0; k < 3; ++k) x[k] = b.c[k] + rho * u[k] / q3;
+                x[3] = w_lo + (w_hi - w_lo) * 0.5 * (1 + ud(rng));
+            }
+            bool ok = false;
+            EvalResult ev;
+            for (int it = 0; it < 40; ++it) {
+                ev = eval_expr(e, vals, x);
+                double gg = 0;
+                for (double g : ev.g) gg += g * g;
+                if (!(gg > 1e-30)) break;
+                if (std::abs(ev.f) < 1e-12 * std::sqrt(gg)) { ok = true; break; }
+                for (int k = 0; k < 4; ++k) x[k] -= ev.f / gg * ev.g[k];
+            }
+            double d = 0;
+            for (int k = 0; k < 4; ++k) d += (x[k] - b.c[k]) * (x[k] - b.c[k]);
+            if (!ok || std::sqrt(d) > b.R + 2 * band) continue;
+            double gn = 0;
+            for (double g : ev.g) gn += g * g;
+            gn = std::sqrt(gn);
+            std::array<double, 4> n;
+            for (int k = 0; k < 4; ++k) n[k] = ev.g[k] / gn;
+            std::array<std::array<double, 4>, 4> P{}, S{};
+            for (int a = 0; a < 4; ++a)
+                for (int c = 0; c < 4; ++c) P[a][c] = (a == c) - n[a] * n[c];
+            for (int a = 0; a < 4; ++a)
+                for (int c = 0; c < 4; ++c) {
+                    double s = 0;
+                    for (int k = 0; k < 4; ++k)
+                        for (int l = 0; l < 4; ++l) s += P[a][k] * ev.H[k][l] * P[l][c];
+                    S[a][c] = s / gn;
+                }
+            r.kmax = std::max(r.kmax, sym4_max_abs_eig(S));
+            r.gmin = std::min(r.gmin, gn);
+            ++r.n;
+        }
+    }
+    return r;
+}
+
+// сфера над листом на зазоре d > 0 соединена с ним шейкой ⇔ на прямой под центром сферы (от листа за его пределы до
+// центра) f не меняет знак; без шейки — два корня (лист и низ сферы). M38: шейка при k > 2d
+void csg_check_connected(const ExprPtr& e, const std::map<std::string, double>& vals, const std::vector<CsgBall>& balls,
+                         const std::vector<double>& sheets, double ksum) {
+    for (const CsgBall& b : balls) {
+        double wj = sheets[0];
+        for (double w : sheets) if (std::abs(b.c[3] - w) < std::abs(b.c[3] - wj)) wj = w;
+        const double gap = std::abs(b.c[3] - wj) - b.R;
+        if (!(gap > 0)) continue;                 // сфера пересекает лист — соединены
+        const double s = b.c[3] > wj ? 1.0 : -1.0;
+        double h = 0.5 * ksum + 1e-3;
+        for (double w : sheets)                   // не дальше соседнего листа по ту сторону
+            if (w != wj && (wj - w) * s > 0) h = std::min(h, 0.9 * std::abs(wj - w));
+        const int N = 400;
+        int changes = 0;
+        double prev = 0;
+        for (int i = 0; i <= N; ++i) {
+            const double w = (wj - s * h) + (b.c[3] - (wj - s * h)) * i / N;
+            const double f = eval_expr(e, vals, {b.c[0], b.c[1], b.c[2], w}).f;
+            if (i > 0 && (f > 0) != (prev > 0)) ++changes;
+            prev = f;
+        }
+        if (changes >= 2) {
+            char msg[256];
+            std::snprintf(msg, sizeof msg, "сфера не соединена с основой: зазор d = %.3g, нужно k > 2d = %.3g "
+                          "(сумма k = %.3g) или другая сторона «внутри»", gap, 2 * gap, ksum);
+            fail(b.id, msg);
+        }
+    }
 }
 
 template <size_t N>
@@ -230,28 +377,13 @@ Scene scene_from_document(const nlohmann::json& doc0, const std::string& path, b
     // многообразие
     const std::string mid = source(out_scene, "manifold");
     const N& mn = nodes[mid];
-    if (mn.def->type == "mf.throat" || mn.def->type == "mf.two_sheets") {
-        // M35: два листа ±W и горловины (cᵢ, bᵢ, ρ₀) с непересекающимися шарами носителей
-        struct T { std::string id; double cx, cy, cz, b, rho0; };
-        std::vector<T> th;
-        std::string cur = mid;
-        while (nodes[cur].def->type == "mf.throat") {
-            auto v = node_values(*nodes[cur].def, *nodes[cur].params);
-            th.push_back({cur, v.at("c.x"), v.at("c.y"), v.at("c.z"), v.at("b"), v.at("rho0")});
-            cur = source(cur, "base");
-        }
-        if (nodes[cur].def->type != "mf.two_sheets") fail(cur, "горловина вставляется только в «Два листа» (или в цепочку горловин)");
-        std::reverse(th.begin(), th.end());       // порядок от базы
-        const double W = node_values(*nodes[cur].def, *nodes[cur].params).at("W");
-        if (!(W > 0)) fail(cur, "нужно W > 0");
+    const std::string& mt = mn.def->type;
+    if (mt == "mf.throat" || mt == "mf.two_sheets" || mt == "mf.sphere" || is_csg(mt)) {
         Manifold m;
         m.kind = "sheets";
         m.shape_name = "sheets";
         m.scene_id = 12;
         m.exit = 2;
-        m.flat.has = true;
-        m.flat.sheets = {W, -W};
-        m.scale = W;
         std::map<std::string, double> vals;
         auto sl = [&](double x) {                 // слот параметра формулы (DD-011 §5): имя «_i» — слот i
             const int i = sc.slots.scalar(x);
@@ -260,32 +392,126 @@ Scene scene_from_document(const nlohmann::json& doc0, const std::string& path, b
             vals[n] = x;
             return n;
         };
-        const std::string Wn = sl(W);
-        std::string f = "w * w - " + Wn + " * " + Wn;
-        for (size_t i = 0; i < th.size(); ++i) {
-            const T& t = th[i];
-            if (!(t.b > 0 && t.b < t.rho0)) fail(t.id, "нужно 0 < b < ρ₀");
-            if (i > 0 && t.rho0 != th[0].rho0)
-                fail(t.id, "пока у всех горловин один ρ₀ (трассировщик: один радиус плоских зон, PT_RHO0)");
-            for (size_t j = 0; j < i; ++j) {
-                const T& u = th[j];
-                double d = std::sqrt((t.cx - u.cx) * (t.cx - u.cx) + (t.cy - u.cy) * (t.cy - u.cy) + (t.cz - u.cz) * (t.cz - u.cz));
-                if (!(d > t.rho0 + u.rho0)) fail(t.id, "шар носителя пересекается с горловиной «" + u.id + "» (нужно |cᵢ − cⱼ| > ρ₀ᵢ + ρ₀ⱼ)");
+        // кусок многообразия графа: формула («внутри» — f < 0), листы и горловины основы, сферы (M35, M38)
+        struct Piece {
+            std::string f;
+            bool flat = false;
+            std::vector<double> sheets;
+            std::vector<std::array<double, 3>> centers;
+            double rho0 = 0, scale = std::numeric_limits<double>::infinity();
+            std::vector<CsgBall> balls;
+            double ksum = 0;                      // сумма k узлов CSG (носители сфер, M38)
+        };
+        std::function<Piece(const std::string&, bool)> piece = [&](const std::string& id, bool in_csg) -> Piece {
+            const std::string& t = nodes[id].def->type;
+            auto v = node_values(*nodes[id].def, *nodes[id].params);
+            Piece p;
+            if (t == "mf.throat" || t == "mf.two_sheets") {
+                // M35: два листа ±W и горловины (cᵢ, bᵢ, ρ₀) с непересекающимися шарами носителей
+                struct T { std::string id; double cx, cy, cz, b, rho0; };
+                std::vector<T> th;
+                std::string cur = id;
+                while (nodes[cur].def->type == "mf.throat") {
+                    auto u = node_values(*nodes[cur].def, *nodes[cur].params);
+                    th.push_back({cur, u.at("c.x"), u.at("c.y"), u.at("c.z"), u.at("b"), u.at("rho0")});
+                    cur = source(cur, "base");
+                }
+                if (nodes[cur].def->type != "mf.two_sheets") fail(cur, "горловина вставляется только в «Два листа» (или в цепочку горловин)");
+                std::reverse(th.begin(), th.end());       // порядок от базы
+                const double W = node_values(*nodes[cur].def, *nodes[cur].params).at("W");
+                if (!(W > 0)) fail(cur, "нужно W > 0");
+                p.flat = true;
+                p.sheets = {W, -W};
+                p.scale = W;
+                const std::string Wn = sl(W);
+                p.f = "w * w - " + Wn + " * " + Wn;
+                for (size_t i = 0; i < th.size(); ++i) {
+                    const T& u = th[i];
+                    if (!(u.b > 0 && u.b < u.rho0)) fail(u.id, "нужно 0 < b < ρ₀");
+                    if (i > 0 && u.rho0 != th[0].rho0)
+                        fail(u.id, "пока у всех горловин один ρ₀ (трассировщик: один радиус плоских зон, PT_RHO0)");
+                    for (size_t j = 0; j < i; ++j) {
+                        const T& o = th[j];
+                        double d = std::sqrt((u.cx - o.cx) * (u.cx - o.cx) + (u.cy - o.cy) * (u.cy - o.cy) + (u.cz - o.cz) * (u.cz - o.cz));
+                        if (!(d > u.rho0 + o.rho0)) fail(u.id, "шар носителя пересекается с горловиной «" + o.id + "» (нужно |cᵢ − cⱼ| > ρ₀ᵢ + ρ₀ⱼ)");
+                    }
+                    p.centers.push_back({u.cx, u.cy, u.cz});
+                    p.rho0 = u.rho0;
+                    p.scale = i == 0 ? u.b : std::min(p.scale, u.b);
+                    const std::string cx = sl(u.cx), cy = sl(u.cy), cz = sl(u.cz), b = sl(u.b), r0 = sl(u.rho0);
+                    p.f += " + (" + Wn + " * " + Wn + " - compact_h(length(x - " + cx + ", y - " + cy + ", z - " + cz + "), " + b +
+                           ", " + r0 + ", " + Wn + "))";
+                }
+                if (in_csg) p.f = "(" + p.f + ") * " + sl(0.5 / W);   // у листов |∇f| = 1, как у сфер (M38)
+            } else if (t == "mf.hyperplane") {
+                p.flat = true;
+                p.sheets = {0.0};
+                p.f = "w";
+            } else if (t == "mf.sphere") {
+                const double R = v.at("R");
+                if (!(R > 0)) fail(id, "нужно R > 0");
+                p.balls.push_back({id, {v.at("c.x"), v.at("c.y"), v.at("c.z"), v.at("c.w")}, R});
+                p.scale = R;
+                p.f = "length(x - " + sl(v.at("c.x")) + ", y - " + sl(v.at("c.y")) + ", z - " + sl(v.at("c.z")) + ", w - " +
+                      sl(v.at("c.w")) + ") - " + sl(R);
+            } else if (is_csg(t)) {
+                Piece a = piece(source(id, "a"), true), b = piece(source(id, "b"), true);
+                const double k = v.at("k");
+                if (!(k > 0)) fail(id, "нужно k > 0");
+                if (a.flat && b.flat) fail(id, "две основы в одном многообразии пока нельзя (DD-014): соединяйте основу со сферами");
+                const bool fa = v.at("flip_a") != 0, fb = (v.at("flip_b") != 0) != (t == "mf.subtract");
+                const std::string ea = fa ? "-(" + a.f + ")" : a.f, eb = fb ? "-(" + b.f + ")" : b.f;
+                p.f = std::string(t == "mf.union" ? "csmin(" : "csmax(") + ea + ", " + eb + ", " + sl(k) + ")";
+                const Piece& base = a.flat ? a : b;
+                p.flat = base.flat;
+                p.sheets = base.sheets;
+                p.centers = base.centers;
+                p.rho0 = base.rho0;
+                p.scale = std::min(a.scale, b.scale);
+                p.balls = a.balls;
+                p.balls.insert(p.balls.end(), b.balls.begin(), b.balls.end());
+                p.ksum = a.ksum + b.ksum + k;
+            } else {
+                fail(id, "многообразие «" + t + "» не входит в объединение (DD-014: основа — гиперплоскость или два листа, "
+                         "куски — сферы)");
             }
-            m.flat.centers.push_back({t.cx, t.cy, t.cz});
-            m.flat.rho0 = t.rho0;
-            m.scale = i == 0 ? t.b : std::min(m.scale, t.b);
-            const std::string cx = sl(t.cx), cy = sl(t.cy), cz = sl(t.cz), b = sl(t.b), r0 = sl(t.rho0);
-            f += " + (" + Wn + " * " + Wn + " - compact_h(length(x - " + cx + ", y - " + cy + ", z - " + cz + "), " + b +
-                 ", " + r0 + ", " + Wn + "))";
-        }
-        m.formula = f;
+            return p;
+        };
+        const Piece p = piece(mid, false);
+        m.formula = p.f;
         std::vector<std::string> names;
         for (auto& [k, x] : vals) names.push_back(k);
-        m.expr = parse_expr(f, names);
+        m.expr = parse_expr(p.f, names);
         m.expr_vals = vals;
+        m.scale = p.scale;
+        if (mt == "mf.sphere") {                  // замкнутое пространство S³ (как формула S³: M37)
+            m.compact = true;
+            m.has_s_max = true;
+            m.s_max = 8 * kPi * p.balls[0].R;
+            m.has_ell_max = true;
+            m.ell_max = 1e9;
+        } else {
+            if (!p.flat) fail(mid, "нужна основа — гиперплоскость или два листа (DD-014): сферы без основы пока не соединяются");
+            m.flat.has = true;
+            m.flat.sheets = p.sheets;
+            m.flat.centers = p.centers;
+            m.flat.rho0 = p.rho0;
+            if (!p.balls.empty()) {
+                // M38: носитель кривизны сферы — шар |q − c_q| < R + 1.25·Σk; общий радиус шаров (PT_RHO0) — наибольший
+                for (auto& b : p.balls) {
+                    m.flat.centers.push_back({b.c[0], b.c[1], b.c[2]});
+                    m.flat.rho0 = std::max(m.flat.rho0, b.R + 1.25 * p.ksum);
+                }
+                csg_check_connected(m.expr, vals, p.balls, p.sheets, p.ksum);
+                const CsgCurvature cv = csg_curvature(m.expr, vals, p.balls, p.sheets, p.ksum);
+                if (cv.n == 0) fail(mid, "не удалось найти точки многообразия около сфер");
+                if (cv.gmin < kCsgMinGrad)
+                    fail(mid, "шейка почти пережата (min |∇f| = " + std::to_string(cv.gmin) + "): увеличьте k");
+                m.scale = std::min(m.scale, kCsgScaleSafety / cv.kmax);
+            }
+        }
         sc.mf = m;
-        sc.mf_node = mn.def->type;
+        sc.mf_node = mt;
         sc.mf_values = vals;
     } else if (mn.def->type == "mf.formula") {
         // M37: вид неизвестен — шаг ≤ ℓ_s, без плоских зон (NEE) и фона, длина пути ≤ s_max

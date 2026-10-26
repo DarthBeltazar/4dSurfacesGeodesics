@@ -1,0 +1,205 @@
+{
+ "format": "geo4d",
+ "version": 2,
+ "camera": {
+  "x": [
+   0.0,
+   -12.0,
+   0.5,
+   0.0
+  ],
+  "f": [
+   0.0,
+   1.0,
+   -0.05,
+   0.0
+  ],
+  "up": [
+   0.0,
+   0.0,
+   1.0,
+   0.0
+  ],
+  "fov": 75.0
+ },
+ "settings": {
+  "speed": 2.0
+ },
+ "graphs": {
+  "main": {
+   "nodes": [
+    {
+     "id": "plane",
+     "type": "mf.hyperplane",
+     "params": {}
+    },
+    {
+     "id": "bubble",
+     "type": "mf.sphere",
+     "params": {
+      "c": [
+       0.0,
+       0.0,
+       0.0,
+       3.5
+      ],
+      "R": 3.0
+     }
+    },
+    {
+     "id": "u",
+     "type": "mf.union",
+     "params": {
+      "k": 2.0,
+      "flip_a": 0,
+      "flip_b": 0
+     }
+    },
+    {
+     "id": "scene",
+     "type": "out.scene"
+    },
+    {
+     "id": "lamp",
+     "type": "obj.ball4",
+     "params": {
+      "c": [
+       0.0,
+       -8.0,
+       3.0,
+       0.0
+      ],
+      "r": 0.4
+     }
+    },
+    {
+     "id": "e",
+     "type": "mat.emit",
+     "params": {
+      "emit": [
+       20.0,
+       18.0,
+       14.0
+      ]
+     }
+    },
+    {
+     "id": "floor",
+     "type": "obj.halfspace",
+     "params": {
+      "axis": 2,
+      "offset": -2.5,
+      "sign": 1.0
+     }
+    },
+    {
+     "id": "grey",
+     "type": "mat.diffuse",
+     "params": {
+      "albedo": [
+       0.6,
+       0.6,
+       0.6
+      ]
+     }
+    },
+    {
+     "id": "pearl",
+     "type": "obj.ball4",
+     "params": {
+      "c": [
+       0.0,
+       0.0,
+       0.0,
+       6.5
+      ],
+      "r": 0.8
+     }
+    },
+    {
+     "id": "gold",
+     "type": "mat.metal",
+     "params": {
+      "albedo": [
+       0.95,
+       0.75,
+       0.4
+      ],
+      "rough": 0.2
+     }
+    },
+    {
+     "id": "o1",
+     "type": "out.object",
+     "params": {
+      "name": "лампа"
+     }
+    },
+    {
+     "id": "o2",
+     "type": "out.object",
+     "params": {
+      "name": "пол"
+     }
+    },
+    {
+     "id": "o3",
+     "type": "out.object",
+     "params": {
+      "name": "жемчужина"
+     }
+    }
+   ],
+   "links": [
+    {
+     "from": "plane.out",
+     "to": "u.a"
+    },
+    {
+     "from": "bubble.out",
+     "to": "u.b"
+    },
+    {
+     "from": "u.out",
+     "to": "scene.manifold"
+    },
+    {
+     "from": "lamp.out",
+     "to": "o1.shape"
+    },
+    {
+     "from": "e.out",
+     "to": "o1.material"
+    },
+    {
+     "from": "floor.out",
+     "to": "o2.shape"
+    },
+    {
+     "from": "grey.out",
+     "to": "o2.material"
+    },
+    {
+     "from": "pearl.out",
+     "to": "o3.shape"
+    },
+    {
+     "from": "gold.out",
+     "to": "o3.material"
+    },
+    {
+     "from": "o1.out",
+     "to": "scene.objects"
+    },
+    {
+     "from": "o2.out",
+     "to": "scene.objects"
+    },
+    {
+     "from": "o3.out",
+     "to": "scene.objects"
+    }
+   ]
+  }
+ }
+}

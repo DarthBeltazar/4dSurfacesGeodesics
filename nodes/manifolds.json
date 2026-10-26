@@ -256,6 +256,56 @@
   "doc": "Вставка в два листа: горловина радиуса b в шаре носителя |q − c| < ρ₀ (M11, M35)"
  },
  {
+  "type": "mf.sphere",
+  "group": "Многообразия",
+  "title": "Сфера S³ (центр)",
+  "output": "manifold",
+  "params": [
+   {"name": "c", "type": "vec4", "default": [0.0, 0.0, 0.0, 4.0]},
+   {"name": "R", "type": "float", "default": 3.0, "min": 0.1, "max": 50.0}
+  ],
+  "doc": "f = |x − c| − R; внутри — 4-шар. Кусок для объединения с основой (M38, DD-014) или замкнутое пространство"
+ },
+ {
+  "type": "mf.union",
+  "group": "Многообразия",
+  "title": "Объединение",
+  "output": "manifold",
+  "inputs": [{"name": "a", "type": "manifold"}, {"name": "b", "type": "manifold"}],
+  "params": [
+   {"name": "k", "type": "float", "default": 2.0, "min": 0.01, "max": 20.0},
+   {"name": "flip_a", "type": "int", "default": 0, "min": 0, "max": 1, "structural": true},
+   {"name": "flip_b", "type": "int", "default": 0, "min": 0, "max": 1, "structural": true}
+  ],
+  "doc": "Объединение «внутренностей» со склейкой ширины k (M38): вне полосы |f_a − f_b| < k — ровно куски. Плоскость и сфера над ней на зазоре d соединяются шейкой при k > 2d. flip — поменять сторону «внутри»"
+ },
+ {
+  "type": "mf.intersect",
+  "group": "Многообразия",
+  "title": "Пересечение",
+  "output": "manifold",
+  "inputs": [{"name": "a", "type": "manifold"}, {"name": "b", "type": "manifold"}],
+  "params": [
+   {"name": "k", "type": "float", "default": 1.0, "min": 0.01, "max": 20.0},
+   {"name": "flip_a", "type": "int", "default": 0, "min": 0, "max": 1, "structural": true},
+   {"name": "flip_b", "type": "int", "default": 0, "min": 0, "max": 1, "structural": true}
+  ],
+  "doc": "Пересечение «внутренностей» со склейкой ширины k (M38)"
+ },
+ {
+  "type": "mf.subtract",
+  "group": "Многообразия",
+  "title": "Вычитание",
+  "output": "manifold",
+  "inputs": [{"name": "a", "type": "manifold"}, {"name": "b", "type": "manifold"}],
+  "params": [
+   {"name": "k", "type": "float", "default": 1.0, "min": 0.01, "max": 20.0},
+   {"name": "flip_a", "type": "int", "default": 0, "min": 0, "max": 1, "structural": true},
+   {"name": "flip_b", "type": "int", "default": 0, "min": 0, "max": 1, "structural": true}
+  ],
+  "doc": "a минус b со склейкой ширины k (M38). Два листа минус 4-шар радиуса больше W — червоточина между листами"
+ },
+ {
   "type": "mf.formula",
   "group": "Многообразия",
   "title": "Многообразие-формула",

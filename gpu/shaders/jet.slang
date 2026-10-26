@@ -54,6 +54,23 @@ __generic<T : IReal> T jsmin(T a, T b, float k)
     return lo - k * jlog(1.0 + jexp((lo - hi) / k));
 }
 
+// M38: (a + b)/2 + sg·s(a − b)/2, s = √(t² + c·k²·e^{1 − 1/(1 − t²/k²)}) при 1 − t²/k² > 1e-2; вне полосы — сам аргумент
+// (min при sg = −1, max при sg = +1): та же гладкая функция, хвост ≤ e^{-98}·k (geo4d.shapes._cs)
+static const float CSMIN_C = 0.25;
+__generic<T : IReal> T jcs(T a, T b, float k, float sg)
+{
+    T t = a - b;
+    T tt = t * t;
+    T q = 1.0 - tt * (1.0 / (k * k));
+    bool inside = q.value() > 1e-2;
+    T qs = jselect(inside, q, T.cst(1.0));
+    T blend = (a + b) * 0.5 + jsqrt(tt + (CSMIN_C * k * k) * jexp(1.0 - 1.0 / qs)) * (0.5 * sg);
+    bool a_wins = sg < 0 ? a.value() < b.value() : a.value() > b.value();
+    return jselect(inside, blend, jselect(a_wins, a, b));
+}
+__generic<T : IReal> T jcsmin(T a, T b, float k) { return jcs(a, b, k, -1.0); }
+__generic<T : IReal> T jcsmax(T a, T b, float k) { return jcs(a, b, k, 1.0); }
+
 // M24: (cos√y, s = sin√y/√y, s′, s″); ряды при y < 1e-2 (во float32 порог выше, чем в прототипе)
 float4 sqrt_family(float y)
 {

@@ -97,6 +97,10 @@ hash and a dirty flag).
   by default (`--manifold-slots` to slot them — costs +6…14 %), `--bake-params` bakes all (use it in bitwise comparisons
   with legacy/Python graphs). Bytecode programs live from `kProgBase`; preview graphs on the interpreter come in variants
   (`PROG_OBJ`, `PROG_NREG` 8/32) — an interpreter branch inlined into hot code or a wide register array halves speed.
+- Manifold CSG (DD-014, M38): `csmin`/`csmax` have compact support — outside the band the argument is selected by value
+  (the formula would shift sheets by eps·|f|); keep `shapes._cs`, `jet.slang::jcs`, `expr.cpp`, `bytecode.cpp` identical.
+  ℓ_s of a CSG manifold is numeric (0.5/κ_max sampled on CPU at load), never taken from parameters — the neck lip is
+  5–34× sharper than 1/k. v1: one flat base (hyperplane or sheets) + spheres.
 - Render resolution ≠ window size is fine (blit with letterbox); a resolution change is a Python rebuild with a new
   `--res`. `app.py` caches the procedural background on disk (`procedural_env_cached`) — rebuilds rely on it.
 
