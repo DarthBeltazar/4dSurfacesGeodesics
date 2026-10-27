@@ -42,6 +42,11 @@ def slab_doc(W=SLAB["W"], B=SLAB["B"], k=SLAB["k"]):
 CASES = {"bubble": (lambda: plane_sphere_union(R, D, K), bubble_doc, R + 1.25 * K, [0.0]),
          "slab": (lambda: slab_minus_ball(**SLAB), slab_doc, SLAB["B"] + 1.25 * SLAB["k"], [SLAB["W"], -SLAB["W"]])}
 
+# M39: полоса склейки |t| − k (t — разность аргументов узла), lip = |∇t|, масштаб кусков — как в codegen
+W_, B_, K_ = SLAB["W"], SLAB["B"], SLAB["k"]
+BANDS = {"bubble": (lambda x: jnp.abs(x[3] - (jnp.linalg.norm(x - jnp.array([0.0, 0.0, 0.0, R + D])) - R)) - K, 2.0, R),
+         "slab": (lambda x: jnp.abs((x[3] ** 2 - W_ * W_) * (0.5 / W_) + jnp.linalg.norm(x) - B_) - K_, 2.25, min(W_, B_))}
+
 
 def _kappa_max(sh, n=6000):
     """κ_max = max |собств. значение P H P/|∇f|| по выборке на M (как prototype/scripts/manifold_csg.py)."""
@@ -127,11 +132,16 @@ def test_errors(tmp_path, case):
     assert r.returncode != 0 and word in r.stderr, r.stderr
 
 
-def _derived(sh, meta):
-    """Прототип с метаданными окна: ℓ_s и hcap (шар носителя), как derive в manifold_csg.py."""
+def _derived(sh, meta, band=None):
+    """Прототип с метаданными окна: ℓ_s и hcap — шар носителя и (M39) расстояние до полосы склейки, как codegen."""
     ell, r_c = meta["scale"], meta["rho0"]
     sh.scale = ell
-    sh.hcap = lambda x: jnp.maximum(jnp.linalg.norm(x[:3]) - r_c, 0.25 * ell)
+    if band is None:
+        sh.hcap = lambda x: jnp.maximum(jnp.linalg.norm(x[:3]) - r_c, 0.25 * ell)
+    else:
+        t, lip, ell_p = band
+        sh.hcap = lambda x: jnp.maximum(jnp.linalg.norm(x[:3]) - r_c,
+                                        jnp.minimum(0.25 * ell_p, jnp.maximum(t(x) / lip, 0.25 * ell)))
     return sh
 
 
@@ -166,14 +176,14 @@ def test_gpu_geodesics_vs_dop853(tmp_path, case):
     make, doc, r_c, sheets = CASES[case]
     r, out = _eval_graph(tmp_path, doc(), [])
     assert r.returncode == 0, r.stderr
-    sh = _derived(make(), out["meta"])
+    sh = _derived(make(), out["meta"], BANDS[case])
     TOL, L = 1e-5, 12.0
     X, V = sample(sh, 24, seed=4)
     n = 12                                        # и лучи с листа прямо в шейку
     X = np.r_[X, np.c_[np.full(n, -(r_c + 1.0)), np.linspace(0.0, 2.0, n), np.zeros(n), np.full(n, sheets[0])]]
     V = np.r_[V, np.tile([1.0, 0.0, 0.0, 0.0], (n, 1))]
     X, V = X.astype(np.float32).astype(np.float64), V.astype(np.float32).astype(np.float64)
-    xr, _ = dop853(sh, X, V, L, alpha=0.1 / R)
+    xr, _ = dop853(sh, X, V, L, alpha=0.1 / R, max_step=0.05)     # без max_step эталон перепрыгивает полосу
     g, _ = gpu.trace("graph", X, V, tol=TOL, s_max=L, h0=0.1 * sh.scale, include=out["include"])
     p = make_integrator(sh, Config(tol=TOL, s_max=L))(X, V)
     e_g = np.max(np.linalg.norm(g["x"] - xr, axis=1))
@@ -214,3 +224,27 @@ def test_throats_with_different_rho0(tmp_path):
     r, out = _eval_graph(tmp_path, doc, [[0.0, 0.0, 0.0, 0.0]])
     assert r.returncode == 0, r.stderr
     assert out["meta"]["radii"] == [2.8, 2.5, 2.8] and out["meta"]["rho0"] == 2.8
+
+
+# ---- предел шага по полосе склейки (M39) -----------------------------------------------------------------------------
+
+def plain_sheets_union_doc():
+    """Листы без горловин ∪ сфера над верхним листом: на сфере |w| > W, у листов |∇f| = |w|/W не ограничен."""
+    nodes = [{"id": "base", "type": "mf.two_sheets", "params": {"W": WM}},
+             {"id": "s", "type": "mf.sphere", "params": {"c": [0.0, 0.0, 0.0, WM + 3.5], "R": 3.0}},
+             {"id": "u", "type": "mf.union", "params": {"k": 2.0}}]
+    links = [{"from": "base.out", "to": "u.a"}, {"from": "s.out", "to": "u.b"}]
+    return _doc(nodes, links, "u", objects=False)
+
+
+@pytest.mark.parametrize("case,bands", [("bubble", 1), ("slab", 1), ("mixed", 0), ("plain_union", 0)])
+def test_band_cap_only_with_lipschitz_bound(tmp_path, case, bands):
+    """Полоса — в hcap, только если |∇t| известна на всём пути шага: гиперплоскость, сферы, листы под csmax в корне;
+    горловины (крутой профиль) и листы ∪ сфера — прежний ¼ℓ_s внутри шаров."""
+    doc = {"bubble": bubble_doc, "slab": slab_doc, "mixed": lambda: mixed_doc(objects=False),
+           "plain_union": plain_sheets_union_doc}[case]()
+    r, out = _eval_graph(tmp_path, doc, [])
+    assert r.returncode == 0, r.stderr
+    from pathlib import Path
+    head = (Path(out["include"]) / "mf_scene.slang").read_text(encoding="utf-8")
+    assert head.count("T csg_band") == bands and ("csg_band0(Real(p.x)" in head) == bool(bands)

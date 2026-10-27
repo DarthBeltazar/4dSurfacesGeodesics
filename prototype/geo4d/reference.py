@@ -22,13 +22,15 @@ def reference_rhs(f_vec, alpha):
     return F
 
 
-def dop853(shape, x0, v0, L, alpha=None, f_vec=None, rtol=1e-12, atol=1e-12, t_eval=None):
-    """Траектории батча лучей до длины пути L. Возвращает (x, v) формы (N, 4) или, при t_eval, (N, T, 8)."""
+def dop853(shape, x0, v0, L, alpha=None, f_vec=None, rtol=1e-12, atol=1e-12, t_eval=None, max_step=np.inf):
+    """Траектории батча лучей до длины пути L. Возвращает (x, v) формы (N, 4) или, при t_eval, (N, T, 8).
+    max_step — у сцен с плоскими зонами (CSG, M39): иначе шаг на плоскости растёт и перепрыгивает полосу склейки."""
     F = reference_rhs(f_vec or shape.f_vec, shape.alpha if alpha is None else alpha)
     fun = lambda t, y: np.asarray(F(jnp.asarray(y)))
     out = []
     for x, v in zip(np.atleast_2d(x0), np.atleast_2d(v0)):
-        sol = solve_ivp(fun, (0.0, L), np.r_[x, v], method="DOP853", rtol=rtol, atol=atol, t_eval=t_eval)
+        sol = solve_ivp(fun, (0.0, L), np.r_[x, v], method="DOP853", rtol=rtol, atol=atol, t_eval=t_eval,
+                        max_step=max_step)
         assert sol.success, sol.message
         out.append(sol.y.T if t_eval is not None else sol.y[:, -1])
     out = np.array(out)

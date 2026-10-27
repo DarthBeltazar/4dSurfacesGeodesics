@@ -308,7 +308,7 @@ std::string mf_header(const Scene& sc) {
     const std::string sdf = emit_slang(parse_expr(formula, names), pm);
     // hcap (DD-001, M37): Эллис — 0.5|q|; плоские зоны с шарами кривизны — расстояние до ближайшего шара, не меньше ¼ℓ_s
     const std::string scale = num(m.scale_slot, m.scale);
-    std::string hcap = "SCALE";
+    std::string hcap = "SCALE", band_fns;
     if (m.exit == 1) hcap = "0.5 * length(p.xyz)";
     else if (m.flat.has && !m.flat.centers.empty()) {
         // свои радиусы шаров (граф, DD-014): min по шарам (|q − cᵢ| − ρᵢ); иначе один ρ₀ — прежний текст
@@ -322,7 +322,22 @@ std::string mf_header(const Scene& sc) {
             if (own) t += " - " + (sr ? slot_row(m.ball_slot / 4 + int(i)) + ".w" : param_lit(m.flat.radii[i]));
             mn = mn.empty() ? t : "min(" + mn + ", " + t + ")";
         }
-        hcap = own ? "max(" + mn + ", 0.25 * " + scale + ")"
+        std::string inner = "0.25 * " + scale;
+        if (own && !m.csg_bands.empty()) {
+            // M39 (DD-014): внутри шаров — до ближайшей полосы склейки (|t| − k)/lip, вне полос — ≤ ¼ масштаба кусков
+            std::string bd, ps;
+            for (size_t i = 0; i < m.csg_bands.size(); ++i) {
+                const auto& b = m.csg_bands[i];
+                band_fns += "__generic<T : IReal> T csg_band" + std::to_string(i) + "(T x, T y, T z, T w) { return " +
+                            emit_slang(parse_expr(b.t, names), pm) + "; }\n";
+                std::string t = "(abs(csg_band" + std::to_string(i) + "(Real(p.x), Real(p.y), Real(p.z), Real(p.w)).a) - " +
+                                pm.at(b.k) + ") * " + param_lit(1 / b.lip);
+                bd = bd.empty() ? t : "min(" + bd + ", " + t + ")";
+            }
+            for (auto& n : m.piece_scales) ps = ps.empty() ? pm.at(n) : "min(" + ps + ", " + pm.at(n) + ")";
+            inner = "min(0.25 * " + ps + ", max(" + bd + ", " + inner + "))";
+        }
+        hcap = own ? "max(" + mn + ", " + inner + ")"
                    : "max(" + mn + " - " + num(m.rho0_slot, m.flat.rho0) + ", 0.25 * " + scale + ")";
     }
     std::string head = "// Сгенерировано из графа сцены (DD-011, нода " + def->type + ") — не редактировать.\n";
@@ -331,8 +346,8 @@ std::string mf_header(const Scene& sc) {
                 "#define SLOT_ROW(r) gCam[" + std::to_string(kSlotBase) + " + (r)]\n";
     if (slots) head += "#define MF_SLOTS 1\n#define SCALE (" + scale + ")\n";
     else head += "static const float SCALE = " + scale + ";\n";
-    return head + "__generic<T : IReal> T sdf(T x, T y, T z, T w) { return " + sdf + "; }\n"
-                  "float hcap(float4 p) { return " + hcap + "; }\n";
+    return head + "__generic<T : IReal> T sdf(T x, T y, T z, T w) { return " + sdf + "; }\n" +
+                  band_fns +"float hcap(float4 p) { return " + hcap + "; }\n";
 }
 
 std::string structure_key(const Scene& sc) {

@@ -79,6 +79,11 @@ struct Manifold {
     std::string formula;
     ExprPtr expr;
     std::map<std::string, double> expr_vals;      // параметры формулы (a…d у mf.formula)
+    // M39 (DD-014): предел шага по расстоянию до полосы склейки |t| < k узла CSG (t = a − b, |∇t| ≤ lip); пусто —
+    // прежний ¼ℓ_s внутри шаров. piece_scales — параметры масштаба кусков (R сфер, W листов): шаг вне полос ≤ ¼ min
+    struct CsgBand { std::string t, k; double lip; };
+    std::vector<CsgBand> csg_bands;
+    std::vector<std::string> piece_scales;
     // слоты (граф сцены, DD-011 §5): параметр формулы → слот; SCALE, ρ₀ и центры шаров кривизны (строки подряд)
     std::map<std::string, int> slot_of;
     int scale_slot = -1, rho0_slot = -1, ball_slot = -1;

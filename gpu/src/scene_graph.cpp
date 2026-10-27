@@ -402,6 +402,14 @@ Scene scene_from_document(const nlohmann::json& doc0, const std::string& path, b
             double rho0 = 0, scale = std::numeric_limits<double>::infinity();
             std::vector<CsgBall> balls;
             double ksum = 0;                      // сумма k узлов CSG (носители сфер, M38)
+            // M39: |∇f| ≤ lip по всему пути шага (∞ — неизвестно: листы с горловинами), полосы узлов, масштабы кусков
+            double lip = std::numeric_limits<double>::infinity();
+            std::vector<Manifold::CsgBand> bands;
+            std::vector<std::string> piece_scales;
+            bool bands_ok = true;
+            // lip листов 1.25 верен, только пока M в слое |w| ≤ W: корень — csmax с листами прямым аргументом без
+            // переворота (f ≥ листов ⇒ на M листы ≤ 0); при объединении сфера уходит в |w| > W, там |∇| = |w|/W
+            bool sheets_lip = false, w_bounded = false;
         };
         std::function<Piece(const std::string&, bool)> piece = [&](const std::string& id, bool in_csg) -> Piece {
             const std::string& t = nodes[id].def->type;
@@ -443,15 +451,24 @@ Scene scene_from_document(const nlohmann::json& doc0, const std::string& path, b
                            ", " + r0 + ", " + Wn + "))";
                 }
                 if (in_csg) p.f = "(" + p.f + ") * " + sl(0.5 / W);   // у листов |∇f| = 1, как у сфер (M38)
+                // M39: |∇f| = |w|/W ≤ 1.25 при шаге ≤ W/4 от M (|w| ≤ W); у горловин крутизна профиля — неизвестна
+                if (th.empty()) {
+                    p.lip = 1.25;
+                    p.sheets_lip = true;
+                    p.piece_scales.push_back(Wn);
+                }
             } else if (t == "mf.hyperplane") {
                 p.flat = true;
                 p.sheets = {0.0};
                 p.f = "w";
+                p.lip = 1;
             } else if (t == "mf.sphere") {
                 const double R = v.at("R");
                 if (!(R > 0)) fail(id, "нужно R > 0");
                 p.balls.push_back({id, {v.at("c.x"), v.at("c.y"), v.at("c.z"), v.at("c.w")}, R});
                 p.scale = R;
+                p.lip = 1;
+                p.piece_scales.push_back(sl(R));
                 p.f = "length(x - " + sl(v.at("c.x")) + ", y - " + sl(v.at("c.y")) + ", z - " + sl(v.at("c.z")) + ", w - " +
                       sl(v.at("c.w")) + ") - " + sl(R);
             } else if (is_csg(t)) {
@@ -472,6 +489,18 @@ Scene scene_from_document(const nlohmann::json& doc0, const std::string& path, b
                 p.balls = a.balls;
                 p.balls.insert(p.balls.end(), b.balls.begin(), b.balls.end());
                 p.ksum = a.ksum + b.ksum + k;
+                // M39: вне полосы |ea − eb| < k f совпадает с куском; csmin/csmax не увеличивают lip (|s′| ≤ 1)
+                p.lip = std::max(a.lip, b.lip);
+                p.bands_ok = a.bands_ok && b.bands_ok && std::isfinite(p.lip);
+                p.sheets_lip = a.sheets_lip || b.sheets_lip;
+                p.w_bounded = t != "mf.union" && ((a.sheets_lip && a.ksum == 0 && !fa) || (b.sheets_lip && b.ksum == 0 && !fb));
+                if (p.bands_ok) {
+                    p.bands = a.bands;
+                    p.bands.insert(p.bands.end(), b.bands.begin(), b.bands.end());
+                    p.bands.push_back({"(" + ea + ") - (" + eb + ")", sl(k), a.lip + b.lip});
+                    p.piece_scales = a.piece_scales;
+                    p.piece_scales.insert(p.piece_scales.end(), b.piece_scales.begin(), b.piece_scales.end());
+                }
             } else {
                 fail(id, "многообразие «" + t + "» не входит в объединение (DD-014: основа — гиперплоскость или два листа, "
                          "куски — сферы)");
@@ -511,6 +540,10 @@ Scene scene_from_document(const nlohmann::json& doc0, const std::string& path, b
                 if (cv.gmin < kCsgMinGrad)
                     fail(mid, "шейка почти пережата (min |∇f| = " + std::to_string(cv.gmin) + "): увеличьте k");
                 m.scale = std::min(m.scale, kCsgScaleSafety / cv.kmax);
+                if (p.bands_ok && (!p.sheets_lip || p.w_bounded)) {
+                    m.csg_bands = p.bands;
+                    m.piece_scales = p.piece_scales;
+                }
             }
         }
         sc.mf = m;
