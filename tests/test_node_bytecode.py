@@ -100,7 +100,7 @@ def test_bc_check(tmp_path, name):
         g = _prog(rows)
         assert rel(jax.vmap(g)(Pd), o["f"]) < 1e-11, o["name"]
         assert rel(jax.vmap(jax.grad(g))(Pd), o["g"]) < 1e-10, o["name"]
-    assert n == {"csg": 2, "csg_cases": len(CASES), "fields": 1}.get(name, 0)
+    assert n == {"csg": 2, "csg_cases": len(CASES), "fields": 2}.get(name, 0)
 
 
 def test_register_limit(tmp_path):
@@ -160,7 +160,7 @@ def test_interpreter_gpu_jets(tmp_path, name):
     bc, ev = _cpp(tmp_path, name, doc, P[:2])
     spv = gpu.compile_shader("prog_u1.slang", "prog_u1", {"SCENE": gpu.SCENE_IDS["dynamic"], "MF_PROG": 1})
     progs = [("manifold", bc["manifold"])] + [(f"obj{k}", r) for k, r in enumerate(bc["objects"]) if r is not None]
-    assert len(progs) == {"csg": 3, "fields": 2}.get(name, 1)
+    assert len(progs) == {"csg": 3, "fields": 3}.get(name, 1)
     for label, prog in progs:
         region = G.prog_region(np.asarray(prog["f32"], np.float32))
         cam = np.zeros((G.PROG_BASE + len(region), 4), np.float32)

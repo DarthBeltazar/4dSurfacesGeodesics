@@ -39,6 +39,9 @@ struct NodeDef {
     // поле (DD-015): роль → нода, которой оно читается в этой роли («as», пусто — свой код), переименование параметров
     struct RoleAlias { std::string as; std::map<std::string, std::string> rename; };
     std::map<std::string, RoleAlias> roles;
+    // многообразие каталога в роли объекта (DD-015): радиус ограничивающей сферы около начала координат — выражение
+    // от параметров (формула — точное расстояние, |∇g| = 1 ⇒ {g < δ} в шаре радиуса r₀ + δ)
+    std::string object_bound;
     const NodeParamDef* param(const std::string& n) const;
     const NodeInputDef* input(const std::string& n) const;
 };

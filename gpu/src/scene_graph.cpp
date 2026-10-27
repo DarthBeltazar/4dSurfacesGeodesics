@@ -244,6 +244,7 @@ void NodeLibrary::load_dir(const std::string& dir) {
             const nlohmann::json rows = n.value("rows", nlohmann::json::object());   // items() у временного — висячие ссылки
             for (auto& [k, v] : rows.items()) d.rows[k] = v.get<std::string>();
             d.hidden = n.value("hidden", false);
+            d.object_bound = n.value("object_bound", std::string());
             const nlohmann::json roles = n.value("roles", nlohmann::json::object());
             for (auto& [r, a] : roles.items()) {
                 NodeDef::RoleAlias ra;
@@ -928,6 +929,12 @@ Scene scene_from_document(const nlohmann::json& doc0, const std::string& path, b
                 const double r0 = t == "obj.ball4" ? v.at("r") : v.at("R") + v.at("r");
                 return {g, [b, r0](double d) { Bound q = b; q.r = r0 + d; return q; }};
             }
+            if (!n.def->object_bound.empty()) {   // многообразие каталога как объект (DD-015): сфера около 0
+                std::vector<std::string> pn;
+                for (auto& [k, x] : v) pn.push_back(k);
+                const double r0 = eval_expr(parse_expr(n.def->object_bound, pn), v, {0, 0, 0, 0}).f;
+                return {g, [r0](double d) { Bound q; q.c = {0, 0, 0, 0}; q.r = r0 + d; return q; }};
+            }
             return {g, [](double) { return Bound{}; }};          // полупространство не ограничено
         }
         if (t == "obj.union" || t == "obj.intersect" || t == "obj.subtract") {
@@ -1050,7 +1057,9 @@ Scene scene_from_document(const nlohmann::json& doc0, const std::string& path, b
             sid = source(sid, "shape");
         }
         const N& sn = nodes[sid];
-        if (sn.def->legacy_kind.empty()) {        // составная форма (M36): выражение целиком, сфера — по графу
+        // составная форма (M36): выражение целиком, сфера — по графу; поле-многообразие каталога (тигр, сферитор…)
+        // в роли объекта — тоже (прежние виды объектов — только ноды с выходом shape)
+        if (sn.def->legacy_kind.empty() || sn.def->output != "shape") {
             Shape s = shape_of(sid);
             Bound b = s.bound(0.0);
             ob.kind = "graph";

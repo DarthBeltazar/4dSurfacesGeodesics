@@ -11,9 +11,11 @@
  },
  {
   "type": "mf.S3",
-  "group": "Многообразия",
+  "group": "Поля",
   "title": "S³",
-  "output": "manifold",
+  "output": "field",
+  "roles": {"manifold": {"as": ""}, "object": {"as": ""}},
+  "object_bound": "R",
   "params": [
    {
     "name": "R",
@@ -28,9 +30,11 @@
  },
  {
   "type": "mf.spheritorus",
-  "group": "Многообразия",
+  "group": "Поля",
   "title": "Сферитор",
-  "output": "manifold",
+  "output": "field",
+  "roles": {"manifold": {"as": ""}, "object": {"as": ""}},
+  "object_bound": "R + r",
   "params": [
    {
     "name": "R",
@@ -52,9 +56,11 @@
  },
  {
   "type": "mf.torisphere",
-  "group": "Многообразия",
+  "group": "Поля",
   "title": "Ториосфера",
-  "output": "manifold",
+  "output": "field",
+  "roles": {"manifold": {"as": ""}, "object": {"as": ""}},
+  "object_bound": "R + r",
   "params": [
    {
     "name": "R",
@@ -76,9 +82,11 @@
  },
  {
   "type": "mf.tiger",
-  "group": "Многообразия",
+  "group": "Поля",
   "title": "T³ («тигр»)",
-  "output": "manifold",
+  "output": "field",
+  "roles": {"manifold": {"as": ""}, "object": {"as": ""}},
+  "object_bound": "sqrt((R1 + r) * (R1 + r) + (R2 + r) * (R2 + r))",
   "params": [
    {
     "name": "R1",

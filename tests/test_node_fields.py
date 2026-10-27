@@ -300,7 +300,7 @@ def test_formula_manifold_under_xf(tmp_path):
 
 def fields_doc():
     """Сцена на полях: пузырь (fld.halfspace ∪ fld.ball) под поворотом+масштабом+сдвигом, объекты — лампа fld.ball и
-    тор формулой fld.formula (L = 1) — для байткода, интерпретатора и предпросмотра."""
+    тор формулой fld.formula (L = 1), тигр каталога как объект — для байткода, интерпретатора и предпросмотра."""
     doc = _xf_bubble(XF["rot_scale"][0])
     for n in doc["graphs"]["main"]["nodes"]:
         if n["id"] == "plane":
@@ -314,16 +314,21 @@ def fields_doc():
             n.update(type="mat.emit", params={"emit": [20.0, 18.0, 14.0]})
     tor = {"id": "tor", "type": "fld.formula", "params": {"formula": "length(length(x - a, y) - b, z - c, w + 0.4) - d",
                                                            "a": 2.0, "b": 0.8, "c": 0.5, "d": 0.2, "L": 1.0}}
-    g["nodes"] += [tor, {"id": "m2", "type": "mat.diffuse"}, {"id": "o2", "type": "out.object"}]
+    tig = {"id": "tig", "type": "mf.tiger", "params": {"R1": 0.6, "R2": 0.5, "r": 0.15}}
+    tgt = {"id": "tgt", "type": "xf.translate", "params": {"t": [-1.5, 1.0, 0.8, -0.4]}}
+    g["nodes"] += [tor, {"id": "m2", "type": "mat.diffuse"}, {"id": "o2", "type": "out.object"},
+                   tig, tgt, {"id": "m3", "type": "mat.metal"}, {"id": "o3", "type": "out.object"}]
     g["links"] += [{"from": "tor.out", "to": "o2.shape"}, {"from": "m2.out", "to": "o2.material"},
-                   {"from": "o2.out", "to": "scene.objects"}]
+                   {"from": "o2.out", "to": "scene.objects"},
+                   {"from": "tig.out", "to": "tgt.shape"}, {"from": "tgt.out", "to": "o3.shape"},
+                   {"from": "m3.out", "to": "o3.material"}, {"from": "o3.out", "to": "scene.objects"}]
     return doc
 
 
 def test_fields_doc_builds(tmp_path):
     r, out = _eval_graph(tmp_path, fields_doc(), [])
     assert r.returncode == 0, r.stderr
-    assert [o["kind"] for o in out["objects"]] == ["ball4", "graph"]
+    assert [o["kind"] for o in out["objects"]] == ["ball4", "graph", "graph"]
 
 
 # ---- объект-формула ----------------------------------------------------------------------------------------------
@@ -342,3 +347,46 @@ def test_formula_object_equals_ball(tmp_path):
     a, b = o1["objects"][0], o2["objects"][0]
     assert a["kind"] == "ball4" and b["kind"] == "graph" and b["radius"] == -1.0
     assert np.allclose(np.array(b["f"]) * 2.0, a["f"], atol=1e-12)      # g/L, L = 2
+
+
+# ---- многообразия каталога в роли объекта (S³, сферитор, торисфера, тигр) ---------------------------------------------
+
+def _dist(t, P, p):
+    """Расстояние до поверхности (эталон, numpy): S³ — сфера, сферитор — 2-сфера в w = 0, торисфера — окружность в xy,
+    тигр — тор S¹(R1) × S¹(R2); минус r — тело трубки."""
+    q3, xy, zw = np.linalg.norm(P[:, :3], axis=1), np.linalg.norm(P[:, :2], axis=1), np.linalg.norm(P[:, 2:], axis=1)
+    if t == "mf.S3":
+        return np.linalg.norm(P, axis=1) - p["R"]
+    if t == "mf.spheritorus":
+        return np.hypot(q3 - p["R"], P[:, 3]) - p["r"]
+    if t == "mf.torisphere":
+        return np.sqrt((xy - p["R"]) ** 2 + P[:, 2] ** 2 + P[:, 3] ** 2) - p["r"]
+    return np.hypot(xy - p["R1"], zw - p["R2"]) - p["r"]
+
+
+CATALOG = {"mf.S3": ({"R": 1.2}, 1.2), "mf.spheritorus": ({"R": 1.5, "r": 0.4}, 1.9),
+           "mf.torisphere": ({"R": 1.5, "r": 0.4}, 1.9),
+           "mf.tiger": ({"R1": 1.0, "R2": 1.5, "r": 0.3}, float(np.hypot(1.3, 1.8)))}
+
+
+@pytest.mark.parametrize("t", sorted(CATALOG))
+def test_catalog_manifold_as_object(tmp_path, t):
+    """g = точное расстояние (|∇g| = 1 вне осей), ограничивающая сфера около 0 радиуса r₀ (+ сдвиг xf.translate),
+    в роли многообразия у тех же нод — прежний путь (test_fields_give_same_graph, S3.json)."""
+    params, r0 = CATALOG[t]
+    shift = [0.5, -2.0, 0.3, 0.0]
+    base = _mf([{"id": "p", "type": "fld.halfspace", "params": {"axis": 3}}], [], "p")
+    doc = _with_object(base, [{"id": "m", "type": t, "params": params}, {"id": "tr", "type": "xf.translate", "params": {"t": shift}}],
+                       [{"from": "m.out", "to": "tr.shape"}], "tr")
+    P = np.random.default_rng(8).normal(size=(300, 4)) * 1.5 + np.array(shift)
+    r, out = _eval_graph(tmp_path, doc, P)
+    assert r.returncode == 0, r.stderr
+    o = out["objects"][0]
+    assert o["kind"] == "graph"
+    assert np.allclose(o["center"], shift) and o["radius"] == pytest.approx(r0)
+    assert np.max(np.abs(np.array(o["f"]) - _dist(t, P - np.array(shift), params))) < 1e-9
+    gn = np.linalg.norm(np.array(o["g"]), axis=1)
+    assert np.max(gn) < 1 + 1e-9 and np.median(gn) > 1 - 1e-9                     # M36: 1-липшицева
+    # поверхность (g = 0) — внутри ограничивающей сферы: проекция точек на g = 0 вдоль -g∇g
+    Q = P - np.array(o["f"])[:, None] * np.array(o["g"])
+    assert np.max(np.linalg.norm(Q - np.array(shift), axis=1)) <= r0 + 1e-6
