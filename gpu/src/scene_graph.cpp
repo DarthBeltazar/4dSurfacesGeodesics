@@ -2,6 +2,7 @@
 #include "scene_graph.hpp"
 
 #include <algorithm>
+#include <deque>
 #include <functional>
 #include <limits>
 #include <cmath>
@@ -42,6 +43,7 @@ constexpr int kCsgSeeds = 1500;                   // затравок Ньюто
 constexpr int kCsgNeckSeeds = 500;                // и цилиндр шейки
 
 bool is_csg(const std::string& t) { return t == "mf.union" || t == "mf.intersect" || t == "mf.subtract"; }
+bool is_xf(const std::string& t) { return t == "xf.translate" || t == "xf.rotate" || t == "xf.scale"; }
 
 struct CsgBall {
     std::string id;
@@ -234,12 +236,22 @@ void NodeLibrary::load_dir(const std::string& dir) {
                 pd.max = p.value("max", 0.0);
                 pd.structural = p.value("structural", false);
                 pd.hidden = p.value("hidden", false);
+                pd.role = p.value("role", std::string());
                 d.params.push_back(pd);
             }
             for (auto& i : n.value("inputs", nlohmann::json::array()))
                 d.inputs.push_back({i.at("name").get<std::string>(), i.at("type").get<std::string>(), i.value("multi", false)});
             const nlohmann::json rows = n.value("rows", nlohmann::json::object());   // items() у временного — висячие ссылки
             for (auto& [k, v] : rows.items()) d.rows[k] = v.get<std::string>();
+            d.hidden = n.value("hidden", false);
+            const nlohmann::json roles = n.value("roles", nlohmann::json::object());
+            for (auto& [r, a] : roles.items()) {
+                NodeDef::RoleAlias ra;
+                ra.as = a.value("as", std::string());
+                const nlohmann::json rn = a.value("rename", nlohmann::json::object());
+                for (auto& [k, v] : rn.items()) ra.rename[k] = v.get<std::string>();
+                d.roles[r] = ra;
+            }
             if (find(d.type)) throw std::runtime_error("библиотека нод: тип «" + d.type + "» объявлен дважды");
             defs_.push_back(d);
         }
@@ -259,6 +271,102 @@ NodeLibrary& node_library() {
         g_lib.load_dir(g_lib_dir);
     });
     return g_lib;
+}
+
+// ---- правило типов портов (DD-015 §1) -------------------------------------------------------------------------
+
+namespace {
+
+const nlohmann::json* find_node(const nlohmann::json& nodes, const std::string& id) {
+    for (auto& n : nodes)
+        if (n.value("id", std::string()) == id) return &n;
+    return nullptr;
+}
+
+const NodeDef* def_of(const NodeLibrary& lib, const nlohmann::json& nodes, const std::string& id) {
+    const nlohmann::json* n = find_node(nodes, id);
+    return n ? lib.find(n->value("type", std::string())) : nullptr;
+}
+
+std::pair<std::string, std::string> split_link(const std::string& s) {
+    const size_t d = s.rfind('.');
+    return d == std::string::npos ? std::make_pair(s, std::string()) : std::make_pair(s.substr(0, d), s.substr(d + 1));
+}
+
+// нода, закрепившая тип выхода id (вверх по цепочке «inherit»)
+std::string type_origin(const NodeLibrary& lib, const nlohmann::json& nodes, const nlohmann::json& links, std::string id) {
+    for (int depth = 0; depth < 64; ++depth) {
+        const NodeDef* d = def_of(lib, nodes, id);
+        if (!d || d->output != "inherit") return id;
+        std::string src;
+        for (auto& l : links) {
+            auto [tn, tp] = split_link(l.value("to", std::string()));
+            if (tn == id && tp == "shape") src = split_link(l.value("from", std::string())).first;
+        }
+        if (src.empty()) return id;
+        id = src;
+    }
+    return id;
+}
+
+}  // namespace
+
+std::string resolved_output(const NodeLibrary& lib, const nlohmann::json& nodes, const nlohmann::json& links, const std::string& id) {
+    const std::string o = type_origin(lib, nodes, links, id);
+    const NodeDef* d = def_of(lib, nodes, o);
+    if (!d) return "";
+    return d->output == "inherit" ? "field" : d->output;
+}
+
+int field_roles(const NodeLibrary& lib, const nlohmann::json& nodes, const nlohmann::json& links, const std::string& id) {
+    int r = 0;
+    std::vector<std::string> stack{id};
+    for (int guard = 0; !stack.empty() && guard < 4096; ++guard) {
+        const std::string cur = stack.back();
+        stack.pop_back();
+        for (auto& l : links) {
+            if (split_link(l.value("from", std::string())).first != cur) continue;
+            auto [tn, tp] = split_link(l.value("to", std::string()));
+            const NodeDef* td = def_of(lib, nodes, tn);
+            const NodeInputDef* in = td ? td->input(tp) : nullptr;
+            if (!in) continue;
+            if (in->type == "manifold") r |= 1;
+            else if (in->type == "shape") r |= 2;
+            else if (in->type == "any") stack.push_back(tn);
+        }
+    }
+    return r;
+}
+
+std::string link_error(const NodeLibrary& lib, const nlohmann::json& nodes, const nlohmann::json& links,
+                       const std::string& from, const std::string& to, const std::string& port) {
+    const NodeDef* fd = def_of(lib, nodes, from);
+    const NodeDef* td = def_of(lib, nodes, to);
+    if (!fd || !td) return "нет такой ноды";
+    if (fd->output.empty()) return "у ноды «" + fd->title + "» нет выхода";
+    const NodeInputDef* in = td->input(port);
+    if (!in) return "нет входа «" + port + "»";
+    const std::string st = resolved_output(lib, nodes, links, from);
+    const NodeDef* od = def_of(lib, nodes, type_origin(lib, nodes, links, from));
+    const std::string who = "«" + (od ? od->title : fd->title) + "»";
+    auto geo = [](const std::string& t) { return t == "manifold" || t == "shape" || t == "field"; };
+    if (in->type == "manifold") {
+        if (st == "manifold" || st == "field") return "";
+        if (st == "shape") return who + " — только объект: ко входу многообразия не подключается";
+    } else if (in->type == "shape") {
+        if (st == "shape" || st == "field") return "";
+        if (st == "manifold") return who + " — только многообразие: ко входу объекта не подключается";
+    } else if (in->type == "any") {
+        if (!geo(st)) return "ко входу «" + port + "» подключается только поле, многообразие или объект";
+        // преобразование уже ведёт к выходу другой роли
+        const int roles = field_roles(lib, nodes, links, to);
+        if (st == "manifold" && (roles & 2)) return who + " — только многообразие, а «" + td->title + "» ведёт к объекту";
+        if (st == "shape" && (roles & 1)) return who + " — только объект, а «" + td->title + "» ведёт к многообразию";
+        return "";
+    } else if (in->type == st) {
+        return "";
+    }
+    return "типы портов не совпадают: вход «" + port + "» (" + in->type + ") нельзя соединить с выходом «" + from + "» (" + st + ")";
 }
 
 std::map<std::string, double> node_values(const NodeDef& def, const nlohmann::json& params) {
@@ -353,8 +461,8 @@ Scene scene_from_document(const nlohmann::json& doc0, const std::string& path, b
         if (fp != "out") fail(fn, "у ноды один выход — out");
         const NodeInputDef* id = nodes[tn].def->input(tp);
         if (!id) fail(tn, "нет входа «" + tp + "»");
-        if (id->type != nodes[fn].def->output)
-            fail(tn, "вход «" + tp + "» (" + id->type + ") нельзя соединить с выходом «" + fn + "» (" + nodes[fn].def->output + ")");
+        const std::string le = link_error(lib, g.at("nodes"), g.value("links", J::array()), fn, tn, tp);
+        if (!le.empty()) fail(tn, le);
         auto& v = in[{tn, tp}];
         if (!id->multi && !v.empty()) fail(tn, "ко входу «" + tp + "» уже подключено");
         v.push_back(fn);
@@ -374,11 +482,49 @@ Scene scene_from_document(const nlohmann::json& doc0, const std::string& path, b
 
     Scene sc;
     sc.path = path;
+    // поля (DD-015): в каждой роли нода читается нодой-псевдонимом (параметры — со значениями поля, имена — по rename);
+    // без псевдонима («as» пусто) — своим кодом роли (fld.halfspace как многообразие, fld.formula как объект)
+    const std::map<std::string, N> nodes_all = nodes;
+    std::deque<J> alias_params;
+    auto apply_roles = [&](const char* role) {
+        nodes = nodes_all;
+        for (auto& [id, n] : nodes) {
+            auto it = n.def->roles.find(role);
+            if (it == n.def->roles.end() || it->second.as.empty()) continue;
+            const NodeDef* d = lib.find(it->second.as);
+            if (!d) fail(id, "нет ноды-псевдонима «" + it->second.as + "»");
+            J pv = J::object();
+            for (auto& pd : n.def->params) {
+                auto r = it->second.rename.find(pd.name);
+                const std::string to = r == it->second.rename.end() ? pd.name : r->second;
+                if (!d->param(to)) continue;
+                pv[to] = n.params->contains(pd.name) ? n.params->at(pd.name) : pd.def;
+            }
+            alias_params.push_back(pv);
+            n = {d, &alias_params.back()};
+        }
+    };
+    apply_roles("manifold");
     // многообразие
     const std::string mid = source(out_scene, "manifold");
+    {   // одно полупространство «w > 0» без преобразований — прежняя гиперплоскость (те же кадры)
+        const N& n0 = nodes[mid];
+        if (n0.def->type == "fld.halfspace") {
+            auto v = node_values(*n0.def, *n0.params);
+            static const J kNone = J::object();
+            if (int(v.at("axis")) == 3 && v.at("offset") == 0 && v.at("sign") > 0) nodes[mid] = {lib.find("mf.hyperplane"), &kNone};
+        }
+    }
+    // xf над многообразием (M40): цепочка до куска
+    std::string base_id = mid;
+    for (int d = 0; is_xf(nodes[base_id].def->type); ++d) {
+        if (d > 64) fail(mid, "цепочка преобразований зациклена");
+        base_id = source(base_id, "shape");
+    }
     const N& mn = nodes[mid];
     const std::string& mt = mn.def->type;
-    if (mt == "mf.throat" || mt == "mf.two_sheets" || mt == "mf.sphere" || is_csg(mt)) {
+    const std::string& bt = nodes[base_id].def->type;
+    if (bt == "mf.throat" || bt == "mf.two_sheets" || bt == "mf.sphere" || bt == "fld.halfspace" || is_csg(bt)) {
         Manifold m;
         m.kind = "sheets";
         m.shape_name = "sheets";
@@ -462,6 +608,86 @@ Scene scene_from_document(const nlohmann::json& doc0, const std::string& path, b
                 p.sheets = {0.0};
                 p.f = "w";
                 p.lip = 1;
+            } else if (t == "fld.halfspace") {
+                // DD-015: гиперплоскость w = offset, «внутри» — sign·(w − offset) < 0; при offset = 0, sign > 0 — как mf.hyperplane
+                if (int(v.at("axis")) != 3) fail(id, "многообразие-гиперплоскость — только по оси w (axis = 3)");
+                if (v.at("sign") == 0) fail(id, "нужно sign ≠ 0 (сторона «внутри»)");
+                const double off = v.at("offset");
+                p.flat = true;
+                p.sheets = {off};
+                p.f = off == 0 ? std::string("w") : "w - " + sl(off);
+                if (v.at("sign") < 0) p.f = "-(" + p.f + ")";
+                p.lip = 1;
+            } else if (is_xf(t)) {
+                // M40: f′ = s·f(T⁻¹p); листы, центры, радиусы, k и полосы M39 — по T; L та же
+                const Piece c = piece(source(id, "shape"), in_csg);
+                std::array<std::string, 4> cx = {"x", "y", "z", "w"};
+                std::string mul;
+                std::function<std::array<double, 4>(std::array<double, 4>)> fwd;
+                double s = 1;
+                if (t == "xf.translate") {
+                    const std::array<double, 4> tv{v.at("t.x"), v.at("t.y"), v.at("t.z"), v.at("t.w")};
+                    for (int i = 0; i < 4; ++i) cx[i] = "(" + cx[i] + " - " + sl(tv[i]) + ")";
+                    fwd = [tv](std::array<double, 4> q) { for (int i = 0; i < 4; ++i) q[i] += tv[i]; return q; };
+                } else if (t == "xf.rotate") {
+                    const int i = int(v.at("i")), j = int(v.at("j"));
+                    if (i < 0 || i > 3 || j < 0 || j > 3 || i == j) fail(id, "оси поворота i, j — разные из 0…3");
+                    if ((i == 3 || j == 3) && (c.flat || !c.centers.empty()))
+                        fail(id, "поворот с осью w у многообразия с листами или горловинами пока нельзя (DD-015): листы перестали бы быть w = const");
+                    const double a = v.at("angle") * (kPi / 180.0), ca = std::cos(a), sa = std::sin(a);
+                    const std::array<double, 4> ctr{v.at("center.x"), v.at("center.y"), v.at("center.z"), v.at("center.w")};
+                    // аргумент куска: R⁻¹(x − center) + center, как у объектов (порядок слотов: cos, sin, center_i, center_j)
+                    const std::string cs = sl(ca), sn = sl(sa), ci = sl(ctr[i]), cj = sl(ctr[j]);
+                    const std::string qi = "(" + cx[i] + " - " + ci + ")", qj = "(" + cx[j] + " - " + cj + ")";
+                    cx[i] = "(" + cs + " * " + qi + " + " + sn + " * " + qj + " + " + ci + ")";
+                    cx[j] = "(" + cs + " * " + qj + " - " + sn + " * " + qi + " + " + cj + ")";
+                    fwd = [i, j, ca, sa, ctr](std::array<double, 4> q) {
+                        const double ui = q[i] - ctr[i], uj = q[j] - ctr[j];
+                        q[i] = ctr[i] + ca * ui - sa * uj;
+                        q[j] = ctr[j] + sa * ui + ca * uj;
+                        return q;
+                    };
+                } else {
+                    s = v.at("s");
+                    if (!(s > 0)) fail(id, "нужно s > 0");
+                    const std::array<double, 4> ctr{v.at("center.x"), v.at("center.y"), v.at("center.z"), v.at("center.w")};
+                    const std::string ss = sl(s);
+                    for (int k = 0; k < 4; ++k) {
+                        const std::string ck = sl(ctr[k]);
+                        cx[k] = "((" + cx[k] + " - " + ck + ") / " + ss + " + " + ck + ")";
+                    }
+                    mul = ss;
+                    fwd = [s, ctr](std::array<double, 4> q) { for (int k = 0; k < 4; ++k) q[k] = ctr[k] + s * (q[k] - ctr[k]); return q; };
+                }
+                auto xform = [&](const std::string& f) {
+                    std::vector<std::string> names;
+                    for (auto& [k, x] : vals) names.push_back(k);
+                    std::array<ExprPtr, 4> ce;
+                    for (int k = 0; k < 4; ++k) ce[k] = parse_expr(cx[k], names);
+                    const std::string r = expr_text(substitute_coords(parse_expr(f, names), ce));
+                    return mul.empty() ? r : mul + " * " + r;
+                };
+                p = c;
+                p.f = xform(c.f);
+                for (auto& b : p.bands) {
+                    b.t = xform(b.t);
+                    if (s != 1) b.k = sl(vals.at(b.k) * s);
+                }
+                if (s != 1)
+                    for (auto& n : p.piece_scales) n = sl(vals.at(n) * s);
+                for (auto& w : p.sheets) w = fwd({0, 0, 0, w})[3];          // поворот без w листы не трогает
+                for (auto& cc : p.centers) {                                 // центры горловин — в xyz
+                    const auto q = fwd({cc[0], cc[1], cc[2], 0});
+                    cc = {q[0], q[1], q[2]};
+                }
+                for (auto& r : p.radii) r *= s;
+                p.rho0 *= s;
+                if (std::isfinite(p.scale)) p.scale *= s;
+                for (auto& b : p.balls) {
+                    b.c = fwd(b.c);
+                    b.R *= s;
+                }
+                p.ksum *= s;
             } else if (t == "mf.sphere") {
                 const double R = v.at("R");
                 if (!(R > 0)) fail(id, "нужно R > 0");
@@ -513,8 +739,8 @@ Scene scene_from_document(const nlohmann::json& doc0, const std::string& path, b
         for (auto& [k, x] : vals) names.push_back(k);
         m.expr = parse_expr(p.f, names);
         m.expr_vals = vals;
-        m.scale = p.scale;
-        if (mt == "mf.sphere") {                  // замкнутое пространство S³ (как формула S³: M37)
+        m.scale = std::isfinite(p.scale) ? p.scale : 1.0;   // одна гиперплоскость — ℓ_s как у прежней (SCALE = 1)
+        if (!p.flat && p.balls.size() == 1 && p.ksum == 0) {   // замкнутое пространство S³ (как формула S³: M37)
             m.compact = true;
             m.has_s_max = true;
             m.s_max = 8 * kPi * p.balls[0].R;
@@ -549,10 +775,11 @@ Scene scene_from_document(const nlohmann::json& doc0, const std::string& path, b
         sc.mf = m;
         sc.mf_node = mt;
         sc.mf_values = vals;
-    } else if (mn.def->type == "mf.formula") {
+    } else if (bt == "mf.formula") {
         // M37: вид неизвестен — шаг ≤ ℓ_s, без плоских зон (NEE) и фона, длина пути ≤ s_max
-        auto v = node_values(*mn.def, *mn.params);
-        const std::string src = mn.params->value("formula", mn.def->param("formula")->def.get<std::string>());
+        const N& fn = nodes[base_id];
+        auto v = node_values(*fn.def, *fn.params);
+        const std::string src = fn.params->value("formula", fn.def->param("formula")->def.get<std::string>());
         ExprPtr e;
         try {
             e = parse_expr(src, {"a", "b", "c", "d"});
@@ -578,6 +805,57 @@ Scene scene_from_document(const nlohmann::json& doc0, const std::string& path, b
             vals[k] = v.at(k);
             m.slot_of[k] = sc.slots.scalar(v.at(k));
         }
+        if (base_id != mid) {
+            // M40: формула под преобразованиями — подстановка координат (от куска к выходу), scale и s_max — ×s
+            std::vector<std::string> chain;
+            for (std::string id = mid; id != base_id; id = source(id, "shape")) chain.push_back(id);
+            auto fsl = [&](double x) {
+                const int i = sc.slots.scalar(x);
+                const std::string n = "_" + std::to_string(i);
+                m.slot_of[n] = i;
+                vals[n] = x;
+                return n;
+            };
+            for (auto it = chain.rbegin(); it != chain.rend(); ++it) {
+                const N& xn = nodes[*it];
+                const std::string& t = xn.def->type;
+                auto u = node_values(*xn.def, *xn.params);
+                std::array<std::string, 4> cx = {"x", "y", "z", "w"};
+                std::string mul;
+                if (t == "xf.translate") {
+                    for (int i = 0; i < 4; ++i) cx[i] = "(" + cx[i] + " - " + fsl(u.at(std::string("t.") + "xyzw"[i])) + ")";
+                } else if (t == "xf.rotate") {
+                    const int i = int(u.at("i")), j = int(u.at("j"));
+                    if (i < 0 || i > 3 || j < 0 || j > 3 || i == j) fail(*it, "оси поворота i, j — разные из 0…3");
+                    const double a = u.at("angle") * (kPi / 180.0);
+                    const std::string cs = fsl(std::cos(a)), sn = fsl(std::sin(a)), ci = fsl(u.at(std::string("center.") + "xyzw"[i])),
+                                      cj = fsl(u.at(std::string("center.") + "xyzw"[j]));
+                    const std::string qi = "(" + cx[i] + " - " + ci + ")", qj = "(" + cx[j] + " - " + cj + ")";
+                    cx[i] = "(" + cs + " * " + qi + " + " + sn + " * " + qj + " + " + ci + ")";
+                    cx[j] = "(" + cs + " * " + qj + " - " + sn + " * " + qi + " + " + cj + ")";
+                } else {
+                    const double s = u.at("s");
+                    if (!(s > 0)) fail(*it, "нужно s > 0");
+                    const std::string ss = fsl(s);
+                    for (int k = 0; k < 4; ++k) {
+                        const std::string ck = fsl(u.at(std::string("center.") + "xyzw"[k]));
+                        cx[k] = "((" + cx[k] + " - " + ck + ") / " + ss + " + " + ck + ")";
+                    }
+                    mul = ss;
+                    m.scale *= s;
+                    m.s_max *= s;
+                }
+                std::vector<std::string> names;
+                for (auto& [k, x] : vals) names.push_back(k);
+                std::array<ExprPtr, 4> ce;
+                for (int k = 0; k < 4; ++k) ce[k] = parse_expr(cx[k], names);
+                const std::string r = expr_text(substitute_coords(parse_expr(m.formula, names), ce));
+                m.formula = mul.empty() ? r : mul + " * " + r;
+            }
+            std::vector<std::string> names;
+            for (auto& [k, x] : vals) names.push_back(k);
+            e = parse_expr(m.formula, names);
+        }
         // вычисление на CPU — по исходной формуле с параметрами (eval_expr подставит их)
         m.expr = e;
         m.expr_vals = vals;
@@ -585,6 +863,9 @@ Scene scene_from_document(const nlohmann::json& doc0, const std::string& path, b
         sc.mf_node = mn.def->type;
         sc.mf_values = vals;
     } else {
+    if (base_id != mid)
+        fail(mid, "преобразования — для полей, листов, CSG и формулы; вид каталога «" + nodes[base_id].def->title +
+                      "» под преобразованием пока нельзя (DD-015): используйте поле или формулу");
     if (mn.def->legacy_kind.empty()) fail(mid, "многообразие типа «" + mn.def->type + "» не собирается в окне");
     auto mv = node_values(*mn.def, *mn.params);
     Params mp;
@@ -737,11 +1018,27 @@ Scene scene_from_document(const nlohmann::json& doc0, const std::string& path, b
                         return b;
                     }};
         }
+        if (t == "fld.formula") {
+            // DD-015, M36: g/L (L ≥ |∇g| — граница расстояния M26), без ограничивающей сферы (как полупространство)
+            const std::string src = n.params->value("formula", n.def->param("formula")->def.get<std::string>());
+            ExprPtr e;
+            try {
+                e = parse_expr(src, {"a", "b", "c", "d"});
+            } catch (const ExprError& ex) {
+                fail(id, std::string("формула, символ ") + std::to_string(ex.pos + 1) + ": " + ex.what());
+            }
+            if (!e->field) fail(id, "формула не зависит от x, y, z, w");
+            if (!(v.at("L") > 0)) fail(id, "нужно L > 0");
+            std::map<std::string, ExprPtr> bound;
+            for (const char* k : {"a", "b", "c", "d"}) bound[k] = num(v.at(k));
+            return {mk_op(Expr::Mul, bind_params(e, bound), num(1.0 / v.at("L"))), [](double) { return Bound{}; }};
+        }
         if (t == "xf.on_M") fail(id, "«Поставить на M» — только последним перед «Объектом»");
         fail(id, "форма типа «" + t + "» не поддерживается");
     };
     // объекты — в порядке связей входа scene.objects
     auto it = in.find({out_scene, "objects"});
+    apply_roles("object");
     for (const std::string& oid : it == in.end() ? std::vector<std::string>{} : it->second) {
         const N& on = nodes[oid];
         Object ob;

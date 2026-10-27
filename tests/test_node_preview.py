@@ -18,6 +18,7 @@ from geo4d import gpu
 from test_node_manifolds import sheets_doc
 from test_node_slots import csg_doc, set_param
 from test_node_csg import mixed_doc, slab_doc
+from test_node_fields import fields_doc
 
 ROOT = Path(__file__).resolve().parents[1]
 pytestmark = [pytest.mark.gpu, pytest.mark.skipif(not gpu.available(), reason="нет geo4d_gpu или slangc")]
@@ -29,7 +30,7 @@ def _scene(tmp_path, name):
         return ROOT / "scenes" / f"{name}.json"
     if name == "bubble":
         return ROOT / "scenes" / "bubble.g4d"
-    doc = {"throats": sheets_doc, "csg": csg_doc, "slab": slab_doc, "mixed": mixed_doc}[name]()
+    doc = {"throats": sheets_doc, "csg": csg_doc, "slab": slab_doc, "mixed": mixed_doc, "fields": fields_doc}[name]()
     p = tmp_path / f"{name}.g4d"
     p.write_text(json.dumps(doc, ensure_ascii=False), encoding="utf-8")
     return p
@@ -75,13 +76,13 @@ def _close(a, b):
 SCENES = sorted(p.stem for p in (ROOT / "scenes").glob("*.json"))
 
 
-@pytest.mark.parametrize("name", ["throats", "csg", "bubble", "slab", "mixed"] + SCENES)
+@pytest.mark.parametrize("name", ["throats", "csg", "bubble", "slab", "mixed", "fields"] + SCENES)
 def test_interpreter_equals_native_preview(tmp_path, name):
     """Все прежние виды (выход Эллиса, компактные пространства, плоские зоны) — ветви SCENE_DYNAMIC, на которых работают
     графы предпросмотра, — и многообразия и объекты графа."""
     scene = _scene(tmp_path, name)
     _window(tmp_path / "nat", scene, 3, [1], "previewmode 0 on\n")
-    _interp(tmp_path / "int", scene, 3, [1], objs=name == "csg")
+    _interp(tmp_path / "int", scene, 3, [1], objs=name in ("csg", "fields"))
     a, b = (np.load(tmp_path / d / "Frame_1.npy") for d in ("int", "nat"))
     assert np.isfinite(a).all() and np.abs(b[..., :3]).mean() > 0
     rel, frac = _close(a, b)

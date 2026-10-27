@@ -1,0 +1,45 @@
+[
+ {
+  "type": "fld.ball",
+  "group": "Поля",
+  "title": "Шар / сфера",
+  "output": "field",
+  "params": [
+   {"name": "c", "type": "vec4", "default": [0.0, 0.0, 0.0, 0.0]},
+   {"name": "R", "type": "float", "default": 1.0, "min": 0.01, "max": 50.0}
+  ],
+  "roles": {"manifold": {"as": "mf.sphere"}, "object": {"as": "obj.ball4", "rename": {"R": "r"}}},
+  "doc": "|x − c| − R. Многообразие: сфера S³ — кусок CSG с основой (M38) или замкнутое пространство; объект: 4D-шар"
+ },
+ {
+  "type": "fld.halfspace",
+  "group": "Поля",
+  "title": "Полупространство / гиперплоскость",
+  "output": "field",
+  "params": [
+   {"name": "axis", "type": "int", "default": 2, "min": 0, "max": 3, "structural": true},
+   {"name": "offset", "type": "float", "default": 0.0, "min": -100.0, "max": 100.0},
+   {"name": "sign", "type": "float", "default": 1.0, "min": -1.0, "max": 1.0}
+  ],
+  "roles": {"manifold": {"as": ""}, "object": {"as": "obj.halfspace"}},
+  "doc": "sign·(x_axis − offset), внутри — < 0. Многообразие: гиперплоскость w = offset (ось — только w, 3; сторона «внутри» — по знаку sign); объект: полупространство"
+ },
+ {
+  "type": "fld.formula",
+  "group": "Поля",
+  "title": "Формула",
+  "output": "field",
+  "params": [
+   {"name": "formula", "type": "string", "default": "length(x, y, z, w) - 1.0"},
+   {"name": "a", "type": "float", "default": 1.0},
+   {"name": "b", "type": "float", "default": 1.0},
+   {"name": "c", "type": "float", "default": 1.0},
+   {"name": "d", "type": "float", "default": 1.0},
+   {"name": "scale", "type": "float", "default": 1.0, "min": 0.01, "max": 100.0, "role": "manifold"},
+   {"name": "s_max", "type": "float", "default": 30.0, "min": 1.0, "max": 10000.0, "role": "manifold"},
+   {"name": "L", "type": "float", "default": 1.0, "min": 0.01, "max": 100.0, "role": "object"}
+  ],
+  "roles": {"manifold": {"as": "mf.formula"}, "object": {"as": ""}},
+  "doc": "f(x, y, z, w) на языке нод (гладкие функции). Многообразие: вид неизвестен (M37) — шаг ≤ scale, без фона и NEE, путь ≤ s_max; объект: g/L (L ≥ |∇g|, M36), без ограничивающей сферы"
+ }
+]

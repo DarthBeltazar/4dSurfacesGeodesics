@@ -1,6 +1,7 @@
 [
  {
   "type": "obj.ball4",
+  "hidden": true,
   "group": "Объекты",
   "title": "4D-шар",
   "output": "shape",
@@ -71,6 +72,7 @@
  },
  {
   "type": "obj.halfspace",
+  "hidden": true,
   "group": "Объекты",
   "title": "Полупространство",
   "output": "shape",
@@ -200,11 +202,11 @@
   "type": "xf.translate",
   "group": "Преобразования",
   "title": "Сдвиг",
-  "output": "shape",
+  "output": "inherit",
   "inputs": [
    {
     "name": "shape",
-    "type": "shape"
+    "type": "any"
    }
   ],
   "params": [
@@ -225,11 +227,11 @@
   "type": "xf.rotate",
   "group": "Преобразования",
   "title": "Поворот в плоскости",
-  "output": "shape",
+  "output": "inherit",
   "inputs": [
    {
     "name": "shape",
-    "type": "shape"
+    "type": "any"
    }
   ],
   "params": [
@@ -273,11 +275,11 @@
   "type": "xf.scale",
   "group": "Преобразования",
   "title": "Масштаб (равномерный)",
-  "output": "shape",
+  "output": "inherit",
   "inputs": [
    {
     "name": "shape",
-    "type": "shape"
+    "type": "any"
    }
   ],
   "params": [

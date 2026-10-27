@@ -29,8 +29,12 @@ ImVec4 type_color(const std::string& t) {
     if (t == "shape") return ImVec4(1.0f, 0.65f, 0.25f, 1);
     if (t == "material") return ImVec4(0.95f, 0.45f, 0.85f, 1);
     if (t == "object") return ImVec4(0.45f, 0.95f, 0.45f, 1);
+    if (t == "field") return ImVec4(0.55f, 0.95f, 0.85f, 1);     // поле (DD-015): многообразие или объект
     return ImVec4(0.8f, 0.8f, 0.8f, 1);
 }
+
+// роль поля по связям (DD-015): «М» — многообразие, «О» — объект
+const char* role_badge(int r) { return r == 3 ? "М+О" : r == 1 ? "М" : r == 2 ? "О" : ""; }
 
 constexpr int kOut = 255;                         // номер порта выхода; входы — 0…254
 
@@ -243,7 +247,13 @@ bool NodeEditor::link(const std::string& from, const std::string& to, std::strin
     if (!fd || !td) { err = "нет ноды связи " + from + " → " + to; return false; }
     const geo4d::NodeInputDef* in = td->input(tp);
     if (fp != "out" || !in) { err = "нет порта " + (fp != "out" ? from : to); return false; }
-    if (in->type != fd->output) { err = "типы портов не совпадают: " + fd->output + " → " + in->type; return false; }
+    {   // правило типов (DD-015 §1) — то же, что при загрузке; связь в одиночный вход заменит прежнюю
+        nlohmann::json L = nlohmann::json::array();
+        for (auto& l : links())
+            if (in->multi || l.value("to", std::string()) != to) L.push_back(l);
+        err = geo4d::link_error(node_library(), nodes(), L, fn, tn, tp);
+        if (!err.empty()) return false;
+    }
     // цикл: выход tn уже ведёт (по связям вниз) к fn
     std::function<bool(const std::string&)> reaches = [&](const std::string& a) {
         if (a == fn) return true;
@@ -306,6 +316,9 @@ NodeEditor::Change NodeEditor::inspector(bool enabled, const float* cam_x, const
     if (!def) return ch;
     ImGui::TextUnformatted(def->title.c_str());
     ImGui::TextDisabled("%s · %s", sel_.c_str(), def->type.c_str());
+    const int roles = def->output == "field" || def->output == "inherit" ? geo4d::field_roles(node_library(), nodes(), links(), sel_) : 0;
+    if (def->output == "field")
+        ImGui::TextDisabled("роль: %s", roles == 3 ? "многообразие и объект" : roles == 1 ? "многообразие" : roles == 2 ? "объект" : "не подключено");
     if (sel_ == error_node_) ImGui::TextColored(ImVec4(1, 0.4f, 0.4f, 1), "%s", status_.c_str());
     ImGui::Separator();
     ImGui::BeginDisabled(!enabled);
@@ -315,6 +328,10 @@ NodeEditor::Change NodeEditor::inspector(bool enabled, const float* cam_x, const
     ImGui::PushItemWidth(-70);
     for (const NodeParamDef& p : def->params) {
         if (p.hidden) continue;
+        // параметр другой роли (scale/s_max — многообразие, L — объект): серым, но правится
+        const bool other = !p.role.empty() && roles && !(roles & (p.role == "manifold" ? 1 : 2));
+        if (other) ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
+        struct PopOnExit { bool on; ~PopOnExit() { if (on) ImGui::PopStyleColor(); } } pop_on_exit{other};
         const nlohmann::json cur = params.contains(p.name) ? params[p.name] : p.def;
         bool changed = false;
         nlohmann::json val;
@@ -466,7 +483,11 @@ NodeEditor::Change NodeEditor::draw(bool enabled, const float* cam_x, const floa
         {
             const size_t ni = std::min(def->inputs.size(), size_t(kOut));
             const ImVec2 o = ImGui::GetCursorScreenPos();
-            const float tw = ImGui::CalcTextSize(def->title.c_str()).x;
+            std::string title = def->title;
+            if (def->output == "field")
+                if (const char* b = role_badge(geo4d::field_roles(node_library(), nodes(), links(), id)); *b) title += std::string("  [") + b + "]";
+            const std::string otype = def->output == "inherit" ? geo4d::resolved_output(node_library(), nodes(), links(), id) : def->output;
+            const float tw = ImGui::CalcTextSize(title.c_str()).x;
             const float w = std::max({tw, 3.0f * kPinR * float(ni), 40.0f});
             const float row = ni ? 2 * kPinR + 4 : 0;         // ряд точек входов
             for (size_t j = 0; j < ni; ++j) {
@@ -477,12 +498,12 @@ NodeEditor::Change NodeEditor::draw(bool enabled, const float* cam_x, const floa
                        type_color(in.type), in.multi);
             }
             ImGui::SetCursorScreenPos(ImVec2(o.x + 0.5f * (w - tw), o.y + row));
-            ImGui::TextUnformatted(def->title.c_str());
+            ImGui::TextUnformatted(title.c_str());
             const float yb = ImGui::GetCursorScreenPos().y;
             if (!def->output.empty()) {
                 const uintptr_t pid = uintptr_t(k) * 256 + kOut;
-                pins[pid] = {id, "out", def->output, true, false};
-                pin_at(ed::PinId(pid), ed::PinKind::Output, ImVec2(o.x + 0.5f * w, yb + kPinR), type_color(def->output), false);
+                pins[pid] = {id, "out", otype, true, false};
+                pin_at(ed::PinId(pid), ed::PinKind::Output, ImVec2(o.x + 0.5f * w, yb + kPinR), type_color(otype), false);
             }
             ImGui::SetCursorScreenPos(ImVec2(o.x, def->output.empty() ? yb : yb + 2 * kPinR + 2));
             ImGui::Dummy(ImVec2(w, 0));                          // ширина ноды — по заголовку и числу входов
@@ -518,7 +539,15 @@ NodeEditor::Change NodeEditor::draw(bool enabled, const float* cam_x, const floa
                 PinRef pa = pins[a.Get()], pb = pins[b.Get()];
                 if (!pa.out) std::swap(pa, pb);
                 std::string err;
-                if (!pa.out || pb.out || pa.type != pb.type) ed::RejectNewItem(ImVec4(1, 0.3f, 0.3f, 1), 2.0f);
+                std::string why;
+                if (pa.out && !pb.out) {
+                    nlohmann::json L = nlohmann::json::array();
+                    for (auto& l : links())
+                        if (pb.multi || l.value("to", std::string()) != pb.node + "." + pb.port) L.push_back(l);
+                    why = geo4d::link_error(node_library(), nodes(), L, pa.node, pb.node, pb.port);
+                    if (!why.empty()) ImGui::SetTooltip("%s", why.c_str());
+                }
+                if (!pa.out || pb.out || !why.empty()) ed::RejectNewItem(ImVec4(1, 0.3f, 0.3f, 1), 2.0f);
                 else if (ed::AcceptNewItem(ImVec4(0.4f, 1, 0.4f, 1), 3.0f)) {
                     if (link(pa.node + ".out", pb.node + "." + pb.port, err)) ch.changed = ch.commit = true;
                     else set_status(err);
@@ -578,7 +607,7 @@ NodeEditor::Change NodeEditor::draw(bool enabled, const float* cam_x, const floa
         std::map<std::string, std::vector<const NodeDef*>> groups;
         const std::string q = search_;
         for (auto& d : node_library().defs())
-            if (q.empty() || d.title.find(q) != std::string::npos || d.type.find(q) != std::string::npos) groups[d.group].push_back(&d);
+            if (q.empty() || d.title.find(q) != std::string::npos || d.type.find(q) != std::string::npos) if (!d.hidden) groups[d.group].push_back(&d);
         const NodeDef* pick = nullptr;
         for (auto& [g, v] : groups) {
             if (!q.empty()) {

@@ -522,6 +522,25 @@ ExprPtr substitute_coords(const ExprPtr& e, const std::array<ExprPtr, 4>& coords
     return c;
 }
 
+std::string expr_text(const ExprPtr& e) {
+    switch (e->kind) {
+        case Expr::Num: return e->text;
+        case Expr::Param: return e->text;
+        case Expr::Coord: return std::string(1, "xyzw"[e->coord]);
+        case Expr::Neg: return "(-" + expr_text(e->args[0]) + ")";
+        case Expr::Add: return "(" + expr_text(e->args[0]) + " + " + expr_text(e->args[1]) + ")";
+        case Expr::Sub: return "(" + expr_text(e->args[0]) + " - " + expr_text(e->args[1]) + ")";
+        case Expr::Mul: return "(" + expr_text(e->args[0]) + " * " + expr_text(e->args[1]) + ")";
+        case Expr::Div: return "(" + expr_text(e->args[0]) + " / " + expr_text(e->args[1]) + ")";
+        case Expr::Call: {
+            std::string r = e->text + "(";
+            for (size_t k = 0; k < e->args.size(); ++k) r += (k ? ", " : "") + expr_text(e->args[k]);
+            return r + ")";
+        }
+    }
+    return "";
+}
+
 ExprPtr parse_expr(const std::string& src, const std::vector<std::string>& params, Context ctx) {
     Parser p{src, params, ctx};
     return p.parse();

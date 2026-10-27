@@ -51,6 +51,8 @@ ExprPtr bind_params(const ExprPtr& e, const std::map<std::string, ExprPtr>& valu
 // слот параметров (DD-011 §5): параметр «$i»; число — Scene::slots, в Slang — чтение буфера (или число при bake)
 ExprPtr mk_slot(int i);
 ExprPtr substitute_coords(const ExprPtr& e, const std::array<ExprPtr, 4>& coords);
+// обратно в текст языка (полные скобки): разбор текста даёт то же дерево (xf над многообразием, DD-015)
+std::string expr_text(const ExprPtr& e);
 
 // Slang: params — имя параметра → выражение Slang (литерал, дефайн, слот); coords — имена x y z w в функции
 std::string emit_slang(const ExprPtr& e, const std::map<std::string, std::string>& params,

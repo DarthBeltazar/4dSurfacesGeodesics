@@ -1,6 +1,7 @@
 [
  {
   "type": "mf.hyperplane",
+  "hidden": true,
   "group": "Многообразия",
   "title": "Гиперплоскость R³",
   "output": "manifold",
@@ -257,6 +258,7 @@
  },
  {
   "type": "mf.sphere",
+  "hidden": true,
   "group": "Многообразия",
   "title": "Сфера S³ (центр)",
   "output": "manifold",
@@ -307,6 +309,7 @@
  },
  {
   "type": "mf.formula",
+  "hidden": true,
   "group": "Многообразия",
   "title": "Многообразие-формула",
   "output": "manifold",

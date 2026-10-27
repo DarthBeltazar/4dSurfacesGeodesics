@@ -66,6 +66,7 @@ def test_undo_restores_scene(tmp_path):
 
 @pytest.mark.parametrize("ops,msg", [("link 1 nm.out scene.manifold\n", "типы портов"),
                                      ("link 1 xs.out xr.shape\n", "цикл"),
+                                     ("link 1 xs.out scene.manifold\n", "только объект"),   # DD-015: правило типов
                                      ("delnode 1 scene\n", "Сцена")])
 def test_rejected_edits(tmp_path, ops, msg):
     doc = csg_doc()

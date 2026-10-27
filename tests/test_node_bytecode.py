@@ -18,6 +18,7 @@ from test_node_manifolds import sheets_doc
 from test_node_objects import CASES, N, scene
 from test_node_slots import csg_doc
 from test_node_csg import mixed_doc, slab_doc
+from test_node_fields import fields_doc
 
 ROOT = Path(__file__).resolve().parents[1]
 pytestmark = pytest.mark.skipif(not gpu.EXE.exists(), reason="нет geo4d_gpu")
@@ -42,7 +43,7 @@ def csg_cases_doc():
 
 def _docs(tmp_path):
     docs = {"throats": sheets_doc(), "csg": csg_doc(), "csg_cases": csg_cases_doc(), "formula": formula_doc(),
-            "bubble": ROOT / "scenes" / "bubble.g4d", "slab": slab_doc(), "mixed": mixed_doc()}                    # M38 (DD-014)
+            "bubble": ROOT / "scenes" / "bubble.g4d", "slab": slab_doc(), "mixed": mixed_doc(), "fields": fields_doc()}   # M38 (DD-014), DD-015
     for p in sorted((ROOT / "scenes").glob("*.json")):
         docs[p.stem] = p
     return docs
@@ -79,7 +80,7 @@ def _prog(p):
     return lambda q: B.evaluate(r64, q[0], q[1], q[2], q[3])
 
 
-@pytest.mark.parametrize("name", ["throats", "csg", "csg_cases", "formula", "bubble", "slab", "mixed"] + sorted(p.stem for p in (ROOT / "scenes").glob("*.json")))
+@pytest.mark.parametrize("name", ["throats", "csg", "csg_cases", "formula", "bubble", "slab", "mixed", "fields"] + sorted(p.stem for p in (ROOT / "scenes").glob("*.json")))
 def test_bc_check(tmp_path, name):
     doc = _docs(tmp_path)[name]
     P = _points()
@@ -99,7 +100,7 @@ def test_bc_check(tmp_path, name):
         g = _prog(rows)
         assert rel(jax.vmap(g)(Pd), o["f"]) < 1e-11, o["name"]
         assert rel(jax.vmap(jax.grad(g))(Pd), o["g"]) < 1e-10, o["name"]
-    assert n == {"csg": 2, "csg_cases": len(CASES)}.get(name, 0)
+    assert n == {"csg": 2, "csg_cases": len(CASES), "fields": 1}.get(name, 0)
 
 
 def test_register_limit(tmp_path):
@@ -146,7 +147,7 @@ def _errs(o, prog, P32, W32):
 
 @pytest.mark.gpu
 @pytest.mark.skipif(not gpu.available(), reason="нет geo4d_gpu или slangc")
-@pytest.mark.parametrize("name", ["throats", "formula", "csg", "bubble", "slab", "mixed"])
+@pytest.mark.parametrize("name", ["throats", "formula", "csg", "bubble", "slab", "mixed", "fields"])
 def test_interpreter_gpu_jets(tmp_path, name):
     """Интерпретатор (prog_u1: SCENE_DYNAMIC + MF_PROG, программа с PROG_MF) — Jet7, HVP, Jet15 программ C++ с той же
     точностью float32, что нативный заголовок графа (jets_u1, SCENE_GRAPH) у многообразия; у объектов — та же граница."""
@@ -159,7 +160,7 @@ def test_interpreter_gpu_jets(tmp_path, name):
     bc, ev = _cpp(tmp_path, name, doc, P[:2])
     spv = gpu.compile_shader("prog_u1.slang", "prog_u1", {"SCENE": gpu.SCENE_IDS["dynamic"], "MF_PROG": 1})
     progs = [("manifold", bc["manifold"])] + [(f"obj{k}", r) for k, r in enumerate(bc["objects"]) if r is not None]
-    assert len(progs) == {"csg": 3}.get(name, 1)
+    assert len(progs) == {"csg": 3, "fields": 2}.get(name, 1)
     for label, prog in progs:
         region = G.prog_region(np.asarray(prog["f32"], np.float32))
         cam = np.zeros((G.PROG_BASE + len(region), 4), np.float32)
