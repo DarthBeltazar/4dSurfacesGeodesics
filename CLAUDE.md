@@ -101,6 +101,10 @@ hash and a dirty flag).
   (the formula would shift sheets by eps·|f|); keep `shapes._cs`, `jet.slang::jcs`, `expr.cpp`, `bytecode.cpp` identical.
   ℓ_s of a CSG manifold is numeric (0.5/κ_max sampled on CPU at load), never taken from parameters — the neck lip is
   5–34× sharper than 1/k. v1: one flat base (hyperplane or sheets) + spheres.
+- Field nodes (DD-015, M40): `fld.*` output type `field`, read per role via `roles` aliases (`apply_roles` in
+  `scene_graph.cpp`); old `mf.sphere`/`mf.hyperplane`/`mf.formula`/`obj.ball4`/`obj.halfspace` are `hidden` (load, not in
+  the menu). Port compatibility is one function, `link_error` (loader, `link` directive and canvas) — never compare
+  port type strings directly. `xf.*` outputs `inherit`; over a manifold they rewrite piece formulas via `expr_text`.
 - Render resolution ≠ window size is fine (blit with letterbox); a resolution change is a Python rebuild with a new
   `--res`. `app.py` caches the procedural background on disk (`procedural_env_cached`) — rebuilds rely on it.
 
