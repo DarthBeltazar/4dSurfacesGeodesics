@@ -1,0 +1,1 @@
+.venv/Scripts/python.exe prototype/scripts/csg_band_cap.py

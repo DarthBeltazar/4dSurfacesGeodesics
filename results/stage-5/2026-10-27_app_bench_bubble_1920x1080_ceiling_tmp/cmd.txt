@@ -1,0 +1,2 @@
+.venv/Scripts/python.exe prototype/scripts/app.py --bench --scene scenes/bubble.g4d --res 1920x1080 --tag ceiling_tmp
+Временная правка codegen.cpp:325 (пол шага 0.25*3.0 вместо 0.25*SCALE, откачена) — потолок выигрыша от уточнения hcap; кадры могут быть неверны
