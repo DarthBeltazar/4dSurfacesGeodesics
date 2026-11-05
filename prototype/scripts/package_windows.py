@@ -1,85 +1,67 @@
-"""Сборка переносимого архива редактора сцен для Windows (релиз): хост geo4d_gpu.exe с SDL3 и рантаймом MSVC, slangc
-из Vulkan SDK, Python-часть окна (geo4d, app.py), шейдеры, сцены, заранее скомпилированные SPIR-V для всех сцен
-scenes/*.json (быстрый и динамический графы) и run_editor.cmd (при первом запуске создаёт .venv и ставит
-requirements.txt). Нужен свежий gpu\\build.cmd (профиль release).
+"""Windows standalone ZIP (DD-010): Python is used only to prepare the release.
 
-    python prototype/scripts/package_windows.py --version 0.1.0-alpha
-Результат: dist/geo4d-editor-<версия>-win64.zip (каталог dist/ не в git)."""
+Build gpu\\build.cmd first, then:
+    .venv/Scripts/python prototype/scripts/package_windows.py --version 0.2.0-alpha
+The packaged executable validates every scene using its bundled Slang DLLs.
+"""
 import argparse
+import hashlib
+import json
 import os
+import re
 import shutil
 import subprocess
-import sys
 import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-SDK = Path(os.environ.get("VULKAN_SDK", r"C:\VulkanSDK\1.4.328.1"))
 VS_REDIST = Path(r"C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Redist\MSVC")
 CRT = ["msvcp140.dll", "vcruntime140.dll", "vcruntime140_1.dll"]
-SLANG = ["slangc.exe", "slang.dll", "slang-glslang.dll", "slang-glsl-module.dll", "slang-rt.dll"]
+DLLS = ["SDL3.dll", "slang.dll", "slang-glslang.dll", "slang-glsl-module.dll", "slang-rt.dll"]
 
-RUN_CMD = r"""@echo off
-rem geo4d scene editor: first run creates .venv (Python 3.12) and installs requirements.txt, then starts the window.
-rem Arguments go to app.py, e.g.: run_editor.cmd --scene S3 --res 1920x1080 --fullscreen
-rem (ASCII only: cmd.exe reads .cmd files in the OEM code page)
+RUN_CMD = r'''@echo off
+rem Standalone editor. Example: run_editor.cmd scenes\bubble.g4d --res 1920x1080
 setlocal
-set "ROOT=%~dp0"
-set "GEO4D_SLANGC=%ROOT%slang\slangc.exe"
-set PYTHONIOENCODING=utf-8
-if not exist "%ROOT%.venv\Scripts\python.exe" (
-    echo First run: creating the Python environment in .venv, this takes a few minutes...
-    py -3.12 -m venv "%ROOT%.venv" 2>nul || python -m venv "%ROOT%.venv"
-    if not exist "%ROOT%.venv\Scripts\python.exe" (
-        echo Python 3.12 was not found. Install it from https://www.python.org/downloads/ and run again.
-        pause
-        exit /b 1
-    )
-    "%ROOT%.venv\Scripts\python.exe" -m pip install --disable-pip-version-check -r "%ROOT%requirements.txt"
-    if errorlevel 1 (
-        echo pip install failed.
-        rmdir /s /q "%ROOT%.venv"
-        pause
-        exit /b 1
-    )
+"%~dp0geo4d_gpu.exe" %*
+if errorlevel 1 (
+    pause
+    exit /b 1
 )
-"%ROOT%.venv\Scripts\python.exe" "%ROOT%prototype\scripts\app.py" %*
-if errorlevel 1 pause
-"""
+'''
 
-README = """geo4d — редактор сцен искривлённых пространств (червоточины, S³, T³ …), Windows x64, {version}
-Исходники и описание: https://github.com/DarthBeltazar/4dSurfacesGeodesics
+README = """geo4d — редактор искривлённых пространств, Windows x64, {version}
+Исходники этой сборки: https://github.com/DarthBeltazar/4dSurfacesGeodesics/tree/{commit}
 
-Требования
-  * GPU с Vulkan 1.3 и свежий драйвер (проверено: NVIDIA RTX 4080 SUPER, драйвер 610.88). Денойзер OptiX — только
-    NVIDIA; без него окно работает без денойзера.
-  * Python 3.12 (https://www.python.org/downloads/), «py» или «python» в PATH. Vulkan SDK не нужен — slangc в slang\\.
-  * ~1.5 ГБ на диске для .venv (JAX, NumPy, SciPy, Matplotlib), интернет при первом запуске.
+Распакуйте архив и запустите run_editor.cmd или geo4d_gpu.exe.
+Python, Vulkan SDK, установка пакетов и интернет для запуска не нужны.
+Нужны Windows x64, GPU с Vulkan 1.3 и свежий драйвер. Денойзер OptiX — только NVIDIA;
+без него приложение продолжает работать. AMD и Intel не проверены.
 
-Запуск
-  run_editor.cmd                                   две червоточины, 1280×720
-  run_editor.cmd --scene S3 --fullscreen           трёхмерная сфера на весь экран
-  run_editor.cmd --scene my_scene.json --res 1920x1080
-  Первый запуск: создаётся .venv и ставятся пакеты (несколько минут), строится фон (~10 с).
+Примеры (аргумент сцены — путь, а не --scene):
+  run_editor.cmd
+  run_editor.cmd scenes\\S3.json --fullscreen
+  run_editor.cmd scenes\\bubble.g4d --res 1920x1080
 
-Управление
-  W/S, A/D, Q/E — полёт (Shift — ×4); ЛКМ по кадру — взгляд мышью (Esc или ЛКМ — отпустить); стрелки — взгляд;
-  C/Z — крен; F1 — панели; Tab — режим редактирования; F11 — полноэкранный режим; R — денойзер; Esc — выход.
+W/S, A/D, Q/E — полёт (Shift — быстрее); ЛКМ по кадру и мышь, стрелки — взгляд;
+C/Z — крен; средняя кнопка по объекту — выбрать ноду; F1 — панели;
+F11 — полноэкранный режим; R — денойзер; Esc — отпустить мышь / выход.
 
-Панели
-  «Рендер» — экспозиция, скорость, разрешение рендера; «Многообразие» — вид пространства и параметры («Применить» —
-  сразу, в режиме редактирования); «Файл» — открыть/сохранить сцену (scenes\\*.json); «Объекты» — шары, торы,
-  плоскости, материалы, источники света. Новая форма/число объектов или другое пространство — сразу, в режиме
-  редактирования (кадр медленнее); при выходе из него (Tab) быстрые шейдеры компилируются за 1–10 с.
+Панель «Граф»: ПКМ по холсту — добавить ноду; соединяйте порты, меняйте параметры
+в инспекторе. Delete — удалить; Ctrl+Z / Ctrl+Y — отменить / повторить.
+Сцена сохраняется в .g4d; прежние .json открываются с переводом в граф.
+Структурная правка включает предпросмотр, быстрые шейдеры собираются в фоне.
+Флажок P — предпросмотр. Текстуры и PBR-материал пока не реализованы.
 
-Альфа-версия: проверено на одной машине (Windows 11, RTX 4080 SUPER). Сообщения об ошибках — в issues на GitHub.
+Первый запуск компилирует шейдеры. Кэш: %LOCALAPPDATA%\\geo4d\\cache;
+файлы программы не меняются. Не разносите exe, DLL, shaders/, nodes/ и scenes/.
+Альфа: проверено на Windows с RTX 4080 SUPER. Изредка возможна пурпурная точка
+в фоне (известная проблема режима A). Полный список ограничений — docs/known-issues.md
+в исходниках. Ошибки: https://github.com/DarthBeltazar/4dSurfacesGeodesics/issues
 
-Сторонние компоненты: Slang (slangc, Apache-2.0 WITH LLVM-exception, https://github.com/shader-slang/slang),
-SDL3 (zlib), Dear ImGui (MIT), volk (MIT), Vulkan Memory Allocator (MIT), заголовки NVIDIA OptiX (лицензия NVIDIA SDK),
-рантайм Microsoft Visual C++ (распространяемые файлы Visual Studio 2022).
-
-Лицензия — GNU GPL v3 или более поздняя (LICENSE). Исходный код этой сборки:
-  https://github.com/DarthBeltazar/4dSurfacesGeodesics/tree/{commit}
+Лицензия: GNU GPL v3 или более поздняя (LICENSE). Сторонние компоненты:
+SDL3 (zlib), Dear ImGui и imgui-node-editor (MIT), nlohmann/json (MIT),
+volk и Vulkan Memory Allocator (MIT), Slang (Apache-2.0 WITH LLVM-exception),
+заголовки NVIDIA OptiX (NVIDIA SDK), распространяемые файлы Microsoft Visual C++.
 
 Дополнительное разрешение по разделу 7 GNU GPL v3: если вы изменяете эту программу или любое основанное на ней
 произведение, связывая или объединяя его с NVIDIA OptiX SDK (заголовки optix-dev) или драйверными библиотеками
@@ -90,59 +72,55 @@ NVIDIA CUDA (или их изменёнными версиями), содерж�
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--version", default="0.1.0-alpha")
-    ap.add_argument("--no-spv", action="store_true", help="без заранее скомпилированных шейдеров")
+    ap.add_argument("--version", default="0.2.0-alpha")
+    ap.add_argument("--no-spv", action="store_true", help="пропустить проверку компиляции шейдеров всех сцен")
     a = ap.parse_args()
-    commit = subprocess.run(["git", "rev-parse", "HEAD"], cwd=ROOT, check=True, capture_output=True,
-                            text=True).stdout.strip()
-    if subprocess.run(["git", "status", "--porcelain", "--untracked-files=no"], cwd=ROOT, check=True,
-                      capture_output=True, text=True).stdout.strip():
-        print("ВНИМАНИЕ: незакоммиченные правки — исходники сборки не совпадут с коммитом в README.txt (GPL)",
-              file=sys.stderr)
+    if not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+(?:-[A-Za-z0-9.-]+)?", a.version):
+        ap.error("invalid version")
+    commit = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()
+    if subprocess.check_output(["git", "status", "--porcelain", "--untracked-files=no"], cwd=ROOT, text=True).strip():
+        ap.error("commit tracked changes before packaging: the source link must match the build")
     name = f"geo4d-editor-{a.version}-win64"
     out = ROOT / "dist" / name
+    # Verify the recursive-removal target stays inside the release directory.
+    if out.resolve().parent != (ROOT / "dist").resolve():
+        raise ValueError("unsafe output directory")
     if out.exists():
         shutil.rmtree(out)
-    (out / "gpu" / "build").mkdir(parents=True)
-    exe = ROOT / "gpu" / "build" / "geo4d_gpu.exe"
-    for f in [exe, ROOT / "gpu" / "build" / "SDL3.dll"]:
-        shutil.copy2(f, out / "gpu" / "build")
+    out.mkdir(parents=True)
+    build = ROOT / "gpu" / "build"
+    for f in ["geo4d_gpu.exe", *DLLS]:
+        shutil.copy2(build / f, out)
     crt = sorted(VS_REDIST.glob("*/x64/Microsoft.VC143.CRT"))[-1]
-    (out / "slang").mkdir()
-    for f in CRT:                                     # рядом с exe и рядом с slangc (поиск DLL — каталог программы)
-        shutil.copy2(crt / f, out / "gpu" / "build")
-        shutil.copy2(crt / f, out / "slang")
-    for f in SLANG:
-        shutil.copy2(SDK / "Bin" / f, out / "slang")
-    shutil.copytree(ROOT / "gpu" / "shaders", out / "gpu" / "shaders")
-    shutil.copytree(ROOT / "prototype" / "geo4d", out / "prototype" / "geo4d",
-                    ignore=shutil.ignore_patterns("__pycache__"))
-    (out / "prototype" / "scripts").mkdir()
-    shutil.copy2(ROOT / "prototype" / "scripts" / "app.py", out / "prototype" / "scripts")
-    shutil.copytree(ROOT / "scenes", out / "scenes")
-    for f in ["requirements.txt", "LICENSE"]:
-        shutil.copy2(ROOT / f, out)
+    for f in CRT:
+        shutil.copy2(crt / f, out)
+    for source, dest in [(ROOT / "gpu" / "shaders", "shaders"), (ROOT / "nodes", "nodes"),
+                         (ROOT / "scenes", "scenes")]:
+        shutil.copytree(source, out / dest)
+    shutil.copy2(ROOT / "LICENSE", out)
     (out / "run_editor.cmd").write_bytes(RUN_CMD.replace("\n", "\r\n").encode("ascii"))
     (out / "README.txt").write_bytes(README.format(version=a.version, commit=commit).replace("\n", "\r\n").encode("utf-8-sig"))
-    if not a.no_spv:          # шейдеры всех сцен — в кэш архива (ключ кэша — содержимое, не пути)
-        env = dict(os.environ, GEO4D_SLANGC=str(out / "slang" / "slangc.exe"), PYTHONIOENCODING="utf-8")
-        env.pop("GEO4D_GPU_EXE", None)
-        tmp = out / "_graphs"
-        for sc in sorted((out / "scenes").glob("*.json")):
-            subprocess.run([sys.executable, str(out / "prototype" / "scripts" / "app.py"), "--scene", sc.stem,
-                            "--cube", "64", "--graph-only", str(tmp / sc.stem)], check=True, env=env,
-                           capture_output=True)
-            print("шейдеры:", sc.stem)
-        shutil.rmtree(tmp)
-        for d in ["gen", "cache"]:                    # заголовки — генерируются заново; фон 64 — не тот, что в окне
-            shutil.rmtree(out / "gpu" / "build" / d, ignore_errors=True)
-        for p in (out / "prototype").rglob("__pycache__"):
-            shutil.rmtree(p)
+    (out / "build.json").write_text(json.dumps({"version": a.version, "commit": commit}, indent=2) + "\n", encoding="utf-8")
+    if not a.no_spv:
+        validation = out / "_validation"
+        env = {k: v for k, v in os.environ.items() if not k.startswith("GEO4D_")}
+        env["GEO4D_CACHE_DIR"] = str(validation / "cache")
+        scenes = sorted((out / "scenes").glob("*.json")) + sorted((out / "scenes").glob("*.g4d"))
+        for sc in scenes:
+            r = subprocess.run([str(out / "geo4d_gpu.exe"), "export-graph", str(sc),
+                                str(validation / sc.name), "--cube", "64", "--compile"],
+                               cwd=out, env=env, capture_output=True, text=True, encoding="utf-8")
+            if r.returncode:
+                raise RuntimeError(f"{sc.name}: {r.stdout}\n{r.stderr}")
+            print("шейдеры:", sc.name, flush=True)
+        shutil.rmtree(validation)
     zp = ROOT / "dist" / f"{name}.zip"
     with zipfile.ZipFile(zp, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as z:
         for f in sorted(out.rglob("*")):
             if f.is_file():
                 z.write(f, Path(name) / f.relative_to(out))
+    digest = hashlib.sha256(zp.read_bytes()).hexdigest()
+    zp.with_suffix(".zip.sha256").write_text(f"{digest}  {zp.name}\n", encoding="ascii")
     print(zp, f"{zp.stat().st_size / 1e6:.1f} МБ")
 
 
