@@ -58,8 +58,8 @@ def main():
             if scene:
                 args.append(str(scene))
             args += ["--res", "96x54", "--cube", "64", "--extra", str(extra)]
-            command = '"' + subprocess.list2cmdline(args) + '"'
-            r = subprocess.run([os.environ["COMSPEC"], "/d", "/s", "/c", command], cwd=td, env=env,
+            command = f'"{os.environ["COMSPEC"]}" /d /s /c "{subprocess.list2cmdline(args)}"'
+            r = subprocess.run(command, cwd=td, env=env,
                                capture_output=True, text=True, encoding="utf-8", timeout=180)
             (result / f"{name}.log").write_text(r.stdout + r.stderr, encoding="utf-8")
             assert r.returncode == 0, r.stdout + r.stderr
