@@ -98,6 +98,7 @@ def main():
                          (ROOT / "scenes", "scenes")]:
         shutil.copytree(source, out / dest)
     shutil.copy2(ROOT / "LICENSE", out)
+    shutil.copytree(ROOT / "docs" / "licenses", out / "licenses")
     (out / "run_editor.cmd").write_bytes(RUN_CMD.replace("\n", "\r\n").encode("ascii"))
     (out / "README.txt").write_bytes(README.format(version=a.version, commit=commit).replace("\n", "\r\n").encode("utf-8-sig"))
     (out / "build.json").write_text(json.dumps({"version": a.version, "commit": commit}, indent=2) + "\n", encoding="utf-8")
