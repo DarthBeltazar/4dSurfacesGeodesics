@@ -1,0 +1,11 @@
+gpu\build.cmd
+.venv/Scripts/python -m pytest tests -q -m gpu --ignore=tests/test_lens.py --basetemp=dist/pytest-release
+.venv/Scripts/python -m pytest tests -q -m "not gpu" --ignore=tests/test_lens.py --basetemp=dist/pytest-release-cpu
+.venv/Scripts/python prototype/scripts/package_windows.py --version 0.2.0-alpha
+.venv/Scripts/python prototype/scripts/package_windows.py --version 0.2.0-alpha --no-spv
+.venv/Scripts/python prototype/scripts/verify_windows_package.py dist/geo4d-editor-0.2.0-alpha-win64.zip
+
+Runtime source: 415caee (renderer code unchanged during release preparation).
+Final packaging source: c0e4d5e (build.json and verification.json).
+The second packaging pass adds component license notices; it does not change executable/shaders/nodes/scenes.
+tests/test_lens.py is an untracked experiment for an absent mf.lens implementation and is excluded.

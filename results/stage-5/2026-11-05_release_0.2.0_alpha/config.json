@@ -1,0 +1,10 @@
+{
+  "archive": "geo4d-editor-0.2.0-alpha-win64.zip",
+  "res": [
+    96,
+    54
+  ],
+  "frames": 4,
+  "clean_path": true,
+  "clean_cache": true
+}

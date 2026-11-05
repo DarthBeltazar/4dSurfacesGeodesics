@@ -1,0 +1,2 @@
+standalone_build {"scene_env_ms": 12.5, "graph_ms": 26.2, "compile_ms": 1408.8, "compiled": 15, "shaders": 27}
+rows_check 0

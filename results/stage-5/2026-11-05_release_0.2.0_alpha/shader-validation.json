@@ -1,0 +1,19 @@
+{
+  "source_commit": "162d47e2665de4824154f94488fa7e639abcc15a",
+  "command": ".venv/Scripts/python prototype/scripts/package_windows.py --version 0.2.0-alpha",
+  "validation": "packaged geo4d_gpu.exe export-graph <scene> <output> --cube 64 --compile",
+  "scenes": [
+    {"scene": "ellis.json", "exit_code": 0},
+    {"scene": "hyperplane.json", "exit_code": 0},
+    {"scene": "S3.json", "exit_code": 0},
+    {"scene": "spheritorus.json", "exit_code": 0},
+    {"scene": "tiger.json", "exit_code": 0},
+    {"scene": "torisphere.json", "exit_code": 0},
+    {"scene": "two_wormholes.json", "exit_code": 0},
+    {"scene": "bubble.g4d", "exit_code": 0},
+    {"scene": "csg_objects.g4d", "exit_code": 0},
+    {"scene": "three_wormholes.g4d", "exit_code": 0}
+  ],
+  "final_repack": "c0e4d5e: same executable, shaders, nodes and scenes; component license notices added; --no-spv",
+  "final_zip_smoke": "verification.json"
+}

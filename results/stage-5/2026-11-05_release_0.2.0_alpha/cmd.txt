@@ -1,0 +1,1 @@
+.venv/Scripts/python.exe prototype/scripts/verify_windows_package.py dist/geo4d-editor-0.2.0-alpha-win64.zip

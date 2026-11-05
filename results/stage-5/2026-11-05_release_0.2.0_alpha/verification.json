@@ -1,0 +1,30 @@
+{
+  "archive": "geo4d-editor-0.2.0-alpha-win64.zip",
+  "sha256": "ef0a83c256abb4866b37d7e4187c710ae56bfe212a006000eaf28b5c78ee216e",
+  "size_bytes": 13131613,
+  "build": {
+    "version": "0.2.0-alpha",
+    "commit": "c0e4d5eefd16ebca53da7a85078c6bdfc1aefc15"
+  },
+  "checks": [
+    {
+      "scene": "default",
+      "exit_code": 0,
+      "frame_shape": [
+        54,
+        96
+      ],
+      "nonuniform": true
+    },
+    {
+      "scene": "bubble",
+      "exit_code": 0,
+      "frame_shape": [
+        54,
+        96
+      ],
+      "nonuniform": true
+    }
+  ],
+  "installed_files_unchanged": true
+}
