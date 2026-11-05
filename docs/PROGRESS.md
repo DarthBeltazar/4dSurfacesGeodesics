@@ -2,6 +2,7 @@
 
 ## Текущее состояние
 Этапы 1–5 выполнены ([отчёт](reports/stage-5.md)). **v0.2.0-alpha** для Windows: самостоятельное приложение без Python, редактор нод и `.g4d`.
+Релиз [опубликован на GitHub](https://github.com/DarthBeltazar/4dSurfacesGeodesics/releases/tag/v0.2.0-alpha).
 
 - [x] DD-010: окно и сборка шейдеров без Python.
 - [x] DD-011, шаги 1–6: язык, граф, слоты, предпросмотр, редактор.
